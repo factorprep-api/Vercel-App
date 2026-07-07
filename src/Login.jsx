@@ -1,24 +1,55 @@
 import { useState } from 'react';
 import { supabase } from './supabase';
+import { createAthlete } from './api';
 
 export default function Login() {
+  const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleLogin = async (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError('');
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password
-    });
+    try {
+      if (isSignUp) {
+        const { data, error: signUpError } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: { name }
+          }
+        });
 
-    if (error) {
-      setError(error.message);
+        if (signUpError) throw signUpError;
+
+        const sheetsResult = await createAthlete({ email, name });
+        
+        if (!sheetsResult.success) {
+          throw new Error('Account created but failed to sync with Google Sheets');
+        }
+
+        setError(null);
+        alert('Signup successful! Please check your email to confirm your account.');
+        setEmail('');
+        setPassword('');
+        setName('');
+        setIsSignUp(false);
+      } else {
+        const { error: signInError } = await supabase.auth.signInWithPassword({
+          email,
+          password
+        });
+
+        if (signInError) throw signInError;
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
       setLoading(false);
     }
   };
@@ -31,7 +62,7 @@ export default function Login() {
       justifyContent: 'center',
       minHeight: '100vh',
       background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-      fontFamily: 'Roboto, sans-serif'
+      fontFamily: 'Roboto Flex, sans-serif'
     }}>
       <div style={{
         background: 'white',
@@ -61,7 +92,34 @@ export default function Login() {
           </div>
         )}
 
-        <form onSubmit={handleLogin}>
+        <form onSubmit={handleSubmit}>
+          {isSignUp && (
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{
+                display: 'block',
+                marginBottom: '8px',
+                fontWeight: 'bold',
+                color: '#555',
+                fontSize: '14px'
+              }}>Name</label>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Your full name"
+                required
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  border: '2px solid #ddd',
+                  borderRadius: '6px',
+                  fontSize: '16px',
+                  boxSizing: 'border-box'
+                }}
+              />
+            </div>
+          )}
+
           <div style={{ marginBottom: '20px' }}>
             <label style={{
               display: 'block',
@@ -101,6 +159,7 @@ export default function Login() {
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
               required
+              minLength={6}
               style={{
                 width: '100%',
                 padding: '12px',
@@ -124,12 +183,33 @@ export default function Login() {
               borderRadius: '6px',
               fontSize: '16px',
               fontWeight: 'bold',
-              cursor: loading ? 'not-allowed' : 'pointer'
+              cursor: loading ? 'not-allowed' : 'pointer',
+              marginBottom: '20px'
             }}
           >
-            {loading ? 'Signing in...' : 'Sign In'}
+            {loading ? (isSignUp ? 'Creating Account...' : 'Signing In...') : (isSignUp ? 'Sign Up' : 'Sign In')}
           </button>
         </form>
+
+        <div style={{ textAlign: 'center' }}>
+          <button
+            type="button"
+            onClick={() => {
+              setIsSignUp(!isSignUp);
+              setError('');
+            }}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#008ed3',
+              fontSize: '14px',
+              cursor: 'pointer',
+              textDecoration: 'underline'
+            }}
+          >
+            {isSignUp ? 'Already have an account? Sign In' : "Don't have an account? Sign Up"}
+          </button>
+        </div>
       </div>
     </div>
   );
