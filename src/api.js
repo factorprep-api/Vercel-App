@@ -24,3 +24,25 @@ export const fetchLogbookByAthlete = async (athleteName) => {
     return { status: "Empty", data: [] };
   }
 };
+
+export const createAthlete = async ({ email, name }) => {
+  try {
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=createAthlete&email=${encodeURIComponent(email)}&name=${encodeURIComponent(name)}`;
+    let resp = await fetch(url);
+    let json = await resp.json();
+    return json;
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+};
+
+export const getAthleteByEmail = async (email) => {
+  try {
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=getAthleteByEmail&email=${encodeURIComponent(email)}`;
+    let resp = await fetch(url);
+    let json = await resp.json();
+    return json;
+  } catch (err) {
+    return { status: "Error", message: err.message };
+  }
+};
