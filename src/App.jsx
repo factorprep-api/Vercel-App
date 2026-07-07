@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from './supabase';
 import { getAthleteByEmail } from './api';
 import Login from './Login';
-import Dashboard from './Dashboard';
+import AthleteHub from './AthleteHub';
 import CoachHub from './CoachHub';
 import AppShell from './components/AppShell';
 
@@ -72,7 +72,7 @@ export default function App() {
           path="/" 
           element={session ? (
             role === 'athlete' ? (
-              <AppShell><Dashboard /></AppShell>
+              <AppShell><AthleteHub /></AppShell>
             ) : role === 'coach' ? (
               <AppShell><CoachHub /></AppShell>
             ) : (
