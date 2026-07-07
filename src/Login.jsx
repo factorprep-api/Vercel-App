@@ -29,8 +29,9 @@ export default function Login() {
 
         const sheetsResult = await createAthlete({ email, name });
         
-        if (!sheetsResult.success) {
-          throw new Error('Account created but failed to sync with Google Sheets');
+        if (sheetsResult.status !== "Success") {
+          console.error("Sheets response:", sheetsResult);
+          throw new Error(sheetsResult.message || 'Account created but failed to sync with Google Sheets');
         }
 
         setError(null);
