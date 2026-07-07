@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from './supabase';
 import Login from './Login';
 import Dashboard from './Dashboard';
+import AppShell from './components/AppShell';
 
 export default function App() {
   const [session, setSession] = useState(null);
@@ -43,7 +44,11 @@ export default function App() {
         />
         <Route 
           path="/" 
-          element={session ? <Dashboard /> : <Navigate to="/login" />} 
+          element={session ? (
+            <AppShell>
+              <Dashboard />
+            </AppShell>
+          ) : <Navigate to="/login" />} 
         />
       </Routes>
     </Router>
