@@ -18,6 +18,7 @@ export default function Login() {
 
     try {
       if (isSignUp) {
+        console.log('Starting signup for:', email, name);
         const { data, error: signUpError } = await supabase.auth.signUp({
           email,
           password,
@@ -26,23 +27,33 @@ export default function Login() {
           }
         });
 
-        if (signUpError) throw signUpError;
+        console.log('Supabase signup result:', data);
 
-        // Fire and forget — don't wait for Sheets
-        createAthlete({ email, name }).catch(err => {
-          console.error('Background Sheets sync failed:', err);
-        });
+        if (signUpError) {
+          console.error('Supabase signup error:', signUpError);
+          throw signUpError;
+        }
 
-        // App.jsx onAuthStateChange handles routing automatically
+        console.log('Firing Sheets sync in background...');
+        // Fire and forget
+        createAthlete({ email, name })
+          .then(result => console.log('Sheets sync result:', result))
+          .catch(err => console.error('Background Sheets sync failed:', err));
+
+        console.log('Signup complete, navigating handled by onAuthStateChange');
       } else {
+        console.log('Attempting login for:', email);
         const { error: signInError } = await supabase.auth.signInWithPassword({
           email,
           password
         });
 
+        console.log('Login result:', signInError);
+
         if (signInError) throw signInError;
       }
     } catch (err) {
+      console.error('Caught error:', err);
       setError(err.message);
     } finally {
       setLoading(false);
