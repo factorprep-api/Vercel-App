@@ -46,3 +46,19 @@ export const getAthleteByEmail = async (email) => {
     return { status: "Error", message: err.message };
   }
 };
+
+export async function fetchExerciseLibrary() {
+  const API_URL = "https://script.google.com/macros/s/AKfycbzIBfOpFxgmTYWlFDuKPVSx30tXJRlyWhhvZVBqkAO_nKeF1GfGTFVvTolLr-CBpoHl8A/exec";
+  const response = await fetch(`${API_URL}?action=getFullData`);
+  const json = await response.json();
+  const lib = [];
+  for (let i = 1; i < json.library.length; i++) {
+    const row = json.library[i];
+    const name = String(row[0] || '').trim();
+    const url = String(row[1] || '').trim();
+    const muscle = (row.length > 2 && String(row[2]).trim()) ? String(row[2]).trim() : 'Other';
+    if (!name || !url) continue;
+    lib.push({ name, muscle, rawUrl: url });
+  }
+  return lib;
+}
