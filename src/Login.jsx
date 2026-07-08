@@ -9,35 +9,31 @@ export default function Login() {
   const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [info, setInfo] = useState('');
   const [showForgot, setShowForgot] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError('');
-    setInfo('');
 
     try {
       if (isSignUp) {
         const { data, error: signUpError } = await supabase.auth.signUp({
           email,
           password,
-          options: { data: { name } }
+          options: {
+            data: { name, role: 'athlete' }
+          }
         });
 
         if (signUpError) throw signUpError;
 
-        const sheetsResult = await createAthlete({ email, name });
+        // Fire and forget — don't wait for Sheets
+        createAthlete({ email, name }).catch(err => {
+          console.error('Background Sheets sync failed:', err);
+        });
 
-        if (sheetsResult.status !== 'Success' && sheetsResult.status !== 'AlreadyExists') {
-          console.error('Sheets response:', sheetsResult);
-          throw new Error(sheetsResult.message || 'Account created but failed to sync with Google Sheets');
-        }
-
-        setInfo('Account created! Loading your hub...');
-        // The onAuthStateChange in App.jsx will handle routing
-        // It will retry the role lookup automatically
+        // App.jsx onAuthStateChange handles routing automatically
       } else {
         const { error: signInError } = await supabase.auth.signInWithPassword({
           email,
@@ -57,16 +53,17 @@ export default function Login() {
     e.preventDefault();
     setLoading(true);
     setError('');
-    setInfo('');
 
     try {
       const { error: resetError } = await supabase.auth.resetPasswordForEmail(email);
       if (resetError) throw resetError;
-      setInfo('Password reset link sent to ' + email + '. Check your inbox.');
       setShowForgot(false);
+      setError('');
+      setEmail('');
+      setLoading(false);
+      alert('Password reset link sent to your email.');
     } catch (err) {
       setError(err.message);
-    } finally {
       setLoading(false);
     }
   };
@@ -97,12 +94,6 @@ export default function Login() {
           </div>
         )}
 
-        {info && (
-          <div style={{ background: '#d1fae5', color: '#065f46', padding: '12px', borderRadius: '6px', marginBottom: '20px', fontSize: '14px' }}>
-            {info}
-          </div>
-        )}
-
         {showForgot ? (
           <form onSubmit={handleForgotPassword}>
             <div style={{ marginBottom: '20px' }}>
@@ -113,7 +104,7 @@ export default function Login() {
               {loading ? 'Sending...' : 'Send Reset Link'}
             </button>
             <div style={{ textAlign: 'center' }}>
-              <button type="button" onClick={() => { setShowForgot(false); setError(''); setInfo(''); }} style={{ background: 'none', border: 'none', color: '#008ed3', fontSize: '14px', cursor: 'pointer', textDecoration: 'underline' }}>
+              <button type="button" onClick={() => { setShowForgot(false); setError(''); }} style={{ background: 'none', border: 'none', color: '#008ed3', fontSize: '14px', cursor: 'pointer', textDecoration: 'underline' }}>
                 ← Back to Login
               </button>
             </div>
@@ -152,7 +143,7 @@ export default function Login() {
             )}
 
             <div style={{ textAlign: 'center' }}>
-              <button type="button" onClick={() => { setIsSignUp(!isSignUp); setError(''); setInfo(''); }} style={{ background: 'none', border: 'none', color: '#008ed3', fontSize: '14px', cursor: 'pointer', textDecoration: 'underline' }}>
+              <button type="button" onClick={() => { setIsSignUp(!isSignUp); setError(''); }} style={{ background: 'none', border: 'none', color: '#008ed3', fontSize: '14px', cursor: 'pointer', textDecoration: 'underline' }}>
                 {isSignUp ? 'Already have an account? Sign In' : "Don't have an account? Sign Up"}
               </button>
             </div>

@@ -1,7 +1,6 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { supabase } from './supabase';
-import { getAthleteByEmail } from './api';
 import Login from './Login';
 import AthleteHub from './AthleteHub';
 import CoachHub from './CoachHub';
@@ -23,40 +22,26 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [role, setRole] = useState(null);
 
-  const checkRole = async (email, retry = 0) => {
-    try {
-      const result = await getAthleteByEmail(email);
-      if (result.status === 'Success') {
-        setRole(result.role || 'athlete');
-      } else if (result.status === 'NotFound' && retry < 3) {
-        // Race condition: Sheets row may not be written yet — retry after 2s
-        setTimeout(() => checkRole(email, retry + 1), 2000);
-      } else {
-        setRole('unknown');
-      }
-    } catch (err) {
-      setRole('unknown');
-    }
+  const getRole = (session) => {
+    if (!session) return null;
+    const metadataRole = session.user?.user_metadata?.role;
+    return metadataRole || 'athlete';
   };
 
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       if (session) {
-        await checkRole(session.user.email);
+        setRole(getRole(session));
       }
       setLoading(false);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
       if (session) {
-        setLoading(true);
-        setRole(null);
-        await checkRole(session.user.email);
-        setLoading(false);
+        setRole(getRole(session));
       } else {
-        // Logged out — clear everything
         localStorage.removeItem('fp_athlete_data');
         setRole(null);
       }
@@ -81,13 +66,7 @@ export default function App() {
         <Route path="/" element={
           session ? (
             <AppShell>
-              {role === 'athlete' ? <AthleteHub /> :
-               role === 'coach' ? <CoachHub /> :
-               <div style={{ padding: '40px', textAlign: 'center' }}>
-                 <h2>Profile Not Found</h2>
-                 <p>No athlete or coach profile found for your account.</p>
-                 <p>Contact your coach or administrator.</p>
-               </div>}
+              {role === 'coach' ? <CoachHub /> : <AthleteHub />}
             </AppShell>
           ) : <Navigate to="/login" />}
         />
