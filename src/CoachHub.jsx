@@ -1,69 +1,54 @@
+import { useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { supabase } from './supabase';
-import { fetchAllData } from './api';
+import { getAthleteByEmail } from './api';
 
 export default function CoachHub() {
-  const [loading, setLoading] = useState(true);
-  const [athletes, setAthletes] = useState([]);
+  const navigate = useNavigate();
   const [coachName, setCoachName] = useState('');
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const loadCoachHub = async () => {
+    const loadName = async () => {
       try {
         const { data: { user } } = await supabase.auth.getUser();
-        if (!user) {
-          setLoading(false);
-          return;
-        }
-
-        const data = await fetchAllData();
-        if (data.error) {
-          setLoading(false);
-          return;
-        }
-
-        const headers = data.athletes[0] || [];
-        const athRows = data.athletes.slice(1);
-        
-        let emailCol = -1;
-        for (let c = 0; c < headers.length; c++) {
-          if (String(headers[c]).trim().toLowerCase() === 'email') {
-            emailCol = c;
-            break;
+        if (user) {
+          const result = await getAthleteByEmail(user.email);
+          if (result.status === 'Success' && result.role === 'coach') {
+            setCoachName(result.coachName || user.user_metadata?.name || 'Coach');
           }
         }
-        
-        const athleteList = athRows.map((row, idx) => ({
-          id: idx,
-          name: String(row[0]).trim(),
-          email: emailCol >= 0 ? String(row[emailCol] || '').trim() : ''
-        }));
-        
-        setAthletes(athleteList);
-        setCoachName(user.user_metadata?.name || user.email.split('@')[0]);
-        setLoading(false);
       } catch (err) {
-        console.error('Coach hub load error:', err);
-        setLoading(false);
+        console.error(err);
       }
+      setLoading(false);
     };
-
-    loadCoachHub();
+    loadName();
   }, []);
 
-  if (loading) {
-    return (
-      <div style={{
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        minHeight: '60vh',
-        fontFamily: 'Roboto Flex, sans-serif'
-      }}>
-        <p>Loading coach dashboard...</p>
-      </div>
-    );
-  }
+  const cards = [
+    {
+      title: 'Program Builder',
+      desc: 'Create and edit training programs',
+      icon: '🔧',
+      path: '/program-builder',
+      color: '#008ed3'
+    },
+    {
+      title: 'Program Library',
+      desc: 'View and manage all saved programs',
+      icon: '📚',
+      path: '/program-library',
+      color: '#2e7d32'
+    },
+    {
+      title: 'Exercise Library',
+      desc: 'Browse and add exercises with video demos',
+      icon: '🏋️',
+      path: '/exercise-library',
+      color: '#d3ca17'
+    }
+  ];
 
   return (
     <div style={{
@@ -72,39 +57,58 @@ export default function CoachHub() {
       backgroundColor: '#f8fafc',
       minHeight: '100vh'
     }}>
-      <h1 style={{ fontSize: '24px', color: '#333', marginBottom: '20px' }}>Coach Hub</h1>
-      <p style={{ color: '#666', marginBottom: '20px' }}>Welcome, {coachName}</p>
-      
-      <div style={{
-        background: 'white',
-        border: '1px solid #ddd',
-        borderRadius: '8px',
-        padding: '20px',
-        boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
-      }}>
-        <h2 style={{ marginBottom: '15px', color: '#111' }}>Assigned Athletes</h2>
-        {athletes.length === 0 ? (
-          <p style={{ color: '#888' }}>No athletes assigned yet.</p>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {athletes.map(a => (
-              <div key={a.id} style={{
-                padding: '12px',
-                background: '#f4f6f8',
-                borderRadius: '6px',
-                borderBottom: '1px solid #e2e3e5'
-              }}>
-                <strong>{a.name}</strong>
-                {a.email && <div style={{ fontSize: '13px', color: '#666' }}>{a.email}</div>}
-              </div>
-            ))}
-          </div>
-        )}
+      <div style={{ marginBottom: '30px' }}>
+        <h1 style={{ fontSize: '28px', color: '#333', marginBottom: '4px' }}>Coach Hub</h1>
+        {coachName && <p style={{ color: '#666', fontSize: '15px' }}>Welcome, {coachName}</p>}
       </div>
-      
-      <p style={{ marginTop: '20px', color: '#888', fontSize: '13px' }}>
-        Phase 2: Add program management, athlete performance tracking, and messaging features.
-      </p>
+
+      <div style={{
+        display: 'flex',
+        gap: '20px',
+        flexWrap: 'wrap'
+      }}>
+        {cards.map((card, i) => (
+          <div
+            key={i}
+            onClick={() => navigate(card.path)}
+            style={{
+              flex: '1 1 250px',
+              maxWidth: '300px',
+              background: 'white',
+              border: '1px solid #ddd',
+              borderRadius: '12px',
+              padding: '24px',
+              cursor: 'pointer',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+              transition: 'transform 0.15s, box-shadow 0.15s'
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.transform = 'translateY(-3px)';
+              e.currentTarget.style.boxShadow = '0 6px 20px rgba(0,0,0,0.1)';
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.transform = 'translateY(0)';
+              e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.06)';
+            }}
+          >
+            <div style={{
+              width: '50px',
+              height: '50px',
+              borderRadius: '50%',
+              background: card.color,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '24px',
+              marginBottom: '16px'
+            }}>
+              {card.icon}
+            </div>
+            <h2 style={{ fontSize: '18px', color: '#333', marginBottom: '6px' }}>{card.title}</h2>
+            <p style={{ fontSize: '13px', color: '#888' }}>{card.desc}</p>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
