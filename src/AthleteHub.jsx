@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { supabase } from './supabase';
-import { getAthleteByEmail, fetchLogbookByAthlete } from './api';
+import { fetchLogbookByAthlete } from './api';
 
 export default function AthleteHub() {
   const navigate = useNavigate();
@@ -19,35 +19,38 @@ export default function AthleteHub() {
         if (cached) {
           const parsed = JSON.parse(cached);
           if (parsed.email === user.email) {
-            setAthleteName(parsed.athleteName);
+            setAthleteName(parsed.athleteName || '');
             setLoading(false);
-            // Still preload fresh data in background
-            preloadData(user.email);
+            // Preload fresh data in background (skip if athleteName not loaded)
+            if (parsed.athleteName) {
+              preloadData(user.email, parsed.athleteName);
+            }
             return;
           }
         }
 
-        // Fresh fetch and cache
-        await preloadData(user.email);
-        const fresh = JSON.parse(localStorage.getItem('fp_athlete_data') || '{}');
-        setAthleteName(fresh.athleteName || '');
+        // For now, just get basic info — data loads on MyProgress page
+        const name = user.user_metadata?.name || user.email.split('@')[0];
+        setAthleteName(name);
         setLoading(false);
+
+        // Preload in background (data will be fetched again on MyProgress for accuracy)
+        preloadData(user.email, name);
       } catch (err) {
         console.error(err);
         setLoading(false);
       }
     };
 
-    const preloadData = async (email) => {
+    const preloadData = async (email, name) => {
+      if (!name) return;
       try {
-        const athleteData = await getAthleteByEmail(email);
-        const logData = await fetchLogbookByAthlete(athleteData.athleteName || '');
-
+        const logData = await fetchLogbookByAthlete(name);
+        
+        // We'll need athlete data from API too — simplify for now
         localStorage.setItem('fp_athlete_data', JSON.stringify({
           email,
-          athleteName: athleteData.athleteName || '',
-          headers: athleteData.headers || [],
-          rowData: athleteData.rowData || [],
+          athleteName: name,
           history: logData.data || [],
           cachedAt: new Date().toISOString()
         }));
