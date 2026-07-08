@@ -23,11 +23,14 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [role, setRole] = useState(null);
 
-  const checkRole = async (email) => {
+  const checkRole = async (email, retry = 0) => {
     try {
       const result = await getAthleteByEmail(email);
       if (result.status === 'Success') {
         setRole(result.role || 'athlete');
+      } else if (result.status === 'NotFound' && retry < 3) {
+        // Race condition: Sheets row may not be written yet — retry after 2s
+        setTimeout(() => checkRole(email, retry + 1), 2000);
       } else {
         setRole('unknown');
       }
@@ -49,9 +52,12 @@ export default function App() {
       setSession(session);
       if (session) {
         setLoading(true);
+        setRole(null);
         await checkRole(session.user.email);
         setLoading(false);
       } else {
+        // Logged out — clear everything
+        localStorage.removeItem('fp_athlete_data');
         setRole(null);
       }
     });
@@ -72,7 +78,6 @@ export default function App() {
       <Routes>
         <Route path="/login" element={!session ? <Login /> : <Navigate to="/" />} />
         
-        {/* Hub routes */}
         <Route path="/" element={
           session ? (
             <AppShell>
@@ -87,7 +92,6 @@ export default function App() {
           ) : <Navigate to="/login" />}
         />
 
-        {/* Athlete routes */}
         <Route path="/progress" element={
           <ProtectedRoute session={session} role={role} allowedRoles={['athlete']}>
             <MyProgress />
@@ -98,15 +102,11 @@ export default function App() {
             <ProgramViewer />
           </ProtectedRoute>
         } />
-
-        {/* Shared routes */}
         <Route path="/exercise-library" element={
           <ProtectedRoute session={session} role={role} allowedRoles={['athlete', 'coach']}>
             <ExerciseLibrary />
           </ProtectedRoute>
         } />
-
-        {/* Coach routes */}
         <Route path="/program-builder" element={
           <ProtectedRoute session={session} role={role} allowedRoles={['coach']}>
             <ProgramBuilder />
