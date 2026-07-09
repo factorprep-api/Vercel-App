@@ -14,13 +14,16 @@ export default function ProgramBuilder() {
   const [toast, setToast] = useState(null);
   const [saving, setSaving] = useState(false);
 
+  // Builder state
   const [draft, setDraft] = useState([]);
   const [form, setForm] = useState({ name: '', category: '', notes: '', phase: 'Work Block', exercise: '', sets: '', reps: '', intensity: '', tempo: '', rest: '' });
 
-  const [assignAthlete, setAssignAthlete] = useState('');
-  const [assignRows, setAssignRows] = useState('');
+  // Assign state - now uses checkbox selection
+  const [selectedAthletes, setSelectedAthletes] = useState(new Set());
+  const [athleteSearch, setAthleteSearch] = useState('');
   const [selectedPrograms, setSelectedPrograms] = useState([]);
 
+  // Library add state
   const [libForm, setLibForm] = useState({ name: '', video: '', baseLift: '', multiplier: '' });
   const [libSearch, setLibSearch] = useState('');
 
@@ -65,6 +68,12 @@ export default function ProgramBuilder() {
     return athletes.slice(1).map((row, i) => ({ row: i + 1, name: String(row[0] || '').trim() })).filter(a => a.name);
   }, [athletes]);
 
+  const filteredAthletes = useMemo(() => {
+    if (!athleteSearch.trim()) return athleteOptions;
+    const q = athleteSearch.toLowerCase();
+    return athleteOptions.filter(a => a.name.toLowerCase().includes(q));
+  }, [athleteOptions, athleteSearch]);
+
   const libSearchResults = useMemo(() => {
     if (!libSearch.trim()) return [];
     const tokens = libSearch.toLowerCase().split(/\s+/);
@@ -79,6 +88,7 @@ export default function ProgramBuilder() {
     setTimeout(() => setToast(null), 3500);
   }
 
+  // ===== BUILDER =====
   function addDraftExercise() {
     if (!form.exercise) { showToast('Please select an exercise.', true); return; }
     if (!form.sets || !form.reps) { showToast('Sets and Reps are required.', true); return; }
@@ -118,14 +128,37 @@ export default function ProgramBuilder() {
     setSaving(false);
   }
 
+  // ===== ASSIGN (checkbox-based) =====
+  function toggleAthlete(rowNum) {
+    setSelectedAthletes(prev => {
+      const next = new Set(prev);
+      if (next.has(rowNum)) next.delete(rowNum); else next.add(rowNum);
+      return next;
+    });
+  }
+
+  function selectAllFiltered() {
+    setSelectedAthletes(prev => {
+      const next = new Set(prev);
+      filteredAthletes.forEach(a => next.add(a.row));
+      return next;
+    });
+  }
+
+  function deselectAllFiltered() {
+    setSelectedAthletes(prev => {
+      const next = new Set(prev);
+      filteredAthletes.forEach(a => next.delete(a.row));
+      return next;
+    });
+  }
+
+  function clearAthleteSelection() {
+    setSelectedAthletes(new Set());
+  }
+
   async function handleAssign() {
-    const rows = [];
-    if (assignAthlete) rows.push(parseInt(assignAthlete));
-    if (assignRows.trim()) {
-      const extra = assignRows.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n));
-      rows.push(...extra);
-    }
-    if (rows.length === 0) { showToast('Select at least one athlete.', true); return; }
+    if (selectedAthletes.size === 0) { showToast('Select at least one athlete.', true); return; }
     if (selectedPrograms.length === 0) { showToast('Select at least one program.', true); return; }
 
     const headers = athletes[0] || [];
@@ -135,15 +168,18 @@ export default function ProgramBuilder() {
     }
     if (assignCol === -1) { showToast('Program Assignment column not found.', true); return; }
 
+    const rows = Array.from(selectedAthletes);
     try {
       const res = await assignProgramBulk(rows, selectedPrograms.join(', '), assignCol);
       if (res.status === 'Success') {
         showToast(`Assigned to ${res.rowsUpdated} athlete(s)`);
-        setAssignAthlete(''); setAssignRows(''); setSelectedPrograms([]);
+        setSelectedAthletes(new Set());
+        setSelectedPrograms([]);
       } else { showToast('Assignment failed', true); }
     } catch (err) { showToast('Network error', true); }
   }
 
+  // ===== LIBRARY ADD =====
   async function handleAddExercise() {
     if (!libForm.name) { showToast('Exercise name is required.', true); return; }
     try {
@@ -178,9 +214,9 @@ export default function ProgramBuilder() {
           ))}
         </div>
 
+        {/* ===== TAB 1: BUILDER ===== */}
         {activeTab === 'builder' && !loading && !error && (
           <div className="pb-panel-container">
-            {/* Left panel */}
             <div className="pb-left">
               <h3 className="pb-section-title">1. Categorize & Name</h3>
               <div className="pb-field-row" style={{ marginBottom: 15 }}>
@@ -270,23 +306,66 @@ export default function ProgramBuilder() {
           </div>
         )}
 
+        {/* ===== TAB 2: ASSIGN (checkbox-based) ===== */}
         {activeTab === 'assign' && !loading && !error && (
           <div style={{ background: '#f9f9f9', padding: 20, borderRadius: 8, border: '1px solid #ddd' }}>
             <h3 className="pb-section-title">Assign Programs To Athletes</h3>
             <div className="pb-assign-grid">
+              {/* Athlete checkbox panel */}
               <div className="pb-assign-card">
-                <h4>Step 1: Select Athlete(s)</h4>
-                <label className="pb-label">Athlete:</label>
-                <select className="pb-select" value={assignAthlete} onChange={e => setAssignAthlete(e.target.value)} style={{ marginBottom: 15 }}>
-                  <option value="">-- Select Single Athlete --</option>
-                  {athleteOptions.map(a => <option key={a.row} value={a.row}>{a.name}</option>)}
-                </select>
-                <label className="pb-label">Or Select Multiple by Row Numbers (comma-separated):</label>
-                <input className="pb-input" value={assignRows} onChange={e => setAssignRows(e.target.value)} placeholder="e.g. 3,5,7,12" />
-                <p className="pb-hint"><strong>TIP:</strong> Leave dropdown blank and enter row numbers to assign to multiple at once.</p>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                  <h4 style={{ margin: 0, color: '#555', fontSize: 14 }}>Step 1: Select Athlete(s)</h4>
+                  <span style={{ fontSize: 12, color: '#008ed3', fontWeight: 'bold' }}>{selectedAthletes.size} selected</span>
+                </div>
+
+                {/* Search + bulk actions */}
+                <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+                  <div style={{ position: 'relative', flex: 1 }}>
+                    <Search size={16} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#999' }} />
+                    <input
+                      className="pb-input"
+                      style={{ paddingLeft: 32 }}
+                      value={athleteSearch}
+                      onChange={e => setAthleteSearch(e.target.value)}
+                      placeholder="Search athletes..."
+                    />
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 15 }}>
+                  <button onClick={selectAllFiltered} style={{ flex: 1, padding: '8px', fontSize: 12, fontWeight: 'bold', background: '#e3f2fd', color: '#008ed3', border: '1px solid #008ed3', borderRadius: 4, cursor: 'pointer' }}>Select All Visible</button>
+                  <button onClick={deselectAllFiltered} style={{ flex: 1, padding: '8px', fontSize: 12, fontWeight: 'bold', background: '#fafafa', color: '#666', border: '1px solid #ddd', borderRadius: 4, cursor: 'pointer' }}>Clear Visible</button>
+                  <button onClick={clearAthleteSelection} style={{ flex: 1, padding: '8px', fontSize: 12, fontWeight: 'bold', background: '#fee', color: '#dc3545', border: '1px solid #fcc', borderRadius: 4, cursor: 'pointer' }}>Clear All</button>
+                </div>
+
+                {/* Scrollable checkbox list */}
+                <div style={{ maxHeight: '300px', overflowY: 'auto', border: '1px solid #eee', borderRadius: 6, background: '#fff' }}>
+                  {filteredAthletes.length === 0 ? (
+                    <p style={{ padding: 16, color: '#888', textAlign: 'center' }}>No athletes found.</p>
+                  ) : filteredAthletes.map(a => (
+                    <label
+                      key={a.row}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
+                        borderBottom: '1px solid #f5f5f5', cursor: 'pointer',
+                        background: selectedAthletes.has(a.row) ? '#e3f2fd' : 'transparent',
+                        transition: 'background 0.1s'
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedAthletes.has(a.row)}
+                        onChange={() => toggleAthlete(a.row)}
+                        style={{ width: 18, height: 18, cursor: 'pointer' }}
+                      />
+                      <span style={{ fontSize: 14, color: '#333' }}>{a.name}</span>
+                    </label>
+                  ))}
+                </div>
               </div>
+
+              {/* Program multi-select panel */}
               <div className="pb-assign-card">
-                <h4>Step 2: Select Program(s)</h4>
+                <h4 style={{ margin: '0 0 15px 0', color: '#555', fontSize: 14 }}>Step 2: Select Program(s)</h4>
                 <label className="pb-label">Available Programs:</label>
                 <select
                   className="pb-multi-select"
@@ -299,12 +378,14 @@ export default function ProgramBuilder() {
                 <p className="pb-hint">Hold Ctrl/Cmd to select multiple programs.</p>
               </div>
             </div>
+
             <button className="pb-save-btn" style={{ marginTop: 25, background: '#008ed3' }} onClick={handleAssign}>
-              <UserCheck size={18} /> Assign Selected Program(s)
+              <UserCheck size={18} /> Assign to {selectedAthletes.size} Athlete(s)
             </button>
           </div>
         )}
 
+        {/* ===== TAB 3: MANAGE LIBRARY ===== */}
         {activeTab === 'library' && !loading && !error && (
           <div style={{ background: '#f9f9f9', padding: 20, borderRadius: 8, border: '1px solid #ddd' }}>
             <h3 className="pb-section-title">Add New Exercise To Library</h3>
