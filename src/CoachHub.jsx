@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { supabase } from './supabase';
 import { getAthleteByEmail } from './api';
+import { Wrench, BookOpen, Dumbbell } from 'lucide-react';
 
 export default function CoachHub() {
   const navigate = useNavigate();
@@ -15,7 +16,7 @@ export default function CoachHub() {
         if (user) {
           const result = await getAthleteByEmail(user.email);
           if (result.status === 'Success' && result.role === 'coach') {
-            setCoachName(result.coachName || user.user_metadata?.name || 'Coach');
+            setCoachName(result.athleteName || user.user_metadata?.name || 'Coach');
           }
         }
       } catch (err) {
@@ -27,46 +28,19 @@ export default function CoachHub() {
   }, []);
 
   const cards = [
-    {
-      title: 'Program Builder',
-      desc: 'Create and edit training programs',
-      icon: '🔧',
-      path: '/program-builder',
-      color: '#008ed3'
-    },
-    {
-      title: 'Program Library',
-      desc: 'View and manage all saved programs',
-      icon: '📚',
-      path: '/program-library',
-      color: '#2e7d32'
-    },
-    {
-      title: 'Exercise Library',
-      desc: 'Browse and add exercises with video demos',
-      icon: '🏋️',
-      path: '/exercise-library',
-      color: '#d3ca17'
-    }
+    { title: 'Program Builder', desc: 'Create and edit training programs', icon: Wrench, path: '/program-builder', color: '#008ed3' },
+    { title: 'Program Library', desc: 'View and manage all saved programs', icon: BookOpen, path: '/program-library', color: '#2e7d32' },
+    { title: 'Exercise Library', desc: 'Browse and add exercises with video demos', icon: Dumbbell, path: '/exercise-library', color: '#d3ca17' }
   ];
 
   return (
-    <div style={{
-      fontFamily: 'Roboto Flex, sans-serif',
-      padding: '20px',
-      backgroundColor: '#f8fafc',
-      minHeight: '100vh'
-    }}>
+    <div style={{ fontFamily: '"Roboto Flex", sans-serif', padding: '20px', backgroundColor: '#f8fafc', minHeight: '100vh' }}>
       <div style={{ marginBottom: '30px' }}>
         <h1 style={{ fontSize: '28px', color: '#333', marginBottom: '4px' }}>Coach Hub</h1>
         {coachName && <p style={{ color: '#666', fontSize: '15px' }}>Welcome, {coachName}</p>}
       </div>
 
-      <div style={{
-        display: 'flex',
-        gap: '20px',
-        flexWrap: 'wrap'
-      }}>
+      <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
         {cards.map((card, i) => (
           <div
             key={i}
@@ -92,17 +66,11 @@ export default function CoachHub() {
             }}
           >
             <div style={{
-              width: '50px',
-              height: '50px',
-              borderRadius: '50%',
-              background: card.color,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: '24px',
+              width: '50px', height: '50px', borderRadius: '50%', background: card.color,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
               marginBottom: '16px'
             }}>
-              {card.icon}
+              <card.icon size={24} color="white" strokeWidth={2} />
             </div>
             <h2 style={{ fontSize: '18px', color: '#333', marginBottom: '6px' }}>{card.title}</h2>
             <p style={{ fontSize: '13px', color: '#888' }}>{card.desc}</p>
