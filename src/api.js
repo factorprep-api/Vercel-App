@@ -6,11 +6,12 @@ export const fetchAllData = async () => {
     let json = await response.json();
     return {
       athletes: json.athletes || [],
-      programs: json.programs || [],
+      programs: json.programs || json.program || [],
+      library: json.library || [],
       error: null
     };
   } catch (error) {
-    return { athletes: [], programs: [], error: "Failed to connect to database" };
+    return { athletes: [], programs: [], library: [], error: "Failed to connect to database" };
   }
 };
 
@@ -44,6 +45,17 @@ export const getAthleteByEmail = async (email) => {
     return json;
   } catch (err) {
     return { status: "Error", message: err.message };
+  }
+};
+
+export const saveSession = async (payload) => {
+  try {
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=saveEntireSession&data=${encodeURIComponent(JSON.stringify(payload))}`;
+    let resp = await fetch(url);
+    let json = await resp.json();
+    return json;
+  } catch (err) {
+    return { status: 'Error', message: err.message };
   }
 };
 
