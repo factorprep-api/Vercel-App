@@ -74,3 +74,25 @@ export async function fetchExerciseLibrary() {
   }
   return lib;
 }
+
+export const deleteProgram = async (programName) => {
+  try {
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=deleteProgram&pName=${encodeURIComponent(programName)}`;
+    let resp = await fetch(url);
+    let json = await resp.json();
+    return json;
+  } catch (err) {
+    return { status: 'Error', message: err.message };
+  }
+};
+
+export const updateAssignment = async (athleteName, assignment) => {
+  try {
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=updateAssignment&aName=${encodeURIComponent(athleteName)}&assignment=${encodeURIComponent(assignment)}`;
+    let resp = await fetch(url);
+    let json = await resp.json();
+    return json;
+  } catch (err) {
+    return { status: 'Error', message: err.message };
+  }
+};
