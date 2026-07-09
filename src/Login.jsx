@@ -18,42 +18,28 @@ export default function Login() {
 
     try {
       if (isSignUp) {
-        console.log('Starting signup for:', email, name);
-        const { data, error: signUpError } = await supabase.auth.signUp({
+        const { error: signUpError } = await supabase.auth.signUp({
           email,
           password,
-          options: {
-            data: { name, role: 'athlete' }
-          }
+          options: { data: { name } }
         });
 
-        console.log('Supabase signup result:', data);
+        if (signUpError) throw signUpError;
 
-        if (signUpError) {
-          console.error('Supabase signup error:', signUpError);
-          throw signUpError;
-        }
-
-        console.log('Firing Sheets sync in background...');
-        // Fire and forget
         createAthlete({ email, name })
           .then(result => console.log('Sheets sync result:', result))
           .catch(err => console.error('Background Sheets sync failed:', err));
 
-        console.log('Signup complete, navigating handled by onAuthStateChange');
       } else {
-        console.log('Attempting login for:', email);
         const { error: signInError } = await supabase.auth.signInWithPassword({
           email,
           password
         });
 
-        console.log('Login result:', signInError);
-
         if (signInError) throw signInError;
+        // App.jsx onAuthStateChange will detect session, fetch role from Google Sheets, and route accordingly
       }
     } catch (err) {
-      console.error('Caught error:', err);
       setError(err.message);
     } finally {
       setLoading(false);
@@ -69,7 +55,6 @@ export default function Login() {
       const { error: resetError } = await supabase.auth.resetPasswordForEmail(email);
       if (resetError) throw resetError;
       setShowForgot(false);
-      setError('');
       setEmail('');
       setLoading(false);
       alert('Password reset link sent to your email.');
@@ -87,7 +72,7 @@ export default function Login() {
       justifyContent: 'center',
       minHeight: '100vh',
       background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-      fontFamily: 'Roboto Flex, sans-serif'
+      fontFamily: '"Roboto Flex", "Roboto", sans-serif'
     }}>
       <div style={{
         background: 'white',
@@ -97,7 +82,7 @@ export default function Login() {
         width: '100%',
         maxWidth: '400px'
       }}>
-        <h1 style={{ textAlign: 'center', color: '#333', marginBottom: '30px', fontSize: '28px' }}>FactorPrep</h1>
+        <h1 style={{ textAlign: 'center', color: '#008ed3', marginBottom: '30px', fontSize: '28px', fontWeight: '700' }}>FactorPrep</h1>
 
         {error && (
           <div style={{ background: '#fee2e2', color: '#dc2626', padding: '12px', borderRadius: '6px', marginBottom: '20px', fontSize: '14px' }}>
