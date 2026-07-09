@@ -172,9 +172,11 @@ export default function ProgramViewer() {
       currentGroup.details.push({ sets, reps, intensity, tempo, rest });
     });
     if (currentGroup) groups.push(currentGroup);
+    
+    // FIX: Loop starts at k=0 (not k=1) because library already has headers stripped
     groups.forEach(group => {
       const normalizedName = normalizeString(group.name);
-      for (let k = 1; k < libraryData.length; k++) {
+      for (let k = 0; k < libraryData.length; k++) {  // CHANGED FROM k=1 TO k=0
         const libRow = libraryData[k];
         if (!libRow) continue;
         if (normalizeString(libRow[0]) === normalizedName) {
