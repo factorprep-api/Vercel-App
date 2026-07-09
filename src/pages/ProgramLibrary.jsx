@@ -1,6 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Search, ChevronDown, Trash2, UserPlus, CheckCircle, X, Layers, Dumbbell, FolderClosed } from 'lucide-react';
-import AppShell from '../components/AppShell';
 import { fetchAllData, deleteProgram, updateAssignment } from '../api';
 import './program-library.css';
 
@@ -160,61 +159,59 @@ export default function ProgramLibrary() {
   }
 
   return (
-    <AppShell>
-      <div className="pl-container">
-        <div className="pl-body">
-          <h2 style={{ fontSize: '24px', color: '#008ed3', marginBottom: '16px', fontWeight: '700' }}>Program Library</h2>
+    <div className="pl-container">
+      <div className="pl-body">
+        <h2 style={{ fontSize: '24px', color: '#008ed3', marginBottom: '16px', fontWeight: '700' }}>Program Library</h2>
 
-          <div className="pl-search-wrapper">
-            <Search className="pl-search-icon" size={18} />
-            <input
-              type="text"
-              className="pl-search-box"
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              placeholder="Search programs..."
-            />
-          </div>
+        <div className="pl-search-wrapper">
+          <Search className="pl-search-icon" size={18} />
+          <input
+            type="text"
+            className="pl-search-box"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            placeholder="Search programs..."
+          />
+        </div>
 
-          {loading && <p className="pl-placeholder">Loading programs...</p>}
-          {error && <p className="pl-error">{error}</p>}
-          {!loading && !error && filteredPrograms.length === 0 && (
-            <p className="pl-placeholder">No programs found.</p>
-          )}
+        {loading && <p className="pl-placeholder">Loading programs...</p>}
+        {error && <p className="pl-error">{error}</p>}
+        {!loading && !error && filteredPrograms.length === 0 && (
+          <p className="pl-placeholder">No programs found.</p>
+        )}
 
-          {!loading && !error && (
-            <div className="pl-program-list">
-              {filteredPrograms.map(program => (
-                <div key={program.name} className="pl-program-card">
-                  <div className="pl-program-header" onClick={() => toggleExpand(program.name)}>
-                    <div>
-                      <div className="pl-program-name">{program.name}</div>
-                      <div className="pl-program-meta">
-                        <span className="pl-meta-badge"><Layers size={10} /> {program.categories.size} categor{program.categories.size === 1 ? 'y' : 'ies'}</span>
-                        <span className="pl-meta-badge"><Dumbbell size={10} /> {program.exercises.size} exercises</span>
-                        <span className="pl-meta-badge"><FolderClosed size={10} /> {program.phases.size} phases</span>
-                      </div>
-                    </div>
-                    <div className="pl-actions" onClick={e => e.stopPropagation()}>
-                      <button className="pl-assign-btn" onClick={() => openAssignModal(program.name)}>
-                        <UserPlus size={14} /> Assign
-                      </button>
-                      <button className="pl-delete-btn" onClick={() => handleDelete(program.name)} disabled={deleting === program.name}>
-                        <Trash2 size={14} /> {deleting === program.name ? '...' : 'Delete'}
-                      </button>
-                      <ChevronDown className={`pl-chevron ${expandedProgram === program.name ? 'expanded' : ''}`} size={20} />
+        {!loading && !error && (
+          <div className="pl-program-list">
+            {filteredPrograms.map(program => (
+              <div key={program.name} className="pl-program-card">
+                <div className="pl-program-header" onClick={() => toggleExpand(program.name)}>
+                  <div>
+                    <div className="pl-program-name">{program.name}</div>
+                    <div className="pl-program-meta">
+                      <span className="pl-meta-badge"><Layers size={10} /> {program.categories.size} categor{program.categories.size === 1 ? 'y' : 'ies'}</span>
+                      <span className="pl-meta-badge"><Dumbbell size={10} /> {program.exercises.size} exercises</span>
+                      <span className="pl-meta-badge"><FolderClosed size={10} /> {program.phases.size} phases</span>
                     </div>
                   </div>
-                  {expandedProgram === program.name && (
-                    <div className="pl-expand">
-                      {renderProgramPreview(program)}
-                    </div>
-                  )}
+                  <div className="pl-actions" onClick={e => e.stopPropagation()}>
+                    <button className="pl-assign-btn" onClick={() => openAssignModal(program.name)}>
+                      <UserPlus size={14} /> Assign
+                    </button>
+                    <button className="pl-delete-btn" onClick={() => handleDelete(program.name)} disabled={deleting === program.name}>
+                      <Trash2 size={14} /> {deleting === program.name ? '...' : 'Delete'}
+                    </button>
+                    <ChevronDown className={`pl-chevron ${expandedProgram === program.name ? 'expanded' : ''}`} size={20} />
+                  </div>
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
+                {expandedProgram === program.name && (
+                  <div className="pl-expand">
+                    {renderProgramPreview(program)}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {assignModal && (
@@ -239,6 +236,6 @@ export default function ProgramLibrary() {
           {toast.message}
         </div>
       )}
-    </AppShell>
+    </div>
   );
 }

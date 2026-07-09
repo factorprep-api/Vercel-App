@@ -1,6 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Play, ChevronDown, ChevronUp, Video, Save, CheckCircle, MessageSquare } from 'lucide-react';
-import AppShell from '../components/AppShell';
 import { supabase } from '../supabase';
 import { fetchAllData, getAthleteByEmail, saveSession } from '../api';
 import './program-viewer.css';
@@ -172,11 +171,9 @@ export default function ProgramViewer() {
       currentGroup.details.push({ sets, reps, intensity, tempo, rest });
     });
     if (currentGroup) groups.push(currentGroup);
-    
-    // FIX: Loop starts at k=0 (not k=1) because library already has headers stripped
     groups.forEach(group => {
       const normalizedName = normalizeString(group.name);
-      for (let k = 0; k < libraryData.length; k++) {  // CHANGED FROM k=1 TO k=0
+      for (let k = 0; k < libraryData.length; k++) {
         const libRow = libraryData[k];
         if (!libRow) continue;
         if (normalizeString(libRow[0]) === normalizedName) {
@@ -274,167 +271,161 @@ export default function ProgramViewer() {
 
   if (loading) {
     return (
-      <AppShell>
-        <div className="pv-container">
-          <div className="pv-body">
-            <h2 style={{ fontSize: '24px', color: '#008ed3', marginBottom: '16px', fontWeight: '700' }}>Today's Workout</h2>
-            <p className="pv-placeholder">Loading program data...</p>
-          </div>
+      <div className="pv-container">
+        <div className="pv-body">
+          <h2 style={{ fontSize: '24px', color: '#008ed3', marginBottom: '16px', fontWeight: '700' }}>Today's Workout</h2>
+          <p className="pv-placeholder">Loading program data...</p>
         </div>
-      </AppShell>
+      </div>
     );
   }
 
   if (error) {
     return (
-      <AppShell>
-        <div className="pv-container">
-          <div className="pv-body">
-            <h2 style={{ fontSize: '24px', color: '#008ed3', marginBottom: '16px', fontWeight: '700' }}>Today's Workout</h2>
-            <p className="pv-error">{error}</p>
-          </div>
+      <div className="pv-container">
+        <div className="pv-body">
+          <h2 style={{ fontSize: '24px', color: '#008ed3', marginBottom: '16px', fontWeight: '700' }}>Today's Workout</h2>
+          <p className="pv-error">{error}</p>
         </div>
-      </AppShell>
+      </div>
     );
   }
 
   return (
-    <AppShell>
-      <div className="pv-container">
-        <div className="pv-body">
-          <h2 style={{ fontSize: '24px', color: '#008ed3', marginBottom: '16px', fontWeight: '700' }}>Today's Workout</h2>
+    <div className="pv-container">
+      <div className="pv-body">
+        <h2 style={{ fontSize: '24px', color: '#008ed3', marginBottom: '16px', fontWeight: '700' }}>Today's Workout</h2>
 
-          {assignedPrograms.length > 0 && (
-            <div className="pv-assigned-section">
-              <h3 className="pv-assigned-label">Assigned Workouts</h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '15px' }}>
-                {assignedPrograms.map(prog => (
-                  <button key={prog} className="pv-assigned-btn" onClick={() => startAssignedProgram(prog)}>
-                    <Play size={18} /> START: {prog}
-                  </button>
-                ))}
-              </div>
-              <button className="pv-vault-toggle" onClick={() => setVaultVisible(!vaultVisible)}>
-                {vaultVisible ? <><ChevronUp size={16} /> Hide Vault</> : <><ChevronDown size={16} /> Browse the Vault</>}
-              </button>
+        {assignedPrograms.length > 0 && (
+          <div className="pv-assigned-section">
+            <h3 className="pv-assigned-label">Assigned Workouts</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '15px' }}>
+              {assignedPrograms.map(prog => (
+                <button key={prog} className="pv-assigned-btn" onClick={() => startAssignedProgram(prog)}>
+                  <Play size={18} /> START: {prog}
+                </button>
+              ))}
             </div>
-          )}
+            <button className="pv-vault-toggle" onClick={() => setVaultVisible(!vaultVisible)}>
+              {vaultVisible ? <><ChevronUp size={16} /> Hide Vault</> : <><ChevronDown size={16} /> Browse the Vault</>}
+            </button>
+          </div>
+        )}
 
-          {(vaultVisible || assignedPrograms.length === 0) && (
-            <div className="pv-selectors">
-              <div className="pv-selector-group">
-                <label>Program Name:</label>
-                <select value={selectedProgram} onChange={e => handleProgramChange(e.target.value)}>
-                  <option value="">- Select Program Name -</option>
-                  {uniquePrograms.map(prog => <option key={prog} value={prog}>{prog}</option>)}
+        {(vaultVisible || assignedPrograms.length === 0) && (
+          <div className="pv-selectors">
+            <div className="pv-selector-group">
+              <label>Program Name:</label>
+              <select value={selectedProgram} onChange={e => handleProgramChange(e.target.value)}>
+                <option value="">- Select Program Name -</option>
+                {uniquePrograms.map(prog => <option key={prog} value={prog}>{prog}</option>)}
+              </select>
+            </div>
+            {categories.length > 0 && (
+              <div className="pv-selector-divider pv-selector-group">
+                <label>Filter by Category (Opt):</label>
+                <select value={selectedCategory} onChange={e => { setSelectedCategory(e.target.value); setSaveSuccess(false); }}>
+                  <option value="">- All Categories -</option>
+                  {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
                 </select>
               </div>
-              {categories.length > 0 && (
-                <div className="pv-selector-divider pv-selector-group">
-                  <label>Filter by Category (Opt):</label>
-                  <select value={selectedCategory} onChange={e => { setSelectedCategory(e.target.value); setSaveSuccess(false); }}>
-                    <option value="">- All Categories -</option>
-                    {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                  </select>
-                </div>
-              )}
-            </div>
-          )}
+            )}
+          </div>
+        )}
 
-          {coachNote && (
-            <div className="pv-coach-note" style={{ marginBottom: '20px' }}>
-              <h4><MessageSquare size={14} /> Coach's Notes</h4>
-              <p>{coachNote}</p>
-            </div>
-          )}
+        {coachNote && (
+          <div className="pv-coach-note" style={{ marginBottom: '20px' }}>
+            <h4><MessageSquare size={14} /> Coach's Notes</h4>
+            <p>{coachNote}</p>
+          </div>
+        )}
 
-          {workoutGroups.length === 0 && selectedProgram && (
-            <p className="pv-placeholder">No exercises found for this program.</p>
-          )}
+        {workoutGroups.length === 0 && selectedProgram && (
+          <p className="pv-placeholder">No exercises found for this program.</p>
+        )}
 
-          {!selectedProgram && assignedPrograms.length === 0 && (
-            <p className="pv-placeholder">Select a program to view your workout.</p>
-          )}
+        {!selectedProgram && assignedPrograms.length === 0 && (
+          <p className="pv-placeholder">Select a program to view your workout.</p>
+        )}
 
-          {phaseSections.map(section => (
-            <div key={section.title} className="pv-phase-card" style={{ borderTopColor: section.color }}>
-              <div className="pv-phase-header">{section.title}</div>
-              <div className="pv-phase-body">
-                {section.items.map(group => {
-                  const hasVideo = group.videoUrl || group.ytId;
-                  return (
-                    <div key={group.id}>
-                      <div className="pv-exercise-header">
-                        <h4 className="pv-exercise-name">{group.name}</h4>
-                        {hasVideo && (
-                          <button className="pv-video-toggle" onClick={() => toggleVideo(group.id)}>
-                            <Video size={12} /> Video
-                          </button>
+        {phaseSections.map(section => (
+          <div key={section.title} className="pv-phase-card" style={{ borderTopColor: section.color }}>
+            <div className="pv-phase-header">{section.title}</div>
+            <div className="pv-phase-body">
+              {section.items.map(group => {
+                const hasVideo = group.videoUrl || group.ytId;
+                return (
+                  <div key={group.id}>
+                    <div className="pv-exercise-header">
+                      <h4 className="pv-exercise-name">{group.name}</h4>
+                      {hasVideo && (
+                        <button className="pv-video-toggle" onClick={() => toggleVideo(group.id)}>
+                          <Video size={12} /> Video
+                        </button>
+                      )}
+                    </div>
+                    {hasVideo && expandedVideos.has(group.id) && (
+                      <div className="pv-video-container">
+                        {group.ytId ? (
+                          <iframe src={`https://www.youtube.com/embed/${group.ytId}?rel=0`} allowFullScreen title={group.name} />
+                        ) : (
+                          <video controls playsInline preload="none" controlsList="nodownload">
+                            <source src={group.videoUrl} type="video/mp4" />
+                          </video>
                         )}
                       </div>
-                      {hasVideo && expandedVideos.has(group.id) && (
-                        <div className="pv-video-container">
-                          {group.ytId ? (
-                            <iframe src={`https://www.youtube.com/embed/${group.ytId}?rel=0`} allowFullScreen title={group.name} />
-                          ) : (
-                            <video controls playsInline preload="none" controlsList="nodownload">
-                              <source src={group.videoUrl} type="video/mp4" />
-                            </video>
-                          )}
-                        </div>
-                      )}
-                      {group.details.map((set, idx) => {
-                        const target = calculateTargetLoad(athletesData, athleteRowIndex, group.baseLift, group.multiplier, group.name, set.reps, set.intensity);
-                        const targetNum = target.replace(' kg', '');
-                        const inputKey = group.id + '_' + idx;
-                        const input = inputValues[inputKey] || {};
-                        return (
-                          <div key={idx} className="pv-set-row">
-                            <div className="pv-set-info">
-                              <div className="pv-set-label"><strong>Set {idx + 1}:</strong> {set.reps} reps {set.intensity ? '@ ' + set.intensity + '%' : ''}</div>
-                              {(set.tempo || set.rest) && (
-                                <div className="pv-set-meta">
-                                  {set.tempo && <>Tempo: <span style={{ color: '#555' }}>{set.tempo}</span>{set.rest ? ' | ' : ''}</>}
-                                  {set.rest && <>Rest: <span style={{ color: '#555' }}>{set.rest}</span></>}
-                                </div>
-                              )}
-                              <div className="pv-target">Target: <span className="pv-target-value">{targetNum ? targetNum + 'kg' : target}</span></div>
+                    )}
+                    {group.details.map((set, idx) => {
+                      const target = calculateTargetLoad(athletesData, athleteRowIndex, group.baseLift, group.multiplier, group.name, set.reps, set.intensity);
+                      const targetNum = target.replace(' kg', '');
+                      const inputKey = group.id + '_' + idx;
+                      const input = inputValues[inputKey] || {};
+                      return (
+                        <div key={idx} className="pv-set-row">
+                          <div className="pv-set-info">
+                            <div className="pv-set-label"><strong>Set {idx + 1}:</strong> {set.reps} reps {set.intensity ? '@ ' + set.intensity + '%' : ''}</div>
+                            {(set.tempo || set.rest) && (
+                              <div className="pv-set-meta">
+                                {set.tempo && <>Tempo: <span style={{ color: '#555' }}>{set.tempo}</span>{set.rest ? ' | ' : ''}</>}
+                                {set.rest && <>Rest: <span style={{ color: '#555' }}>{set.rest}</span></>}
+                              </div>
+                            )}
+                            <div className="pv-target">Target: <span className="pv-target-value">{targetNum ? targetNum + 'kg' : target}</span></div>
+                          </div>
+                          <div className="pv-inputs">
+                            <div className="pv-input-group">
+                              <span className="pv-input-label">kg</span>
+                              <input type="number" className="pv-input" placeholder={targetNum || '--'} value={input.wt || ''} onChange={e => handleInputChange(group.id, idx, 'wt', e.target.value)} />
                             </div>
-                            <div className="pv-inputs">
-                              <div className="pv-input-group">
-                                <span className="pv-input-label">kg</span>
-                                <input type="number" className="pv-input" placeholder={targetNum || '--'} value={input.wt || ''} onChange={e => handleInputChange(group.id, idx, 'wt', e.target.value)} />
-                              </div>
-                              <div className="pv-input-group">
-                                <span className="pv-input-label">reps</span>
-                                <input type="number" className="pv-input" placeholder={set.reps} value={input.reps || ''} onChange={e => handleInputChange(group.id, idx, 'reps', e.target.value)} />
-                              </div>
+                            <div className="pv-input-group">
+                              <span className="pv-input-label">reps</span>
+                              <input type="number" className="pv-input" placeholder={set.reps} value={input.reps || ''} onChange={e => handleInputChange(group.id, idx, 'reps', e.target.value)} />
                             </div>
                           </div>
-                        );
-                      })}
-                    </div>
-                  );
-                })}
-              </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
             </div>
-          ))}
+          </div>
+        ))}
 
-          {workoutGroups.length > 0 && !saveSuccess && (
-            <div className="pv-tracker">
-              <button className="pv-save-btn" onClick={handleSaveSession} disabled={saving}>
-                <Save size={18} /> {saving ? 'SAVING...' : 'SAVE & COMPLETE WORKOUT'}
-              </button>
-            </div>
-          )}
+        {workoutGroups.length > 0 && !saveSuccess && (
+          <div className="pv-tracker">
+            <button className="pv-save-btn" onClick={handleSaveSession} disabled={saving}>
+              <Save size={18} /> {saving ? 'SAVING...' : 'SAVE & COMPLETE WORKOUT'}
+            </button>
+          </div>
+        )}
 
-          {saveSuccess && (
-            <div className="pv-tracker">
-              <p className="pv-success-msg"><CheckCircle size={18} /> Excellent work! Data logged to your history.</p>
-            </div>
-          )}
-        </div>
+        {saveSuccess && (
+          <div className="pv-tracker">
+            <p className="pv-success-msg"><CheckCircle size={18} /> Excellent work! Data logged to your history.</p>
+          </div>
+        )}
       </div>
-    </AppShell>
+    </div>
   );
 }

@@ -1,6 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Play, Search, X } from 'lucide-react';
-import AppShell from '../components/AppShell';
 import { fetchExerciseLibrary } from '../api.js';
 import './exercise-library.css';
 
@@ -119,58 +118,56 @@ export default function ExerciseLibrary() {
   const closeModal = () => setModalVideo(null);
 
   return (
-    <AppShell>
-      <div className="exlib-container">
-        <div className="exlib-body">
-          <h2 style={{ fontSize: '24px', color: '#008ed3', marginBottom: '16px', fontWeight: '700' }}>Exercise Library</h2>
+    <div className="exlib-container">
+      <div className="exlib-body">
+        <h2 style={{ fontSize: '24px', color: '#008ed3', marginBottom: '16px', fontWeight: '700' }}>Exercise Library</h2>
 
-          <div className="exlib-search-wrapper">
-            <Search className="exlib-search-icon" size={18} />
-            <input
-              type="text"
-              className="exlib-search-box"
-              value={searchQuery}
-              onChange={handleSearch}
-              placeholder="Search keywords..."
-            />
-          </div>
-
-          {loading && <p className="exlib-placeholder">Downloading Master Library...</p>}
-          {error && <p className="exlib-error-text">Failed to load data. Please refresh.</p>}
-          {!loading && !error && pageGroups.length === 0 && <p className="exlib-placeholder">No exercises found.</p>}
-
-          {!loading && !error && pageGroups.map(group => (
-            <div key={group.cat}>
-              <h3 className="exlib-category-title">{group.cat}</h3>
-              <div className="exlib-video-row">
-                {group.items.map((ex, idx) => {
-                  const ytId = getYouTubeId(ex.rawUrl);
-                  return (
-                    <div key={`${group.cat}-${idx}`} className="exlib-video-card" onClick={() => openModal(ex.rawUrl)} title={ex.name}>
-                      <div className="exlib-thumbnail">
-                        {ytId ? (
-                          <img className="exlib-vid-thumb" src={`https://img.youtube.com/vi/${ytId}/hqdefault.jpg`} loading="lazy" alt={ex.name} />
-                        ) : (
-                          <video className="exlib-vid-thumb-video" src={`${normalizeVideoUrl(ex.rawUrl)}#t=0.001`} preload="metadata" muted playsInline />
-                        )}
-                        <Play className="exlib-play-icon" size={32} fill="currentColor" stroke="none" />
-                      </div>
-                      <div className="exlib-card-info"><p className="exlib-v-title">{ex.name}</p></div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-
-          {totalPages > 1 && (
-            <div className="exlib-pagination">
-              <button className="exlib-page-btn" disabled={currentPage === 1} onClick={() => handlePageChange(currentPage - 1)}>Prev</button>
-              <PageButtons currentPage={currentPage} totalPages={totalPages} onChange={handlePageChange} />
-              <button className="exlib-page-btn" disabled={currentPage === totalPages} onClick={() => handlePageChange(currentPage + 1)}>Next</button>
-            </div>
-          )}
+        <div className="exlib-search-wrapper">
+          <Search className="exlib-search-icon" size={18} />
+          <input
+            type="text"
+            className="exlib-search-box"
+            value={searchQuery}
+            onChange={handleSearch}
+            placeholder="Search keywords..."
+          />
         </div>
+
+        {loading && <p className="exlib-placeholder">Downloading Master Library...</p>}
+        {error && <p className="exlib-error-text">Failed to load data. Please refresh.</p>}
+        {!loading && !error && pageGroups.length === 0 && <p className="exlib-placeholder">No exercises found.</p>}
+
+        {!loading && !error && pageGroups.map(group => (
+          <div key={group.cat}>
+            <h3 className="exlib-category-title">{group.cat}</h3>
+            <div className="exlib-video-row">
+              {group.items.map((ex, idx) => {
+                const ytId = getYouTubeId(ex.rawUrl);
+                return (
+                  <div key={`${group.cat}-${idx}`} className="exlib-video-card" onClick={() => openModal(ex.rawUrl)} title={ex.name}>
+                    <div className="exlib-thumbnail">
+                      {ytId ? (
+                        <img className="exlib-vid-thumb" src={`https://img.youtube.com/vi/${ytId}/hqdefault.jpg`} loading="lazy" alt={ex.name} />
+                      ) : (
+                        <video className="exlib-vid-thumb-video" src={`${normalizeVideoUrl(ex.rawUrl)}#t=0.001`} preload="metadata" muted playsInline />
+                      )}
+                      <Play className="exlib-play-icon" size={32} fill="currentColor" stroke="none" />
+                    </div>
+                    <div className="exlib-card-info"><p className="exlib-v-title">{ex.name}</p></div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+
+        {totalPages > 1 && (
+          <div className="exlib-pagination">
+            <button className="exlib-page-btn" disabled={currentPage === 1} onClick={() => handlePageChange(currentPage - 1)}>Prev</button>
+            <PageButtons currentPage={currentPage} totalPages={totalPages} onChange={handlePageChange} />
+            <button className="exlib-page-btn" disabled={currentPage === totalPages} onClick={() => handlePageChange(currentPage + 1)}>Next</button>
+          </div>
+        )}
       </div>
 
       {modalVideo && (
@@ -187,6 +184,6 @@ export default function ExerciseLibrary() {
           </div>
         </div>
       )}
-    </AppShell>
+    </div>
   );
 }

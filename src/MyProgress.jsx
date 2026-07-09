@@ -1,6 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Dumbbell, Clock } from 'lucide-react';
-import AppShell from './components/AppShell';
 import { supabase } from './supabase';
 import { fetchAllData, fetchLogbookByAthlete, getAthleteByEmail } from './api';
 import './my-progress.css';
@@ -112,77 +111,75 @@ export default function MyProgress() {
   }, [history, exerciseFilter]);
 
   return (
-    <AppShell>
-      <div className="mp-container">
-        <div className="mp-body">
-          <h2 style={{ fontSize: '24px', color: '#008ed3', marginBottom: '16px', fontWeight: '700' }}>My Progress</h2>
+    <div className="mp-container">
+      <div className="mp-body">
+        <h2 style={{ fontSize: '24px', color: '#008ed3', marginBottom: '16px', fontWeight: '700' }}>My Progress</h2>
 
-          {error ? (
-            <p className="mp-error">{error}</p>
-          ) : (
-            <>
-              <div className="mp-tabs">
-                <button className={`mp-tab ${activeTab === 'maxes' ? 'active' : ''}`} onClick={() => setActiveTab('maxes')}>
-                  <Dumbbell size={16} /> Metrics (1RM)
-                </button>
-                <button className={`mp-tab ${activeTab === 'history' ? 'active' : ''}`} onClick={() => setActiveTab('history')}>
-                  <Clock size={16} /> History Vault
-                </button>
+        {error ? (
+          <p className="mp-error">{error}</p>
+        ) : (
+          <>
+            <div className="mp-tabs">
+              <button className={`mp-tab ${activeTab === 'maxes' ? 'active' : ''}`} onClick={() => setActiveTab('maxes')}>
+                <Dumbbell size={16} /> Metrics (1RM)
+              </button>
+              <button className={`mp-tab ${activeTab === 'history' ? 'active' : ''}`} onClick={() => setActiveTab('history')}>
+                <Clock size={16} /> History Vault
+              </button>
+            </div>
+
+            {activeTab === 'maxes' && (
+              <div className="mp-maxes-card">
+                <div className="mp-maxes-header">Current Core Maxes</div>
+                <div className="mp-maxes-grid">
+                  {loading && maxes.length === 0 ? (
+                    <p className="mp-placeholder">Loading metrics...</p>
+                  ) : maxes.length === 0 ? (
+                    <p className="mp-placeholder">No metrics recorded yet.</p>
+                  ) : (
+                    maxes.map((max, i) => (
+                      <div key={i} className="mp-max-item">
+                        <div className="mp-max-label">{max.name}</div>
+                        <div className="mp-max-value">{max.weight} <span className="mp-max-unit">kg</span></div>
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
+            )}
 
-              {activeTab === 'maxes' && (
-                <div className="mp-maxes-card">
-                  <div className="mp-maxes-header">Current Core Maxes</div>
-                  <div className="mp-maxes-grid">
-                    {loading && maxes.length === 0 ? (
-                      <p className="mp-placeholder">Loading metrics...</p>
-                    ) : maxes.length === 0 ? (
-                      <p className="mp-placeholder">No metrics recorded yet.</p>
-                    ) : (
-                      maxes.map((max, i) => (
-                        <div key={i} className="mp-max-item">
-                          <div className="mp-max-label">{max.name}</div>
-                          <div className="mp-max-value">{max.weight} <span className="mp-max-unit">kg</span></div>
+            {activeTab === 'history' && (
+              <div className="mp-history-card">
+                <label className="mp-filter-label">Filter Past Workouts:</label>
+                <select className="mp-filter-select" value={exerciseFilter} onChange={e => setExerciseFilter(e.target.value)}>
+                  <option value="All">All Movements</option>
+                  {uniqueExercises.map(ex => <option key={ex} value={ex}>{ex}</option>)}
+                </select>
+                <div className="mp-history-list">
+                  {loading && history.length === 0 ? (
+                    <p className="mp-placeholder">Loading history...</p>
+                  ) : filteredHistory.length === 0 ? (
+                    <p className="mp-placeholder">No records found.</p>
+                  ) : (
+                    filteredHistory.map((item, i) => (
+                      <div key={i} className="mp-history-item">
+                        <div>
+                          <div className="mp-hist-date">{item.date} | <span className="mp-hist-prog">{item.prog}</span></div>
+                          <div className="mp-hist-ex">{item.ex}</div>
                         </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {activeTab === 'history' && (
-                <div className="mp-history-card">
-                  <label className="mp-filter-label">Filter Past Workouts:</label>
-                  <select className="mp-filter-select" value={exerciseFilter} onChange={e => setExerciseFilter(e.target.value)}>
-                    <option value="All">All Movements</option>
-                    {uniqueExercises.map(ex => <option key={ex} value={ex}>{ex}</option>)}
-                  </select>
-                  <div className="mp-history-list">
-                    {loading && history.length === 0 ? (
-                      <p className="mp-placeholder">Loading history...</p>
-                    ) : filteredHistory.length === 0 ? (
-                      <p className="mp-placeholder">No records found.</p>
-                    ) : (
-                      filteredHistory.map((item, i) => (
-                        <div key={i} className="mp-history-item">
-                          <div>
-                            <div className="mp-hist-date">{item.date} | <span className="mp-hist-prog">{item.prog}</span></div>
-                            <div className="mp-hist-ex">{item.ex}</div>
-                          </div>
-                          <div>
-                            <div className="mp-hist-weight">{item.wt} <span className="mp-max-unit">kg</span></div>
-                            <div className="mp-hist-reps">x {item.reps} reps</div>
-                          </div>
+                        <div>
+                          <div className="mp-hist-weight">{item.wt} <span className="mp-max-unit">kg</span></div>
+                          <div className="mp-hist-reps">x {item.reps} reps</div>
                         </div>
-                      ))
-                    )}
-                  </div>
+                      </div>
+                    ))
+                  )}
                 </div>
-              )}
-            </>
-          )}
-        </div>
+              </div>
+            )}
+          </>
+        )}
       </div>
-    </AppShell>
+    </div>
   );
 }
