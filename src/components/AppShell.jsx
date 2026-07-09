@@ -15,18 +15,25 @@ export default function AppShell({ children }) {
       minHeight: '100vh',
       display: 'flex',
       flexDirection: 'column',
-      fontFamily: 'Roboto Flex, sans-serif'
+      fontFamily: '"Roboto Flex", "Roboto", sans-serif'
     }}>
       <header style={{
         background: '#008ed3',
         color: 'white',
-        padding: '16px 24px',
+        padding: '12px 24px',
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
         boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
       }}>
-        <h1 style={{ margin: 0, fontSize: '24px', fontWeight: 'bold' }}>FactorPrep</h1>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <img 
+            src="/logo.png" 
+            alt="FactorPrep" 
+            style={{ height: '32px', width: 'auto' }}
+          />
+          <h1 style={{ margin: 0, fontSize: '20px', fontWeight: '700', letterSpacing: '0.5px' }}>FactorPrep</h1>
+        </div>
         <button onClick={handleLogout} style={{
           background: 'transparent',
           border: '2px solid white',
@@ -34,14 +41,16 @@ export default function AppShell({ children }) {
           padding: '8px 16px',
           borderRadius: '6px',
           cursor: 'pointer',
-          fontSize: '14px',
-          fontWeight: 'bold'
+          fontSize: '13px',
+          fontWeight: 'bold',
+          letterSpacing: '0.5px',
+          transition: 'background 0.2s'
         }}>
           Logout
         </button>
       </header>
 
-      <main style={{ flex: 1, padding: '24px', background: '#f5f5f5' }}>
+      <main style={{ flex: 1, padding: '20px', background: '#f5f5f5' }}>
         {children}
       </main>
 
@@ -49,10 +58,10 @@ export default function AppShell({ children }) {
         background: '#333',
         color: 'white',
         textAlign: 'center',
-        padding: '16px',
-        fontSize: '14px'
+        padding: '12px',
+        fontSize: '12px'
       }}>
-        © 2026 FactorPrep
+        © 2026 FactorPreP
       </footer>
     </div>
   );
