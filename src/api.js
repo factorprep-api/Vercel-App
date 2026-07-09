@@ -96,3 +96,37 @@ export const updateAssignment = async (athleteName, assignment) => {
     return { status: 'Error', message: err.message };
   }
 };
+
+export const saveFullProgram = async (programRows) => {
+  try {
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=saveFullProgram&programData=${encodeURIComponent(JSON.stringify(programRows))}`;
+    let resp = await fetch(url);
+    let json = await resp.json();
+    return json;
+  } catch (err) {
+    return { status: 'Error', message: err.message };
+  }
+};
+
+export const assignProgramBulk = async (athleteRows, programAssignment, columnId) => {
+  try {
+    let payload = JSON.stringify({ athleteRows, programAssignment, columnId });
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=assignProgram&data=${encodeURIComponent(payload)}`;
+    let resp = await fetch(url);
+    let json = await resp.json();
+    return json;
+  } catch (err) {
+    return { status: 'Error', message: err.message };
+  }
+};
+
+export const addExerciseToLibrary = async (exerciseData) => {
+  try {
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=addExercise&data=${encodeURIComponent(JSON.stringify(exerciseData))}`;
+    let resp = await fetch(url);
+    let json = await resp.json();
+    return json;
+  } catch (err) {
+    return { status: 'Error', message: err.message };
+  }
+};
