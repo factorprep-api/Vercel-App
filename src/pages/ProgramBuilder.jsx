@@ -14,16 +14,13 @@ export default function ProgramBuilder() {
   const [toast, setToast] = useState(null);
   const [saving, setSaving] = useState(false);
 
-  // Builder state
   const [draft, setDraft] = useState([]);
   const [form, setForm] = useState({ name: '', category: '', notes: '', phase: 'Work Block', exercise: '', sets: '', reps: '', intensity: '', tempo: '', rest: '' });
 
-  // Assign state
   const [assignAthlete, setAssignAthlete] = useState('');
   const [assignRows, setAssignRows] = useState('');
   const [selectedPrograms, setSelectedPrograms] = useState([]);
 
-  // Library add state
   const [libForm, setLibForm] = useState({ name: '', video: '', baseLift: '', multiplier: '' });
   const [libSearch, setLibSearch] = useState('');
 
@@ -82,7 +79,6 @@ export default function ProgramBuilder() {
     setTimeout(() => setToast(null), 3500);
   }
 
-  // ===== BUILDER =====
   function addDraftExercise() {
     if (!form.exercise) { showToast('Please select an exercise.', true); return; }
     if (!form.sets || !form.reps) { showToast('Sets and Reps are required.', true); return; }
@@ -122,7 +118,6 @@ export default function ProgramBuilder() {
     setSaving(false);
   }
 
-  // ===== ASSIGN =====
   async function handleAssign() {
     const rows = [];
     if (assignAthlete) rows.push(parseInt(assignAthlete));
@@ -149,7 +144,6 @@ export default function ProgramBuilder() {
     } catch (err) { showToast('Network error', true); }
   }
 
-  // ===== LIBRARY ADD =====
   async function handleAddExercise() {
     if (!libForm.name) { showToast('Exercise name is required.', true); return; }
     try {
@@ -173,12 +167,7 @@ export default function ProgramBuilder() {
   return (
     <AppShell>
       <div className="pb-wrapper">
-        <div className="pb-header">
-          <h2>Program Builder</h2>
-          <span className={`pb-status ${loading ? 'loading' : error ? 'error' : 'ready'}`}>
-            {loading ? 'LOADING...' : error ? 'ERROR' : 'COACH HUB READY'}
-          </span>
-        </div>
+        <h2 style={{ fontSize: '24px', color: '#008ed3', marginBottom: '16px', fontWeight: '700' }}>Program Builder</h2>
 
         <div className="pb-tabs">
           {tabs.map(tab => (
@@ -189,9 +178,9 @@ export default function ProgramBuilder() {
           ))}
         </div>
 
-        {/* ===== TAB 1: BUILDER ===== */}
         {activeTab === 'builder' && !loading && !error && (
           <div className="pb-panel-container">
+            {/* Left panel */}
             <div className="pb-left">
               <h3 className="pb-section-title">1. Categorize & Name</h3>
               <div className="pb-field-row" style={{ marginBottom: 15 }}>
@@ -205,7 +194,7 @@ export default function ProgramBuilder() {
                 </div>
               </div>
               <div className="pb-field-group">
-                <label className="pb-label">Coach's Notes (Optional - applies to whole workout):</label>
+                <label className="pb-label">Coach's Notes (Optional):</label>
                 <textarea className="pb-textarea" value={form.notes} onChange={e => setForm({...form, notes: e.target.value})} placeholder="e.g. Focus on tempo today." />
               </div>
 
@@ -281,7 +270,6 @@ export default function ProgramBuilder() {
           </div>
         )}
 
-        {/* ===== TAB 2: ASSIGN ===== */}
         {activeTab === 'assign' && !loading && !error && (
           <div style={{ background: '#f9f9f9', padding: 20, borderRadius: 8, border: '1px solid #ddd' }}>
             <h3 className="pb-section-title">Assign Programs To Athletes</h3>
@@ -317,7 +305,6 @@ export default function ProgramBuilder() {
           </div>
         )}
 
-        {/* ===== TAB 3: MANAGE LIBRARY ===== */}
         {activeTab === 'library' && !loading && !error && (
           <div style={{ background: '#f9f9f9', padding: 20, borderRadius: 8, border: '1px solid #ddd' }}>
             <h3 className="pb-section-title">Add New Exercise To Library</h3>

@@ -122,12 +122,7 @@ export default function ExerciseLibrary() {
     <AppShell>
       <div className="exlib-container">
         <div className="exlib-body">
-          <div className="exlib-page-title">
-            <h2>Exercise Library</h2>
-            <span className={`exlib-status ${loading ? 'loading' : error ? 'error' : 'ready'}`}>
-              {loading ? 'LOADING...' : error ? 'ERROR' : `${fullLibrary.length} VIDEOS`}
-            </span>
-          </div>
+          <h2 style={{ fontSize: '24px', color: '#008ed3', marginBottom: '16px', fontWeight: '700' }}>Exercise Library</h2>
 
           <div className="exlib-search-wrapper">
             <Search className="exlib-search-icon" size={18} />

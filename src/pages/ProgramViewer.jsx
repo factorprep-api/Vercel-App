@@ -275,10 +275,7 @@ export default function ProgramViewer() {
       <AppShell>
         <div className="pv-container">
           <div className="pv-body">
-            <div className="pv-page-title">
-              <h2>Today's Workout</h2>
-              <span className="pv-status loading">LOADING...</span>
-            </div>
+            <h2 style={{ fontSize: '24px', color: '#008ed3', marginBottom: '16px', fontWeight: '700' }}>Today's Workout</h2>
             <p className="pv-placeholder">Loading program data...</p>
           </div>
         </div>
@@ -291,10 +288,7 @@ export default function ProgramViewer() {
       <AppShell>
         <div className="pv-container">
           <div className="pv-body">
-            <div className="pv-page-title">
-              <h2>Today's Workout</h2>
-              <span className="pv-status error">ERROR</span>
-            </div>
+            <h2 style={{ fontSize: '24px', color: '#008ed3', marginBottom: '16px', fontWeight: '700' }}>Today's Workout</h2>
             <p className="pv-error">{error}</p>
           </div>
         </div>
@@ -306,12 +300,7 @@ export default function ProgramViewer() {
     <AppShell>
       <div className="pv-container">
         <div className="pv-body">
-          <div className="pv-page-title">
-            <h2>Today's Workout</h2>
-            <span className={`pv-status ${selectedProgram ? 'ready' : 'loading'}`}>
-              {selectedProgram ? 'READY' : 'SELECT PROGRAM'}
-            </span>
-          </div>
+          <h2 style={{ fontSize: '24px', color: '#008ed3', marginBottom: '16px', fontWeight: '700' }}>Today's Workout</h2>
 
           {assignedPrograms.length > 0 && (
             <div className="pv-assigned-section">

@@ -19,7 +19,6 @@ export default function MyProgress() {
   }, []);
 
   async function loadData() {
-    // 1. Check cache for instant load
     const cached = localStorage.getItem('fp_athlete_data');
     if (cached) {
       try {
@@ -33,7 +32,6 @@ export default function MyProgress() {
       } catch {}
     }
 
-    // 2. Fetch fresh data
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
@@ -42,7 +40,6 @@ export default function MyProgress() {
         return;
       }
 
-      // Get athlete by email
       const athleteResult = await getAthleteByEmail(user.email);
       let name = '';
       if (athleteResult.status === 'Success') {
@@ -52,12 +49,10 @@ export default function MyProgress() {
       }
       setAthleteName(name);
 
-      // Fetch all data for maxes
       const allData = await fetchAllData();
       const athletes = allData.athletes;
       const headers = athletes[0] || [];
 
-      // Find athlete row by name (case-insensitive)
       let athleteRow = null;
       for (let i = 1; i < athletes.length; i++) {
         if (String(athletes[i][0] || '').trim().toLowerCase() === name.toLowerCase()) {
@@ -66,7 +61,6 @@ export default function MyProgress() {
         }
       }
 
-      // Parse maxes from row + headers
       const parsedMaxes = [];
       if (athleteRow) {
         const skipCols = ['pin', 'email', 'role', 'coach', 'notes', 'phone', 'password'];
@@ -81,7 +75,6 @@ export default function MyProgress() {
       }
       setMaxes(parsedMaxes);
 
-      // Fetch logbook
       const logResult = await fetchLogbookByAthlete(name);
       const logData = logResult.data || [];
       const formattedHistory = logData.map(item => ({
@@ -94,7 +87,6 @@ export default function MyProgress() {
 
       setHistory(formattedHistory);
 
-      // Update cache
       localStorage.setItem('fp_athlete_data', JSON.stringify({
         email: user.email,
         athleteName: name,
@@ -110,12 +102,10 @@ export default function MyProgress() {
     }
   }
 
-  // Unique exercises for filter dropdown
   const uniqueExercises = useMemo(() => {
     return [...new Set(history.map(h => h.ex).filter(Boolean))].sort();
   }, [history]);
 
-  // Filtered history
   const filteredHistory = useMemo(() => {
     if (exerciseFilter === 'All') return history;
     return history.filter(h => h.ex === exerciseFilter);
@@ -125,12 +115,7 @@ export default function MyProgress() {
     <AppShell>
       <div className="mp-container">
         <div className="mp-body">
-          <div className="mp-page-title">
-            <h2>My Progress</h2>
-            <span className={`mp-status ${loading ? 'loading' : error ? 'error' : 'ready'}`}>
-              {loading ? 'LOADING...' : error ? 'ERROR' : `${maxes.length} MAXES`}
-            </span>
-          </div>
+          <h2 style={{ fontSize: '24px', color: '#008ed3', marginBottom: '16px', fontWeight: '700' }}>My Progress</h2>
 
           {error ? (
             <p className="mp-error">{error}</p>

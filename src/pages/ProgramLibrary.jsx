@@ -163,12 +163,7 @@ export default function ProgramLibrary() {
     <AppShell>
       <div className="pl-container">
         <div className="pl-body">
-          <div className="pl-page-title">
-            <h2>Program Library</h2>
-            <span className={`pl-status ${loading ? 'loading' : error ? 'error' : 'ready'}`}>
-              {loading ? 'LOADING...' : error ? 'ERROR' : `${filteredPrograms.length} PROGRAMS`}
-            </span>
-          </div>
+          <h2 style={{ fontSize: '24px', color: '#008ed3', marginBottom: '16px', fontWeight: '700' }}>Program Library</h2>
 
           <div className="pl-search-wrapper">
             <Search className="pl-search-icon" size={18} />
