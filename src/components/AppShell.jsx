@@ -26,13 +26,13 @@ export default function AppShell({ children }) {
         alignItems: 'center',
         boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
           <img 
             src="/logo.png" 
             alt="FactorPrep" 
             style={{ height: '32px', width: 'auto' }}
           />
-          <h1 style={{ margin: 0, fontSize: '20px', fontWeight: '700', letterSpacing: '0.5px' }}>FactorPrep</h1>
+          <h1 style={{ margin: 0, fontSize: '20px', fontWeight: '700', letterSpacing: '0.5px' }}>Exercise Program</h1>
         </div>
         <button onClick={handleLogout} style={{
           background: 'transparent',
@@ -61,7 +61,7 @@ export default function AppShell({ children }) {
         padding: '12px',
         fontSize: '12px'
       }}>
-        © 2026 FactorPreP
+        © 2026 Exercise Program
       </footer>
     </div>
   );

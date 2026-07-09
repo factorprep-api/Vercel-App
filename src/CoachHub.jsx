@@ -35,12 +35,12 @@ export default function CoachHub() {
 
   return (
     <div style={{ fontFamily: '"Roboto Flex", sans-serif', padding: '20px', backgroundColor: '#f8fafc', minHeight: '100vh' }}>
-      <div style={{ marginBottom: '30px' }}>
+      <div style={{ marginBottom: '30px', textAlign: 'center' }}>
         <h1 style={{ fontSize: '28px', color: '#333', marginBottom: '4px' }}>Coach Hub</h1>
         {coachName && <p style={{ color: '#666', fontSize: '15px' }}>Welcome, {coachName}</p>}
       </div>
 
-      <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', justifyContent: 'center' }}>
         {cards.map((card, i) => (
           <div
             key={i}
