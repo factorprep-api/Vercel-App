@@ -1,159 +1,203 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect, useMemo } from 'react';
+import { Dumbbell, Clock } from 'lucide-react';
+import AppShell from './components/AppShell';
 import { supabase } from './supabase';
-import { getAthleteByEmail, fetchLogbookByAthlete } from './api';
+import { fetchAllData, fetchLogbookByAthlete, getAthleteByEmail } from './api';
+import './my-progress.css';
 
 export default function MyProgress() {
-  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
-  const [myHistory, setMyHistory] = useState([]);
-  const [athleteName, setAthleteName] = useState('');
+  const [error, setError] = useState(null);
   const [maxes, setMaxes] = useState([]);
+  const [history, setHistory] = useState([]);
+  const [athleteName, setAthleteName] = useState('');
   const [activeTab, setActiveTab] = useState('maxes');
-  const [uniqueExercises, setUniqueExercises] = useState([]);
-  const [filterVal, setFilterVal] = useState('All');
+  const [exerciseFilter, setExerciseFilter] = useState('All');
 
   useEffect(() => {
-    const loadData = async () => {
-      try {
-        const cached = localStorage.getItem('fp_athlete_data');
-        if (cached) {
-          const data = JSON.parse(cached);
-          setAthleteName(data.athleteName || '');
-          setMyHistory(data.history || []);
-
-          // Parse maxes from cached row data
-          const headers = data.headers || [];
-          const rowData = data.rowData || [];
-          const parsedMaxes = [];
-          for (let c = 1; c < headers.length; c++) {
-            let liftName = String(headers[c]).trim();
-            if (liftName.toLowerCase() === 'pin') continue;
-            if (liftName.toLowerCase() === 'email') continue;
-            if (liftName.toLowerCase() === 'program assignment') continue;
-            let liftWeight = parseFloat(rowData[c]);
-            if (liftName !== '' && !isNaN(liftWeight) && liftWeight > 0) {
-              parsedMaxes.push({ name: liftName, weight: liftWeight });
-            }
-          }
-          setMaxes(parsedMaxes);
-          setUniqueExercises([...new Set((data.history || []).map(h => h.ex))].filter(Boolean).sort());
-          setLoading(false);
-          return;
-        }
-
-        // No cache — fetch fresh
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) { setLoading(false); return; }
-
-        const athleteData = await getAthleteByEmail(user.email);
-        if (athleteData.status !== 'Success') { setLoading(false); return; }
-
-        setAthleteName(athleteData.athleteName);
-        const logData = await fetchLogbookByAthlete(athleteData.athleteName);
-        setMyHistory(logData.data || []);
-
-        const headers = athleteData.headers || [];
-        const rowData = athleteData.rowData || [];
-        const parsedMaxes = [];
-        for (let c = 1; c < headers.length; c++) {
-          let liftName = String(headers[c]).trim();
-          if (liftName.toLowerCase() === 'pin') continue;
-          if (liftName.toLowerCase() === 'email') continue;
-          if (liftName.toLowerCase() === 'program assignment') continue;
-          let liftWeight = parseFloat(rowData[c]);
-          if (liftName !== '' && !isNaN(liftWeight) && liftWeight > 0) {
-            parsedMaxes.push({ name: liftName, weight: liftWeight });
-          }
-        }
-        setMaxes(parsedMaxes);
-        setUniqueExercises([...new Set((logData.data || []).map(h => h.ex))].filter(Boolean).sort());
-
-        // Cache it for next time
-        localStorage.setItem('fp_athlete_data', JSON.stringify({
-          email: user.email,
-          athleteName: athleteData.athleteName,
-          headers, rowData,
-          history: logData.data || [],
-          cachedAt: new Date().toISOString()
-        }));
-
-        setLoading(false);
-      } catch (err) {
-        console.error(err);
-        setLoading(false);
-      }
-    };
     loadData();
   }, []);
 
-  const filteredHistory = myHistory.filter(h => filterVal === 'All' ? true : h.ex === filterVal);
+  async function loadData() {
+    // 1. Check cache for instant load
+    const cached = localStorage.getItem('fp_athlete_data');
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        if (parsed.athleteName) {
+          setAthleteName(parsed.athleteName);
+          if (parsed.maxes && Array.isArray(parsed.maxes)) setMaxes(parsed.maxes);
+          if (parsed.history && Array.isArray(parsed.history)) setHistory(parsed.history);
+          setLoading(false);
+        }
+      } catch {}
+    }
 
-  if (loading) {
-    return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh', fontFamily: 'Roboto Flex, sans-serif' }}>
-        <p>Loading your progress...</p>
-      </div>
-    );
+    // 2. Fetch fresh data
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setError('Not authenticated');
+        setLoading(false);
+        return;
+      }
+
+      // Get athlete by email
+      const athleteResult = await getAthleteByEmail(user.email);
+      let name = '';
+      if (athleteResult.status === 'Success') {
+        name = athleteResult.athleteName || athleteResult.name || athleteResult.coachName || user.user_metadata?.name || user.email.split('@')[0];
+      } else {
+        name = user.user_metadata?.name || user.email.split('@')[0];
+      }
+      setAthleteName(name);
+
+      // Fetch all data for maxes
+      const allData = await fetchAllData();
+      const athletes = allData.athletes;
+      const headers = athletes[0] || [];
+
+      // Find athlete row by name (case-insensitive)
+      let athleteRow = null;
+      for (let i = 1; i < athletes.length; i++) {
+        if (String(athletes[i][0] || '').trim().toLowerCase() === name.toLowerCase()) {
+          athleteRow = athletes[i];
+          break;
+        }
+      }
+
+      // Parse maxes from row + headers
+      const parsedMaxes = [];
+      if (athleteRow) {
+        const skipCols = ['pin', 'email', 'role', 'coach', 'notes', 'phone', 'password'];
+        for (let c = 1; c < headers.length; c++) {
+          const liftName = String(headers[c] || '').trim();
+          if (!liftName || skipCols.includes(liftName.toLowerCase())) continue;
+          const liftWeight = parseFloat(athleteRow[c]);
+          if (!isNaN(liftWeight) && liftWeight > 0) {
+            parsedMaxes.push({ name: liftName, weight: liftWeight });
+          }
+        }
+      }
+      setMaxes(parsedMaxes);
+
+      // Fetch logbook
+      const logResult = await fetchLogbookByAthlete(name);
+      const logData = logResult.data || [];
+      const formattedHistory = logData.map(item => ({
+        date: String(item.date || '').split('T')[0],
+        prog: item.prog || '',
+        ex: item.ex || '',
+        wt: item.wt || '',
+        reps: item.reps || ''
+      })).reverse();
+
+      setHistory(formattedHistory);
+
+      // Update cache
+      localStorage.setItem('fp_athlete_data', JSON.stringify({
+        email: user.email,
+        athleteName: name,
+        maxes: parsedMaxes,
+        history: formattedHistory,
+        cachedAt: new Date().toISOString()
+      }));
+
+      setLoading(false);
+    } catch (err) {
+      setError('Failed to load progress data. Please refresh.');
+      setLoading(false);
+    }
   }
 
+  // Unique exercises for filter dropdown
+  const uniqueExercises = useMemo(() => {
+    return [...new Set(history.map(h => h.ex).filter(Boolean))].sort();
+  }, [history]);
+
+  // Filtered history
+  const filteredHistory = useMemo(() => {
+    if (exerciseFilter === 'All') return history;
+    return history.filter(h => h.ex === exerciseFilter);
+  }, [history, exerciseFilter]);
+
   return (
-    <div style={{ fontFamily: 'Roboto Flex, sans-serif', padding: '20px', backgroundColor: '#f8fafc', minHeight: '100vh' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px' }}>
-        <button onClick={() => navigate('/')} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer' }}>← Back</button>
-        <div>
-          <h1 style={{ fontSize: '24px', color: '#333' }}>My Progress</h1>
-          <p style={{ color: '#666', fontSize: '14px' }}>{athleteName}</p>
-        </div>
-      </div>
-      <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
-        <button onClick={() => setActiveTab('maxes')} style={{ flex: 1, padding: '12px', background: activeTab === 'maxes' ? '#008ed3' : 'white', color: activeTab === 'maxes' ? 'white' : '#666', border: '1px solid #ddd', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Metrics (1RM)</button>
-        <button onClick={() => setActiveTab('history')} style={{ flex: 1, padding: '12px', background: activeTab === 'history' ? '#008ed3' : 'white', color: activeTab === 'history' ? 'white' : '#666', border: '1px solid #ddd', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>History Vault</button>
-      </div>
-      {activeTab === 'maxes' && (
-        <div style={{ background: 'white', border: '1px solid #ddd', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-          <div style={{ background: '#111', color: 'white', padding: '12px 15px', fontWeight: 'bold', fontSize: '14px', textTransform: 'uppercase' }}>Current Core Maxes</div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', padding: '15px 10px' }}>
-            {maxes.length === 0 ? (<p style={{ padding: '15px', color: '#888' }}>No metrics recorded yet.</p>) : (
-              maxes.map((m, i) => (
-                <div key={i} style={{ width: '50%', boxSizing: 'border-box', padding: '5px' }}>
-                  <div style={{ background: '#f4f6f8', border: '1px solid #e2e3e5', padding: '15px', borderRadius: '6px', textAlign: 'center' }}>
-                    <div style={{ fontSize: '11px', color: '#555', fontWeight: 'bold', textTransform: 'uppercase' }}>{m.name}</div>
-                    <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#2e7d32', marginTop: '8px' }}>{m.weight} <span style={{ fontSize: '13px', color: '#888' }}>kg</span></div>
+    <AppShell>
+      <div className="mp-container">
+        <div className="mp-body">
+          <div className="mp-page-title">
+            <h2>My Progress</h2>
+            <span className={`mp-status ${loading ? 'loading' : error ? 'error' : 'ready'}`}>
+              {loading ? 'LOADING...' : error ? 'ERROR' : `${maxes.length} MAXES`}
+            </span>
+          </div>
+
+          {error ? (
+            <p className="mp-error">{error}</p>
+          ) : (
+            <>
+              <div className="mp-tabs">
+                <button className={`mp-tab ${activeTab === 'maxes' ? 'active' : ''}`} onClick={() => setActiveTab('maxes')}>
+                  <Dumbbell size={16} /> Metrics (1RM)
+                </button>
+                <button className={`mp-tab ${activeTab === 'history' ? 'active' : ''}`} onClick={() => setActiveTab('history')}>
+                  <Clock size={16} /> History Vault
+                </button>
+              </div>
+
+              {activeTab === 'maxes' && (
+                <div className="mp-maxes-card">
+                  <div className="mp-maxes-header">Current Core Maxes</div>
+                  <div className="mp-maxes-grid">
+                    {loading && maxes.length === 0 ? (
+                      <p className="mp-placeholder">Loading metrics...</p>
+                    ) : maxes.length === 0 ? (
+                      <p className="mp-placeholder">No metrics recorded yet.</p>
+                    ) : (
+                      maxes.map((max, i) => (
+                        <div key={i} className="mp-max-item">
+                          <div className="mp-max-label">{max.name}</div>
+                          <div className="mp-max-value">{max.weight} <span className="mp-max-unit">kg</span></div>
+                        </div>
+                      ))
+                    )}
                   </div>
                 </div>
-              ))
-            )}
-          </div>
-        </div>
-      )}
-      {activeTab === 'history' && (
-        <div style={{ background: 'white', border: '1px solid #ddd', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-          <label style={{ fontWeight: 'bold', fontSize: '13px', color: '#555' }}>Filter Past Workouts:</label>
-          <select value={filterVal} onChange={(e) => setFilterVal(e.target.value)} style={{ width: '100%', padding: '12px', fontSize: '14px', border: '2px solid #eee', borderRadius: '4px', marginTop: '5px', marginBottom: '15px', background: '#fdfdfd' }}>
-            <option value="All">All Movements</option>
-            {uniqueExercises.map((ex, i) => <option key={i} value={ex}>{ex}</option>)}
-          </select>
-          <div style={{ maxHeight: '500px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {filteredHistory.length === 0 ? (<p style={{ color: '#999', textAlign: 'center', marginTop: '20px' }}>No records found.</p>) : (
-              filteredHistory.map((item, i) => (
-                <div key={i} style={{ background: '#fdfdfd', border: '1px solid #e2e3e5', padding: '12px', borderLeft: '4px solid #008ed3', borderRadius: '6px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-                    <div>
-                      <div style={{ fontSize: '11px', color: '#888' }}>{String(item.date).split('T')[0]} | <strong>{item.prog}</strong></div>
-                      <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#111', marginTop: '4px' }}>{item.ex}</div>
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontWeight: 'bold', fontSize: '18px', color: '#111' }}>{item.wt} <span style={{ fontSize: '12px', fontWeight: 'normal', color: '#666' }}>kg</span></div>
-                      <div style={{ fontSize: '12px', color: '#666', marginTop: '2px' }}>x {item.reps} reps</div>
-                    </div>
+              )}
+
+              {activeTab === 'history' && (
+                <div className="mp-history-card">
+                  <label className="mp-filter-label">Filter Past Workouts:</label>
+                  <select className="mp-filter-select" value={exerciseFilter} onChange={e => setExerciseFilter(e.target.value)}>
+                    <option value="All">All Movements</option>
+                    {uniqueExercises.map(ex => <option key={ex} value={ex}>{ex}</option>)}
+                  </select>
+                  <div className="mp-history-list">
+                    {loading && history.length === 0 ? (
+                      <p className="mp-placeholder">Loading history...</p>
+                    ) : filteredHistory.length === 0 ? (
+                      <p className="mp-placeholder">No records found.</p>
+                    ) : (
+                      filteredHistory.map((item, i) => (
+                        <div key={i} className="mp-history-item">
+                          <div>
+                            <div className="mp-hist-date">{item.date} | <span className="mp-hist-prog">{item.prog}</span></div>
+                            <div className="mp-hist-ex">{item.ex}</div>
+                          </div>
+                          <div>
+                            <div className="mp-hist-weight">{item.wt} <span className="mp-max-unit">kg</span></div>
+                            <div className="mp-hist-reps">x {item.reps} reps</div>
+                          </div>
+                        </div>
+                      ))
+                    )}
                   </div>
                 </div>
-              ))
-            )}
-          </div>
+              )}
+            </>
+          )}
         </div>
-      )}
-    </div>
+      </div>
+    </AppShell>
   );
 }
