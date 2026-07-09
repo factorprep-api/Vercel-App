@@ -1,40 +1,49 @@
-/* Exercise Library Styles */
 .exlib-container { font-family: 'Roboto Flex', 'Helvetica Neue', Arial, sans-serif; color: #333; width: 100%; min-height: 100vh; padding: 20px 8px; overflow-x: hidden; }
 .exlib-body { max-width: 1200px; margin: 0 auto; width: 100%; }
-.exlib-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #d0d7de; padding-bottom: 15px; margin-bottom: 20px; }
-.exlib-header h2 { margin: 0; color: #008ed3; text-transform: uppercase; font-size: 20px; letter-spacing: 1px; }
+
+.exlib-page-title { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.exlib-page-title h2 { margin: 0; color: #008ed3; text-transform: uppercase; font-size: 18px; letter-spacing: 1px; }
 .exlib-status { padding: 6px 12px; border-radius: 12px; font-size: 11px; font-weight: bold; }
 .exlib-status.loading { background: #d3ca17; color: #111; }
 .exlib-status.ready { background: #28a745; color: white; }
 .exlib-status.error { background: #dc3545; color: white; }
+
 .exlib-search-wrapper { position: relative; margin-bottom: 25px; }
 .exlib-search-icon { position: absolute; left: 16px; top: 50%; transform: translateY(-50%); color: #999; pointer-events: none; }
 .exlib-search-box { width: 100%; padding: 14px 20px 14px 48px; border-radius: 8px; border: 1px solid #ccc; font-size: 16px; outline: none; transition: border-color 0.2s; }
 .exlib-search-box:focus { border-color: #008ed3; }
-.exlib-category-title { font-size: 20px; font-weight: bold; margin: 0 0 15px 0; text-transform: uppercase; color: #008ed3; text-align: center; }
+
+.exlib-category-title { font-size: 18px; font-weight: bold; margin: 0 0 15px 0; text-transform: uppercase; color: #008ed3; text-align: center; }
 .exlib-video-row { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 40px; width: 100%; }
+
 .exlib-video-card { flex: 0 0 auto; width: calc(50% - 6px); background: #ffffff; border-radius: 8px; overflow: hidden; cursor: pointer; box-shadow: 0 4px 10px rgba(0,0,0,0.06); transition: transform 0.2s, box-shadow 0.2s; }
 .exlib-video-card:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(0,142,211,0.15); }
+
 .exlib-thumbnail { width: 100%; aspect-ratio: 16/9; background: #222; position: relative; border-bottom: 1px solid #f0f0f0; }
 .exlib-vid-thumb, .exlib-vid-thumb-video { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0.85; transition: opacity 0.3s; }
 .exlib-video-card:hover .exlib-vid-thumb, .exlib-video-card:hover .exlib-vid-thumb-video { opacity: 1; }
 .exlib-play-icon { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: rgba(255,255,255,0.8); z-index: 2; transition: 0.2s; pointer-events: none; }
 .exlib-video-card:hover .exlib-play-icon { color: #008ed3; transform: translate(-50%, -50%) scale(1.1); }
+
 .exlib-card-info { padding: 12px; text-align: center; }
 .exlib-v-title { margin: 0; font-size: 13px; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #111; }
+
 .exlib-pagination { display: flex; justify-content: center; gap: 8px; margin: 20px 0 40px 0; flex-wrap: wrap; }
 .exlib-page-btn { background: #fff; border: 2px solid #d0d7de; padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: bold; transition: 0.2s; }
 .exlib-page-btn:hover:not(:disabled) { border-color: #008ed3; color: #008ed3; }
 .exlib-page-btn.active { background: #008ed3; border-color: #008ed3; color: #fff; }
 .exlib-page-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .exlib-page-dots { padding: 8px 4px; font-weight: bold; color: #888; }
+
 .exlib-modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(17,17,17,0.95); z-index: 9999; overflow-y: auto; padding: 20px; display: flex; align-items: flex-start; justify-content: center; }
 .exlib-modal-content { position: relative; margin-top: 10vh; width: 100%; max-width: 860px; background: #000; border-radius: 8px; box-shadow: 0 10px 40px rgba(0,0,0,0.8); }
 .exlib-close-btn { position: absolute; top: -40px; right: 0; color: white; cursor: pointer; z-index: 100; line-height: 1; background: none; border: none; padding: 0; transition: color 0.2s; display: flex; align-items: center; }
 .exlib-close-btn:hover { color: #008ed3; }
 .exlib-player-container { position: relative; padding-bottom: 56.25%; height: 0; border-radius: 8px; overflow: hidden; }
 .exlib-player-container video, .exlib-player-container iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: none; outline: none; }
+
 .exlib-placeholder { text-align: center; color: #888; margin-top: 50px; }
 .exlib-error-text { text-align: center; color: #dc3545; margin-top: 50px; }
+
 @media(min-width: 768px) { .exlib-video-card { width: calc(33.333% - 8px); } }
 @media(min-width: 1024px) { .exlib-video-card { width: calc(20% - 10px); } }

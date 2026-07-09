@@ -49,7 +49,6 @@ function PageButtons({ currentPage, totalPages, onChange }) {
   const buttons = [];
   const startP = Math.max(1, currentPage - 2);
   const endP = Math.min(totalPages, currentPage + 2);
-
   if (startP > 1) {
     buttons.push(<button key="first" className="exlib-page-btn" onClick={() => onChange(1)}>1</button>);
     if (startP > 2) buttons.push(<span key="dots1" className="exlib-page-dots">...</span>);
@@ -123,7 +122,7 @@ export default function ExerciseLibrary() {
     <AppShell>
       <div className="exlib-container">
         <div className="exlib-body">
-          <div className="exlib-header">
+          <div className="exlib-page-title">
             <h2>Exercise Library</h2>
             <span className={`exlib-status ${loading ? 'loading' : error ? 'error' : 'ready'}`}>
               {loading ? 'LOADING...' : error ? 'ERROR' : `${fullLibrary.length} VIDEOS`}
@@ -171,9 +170,9 @@ export default function ExerciseLibrary() {
 
           {totalPages > 1 && (
             <div className="exlib-pagination">
-              <button className="exlib-page-btn" disabled={currentPage === 1} onClick={() => handlePageChange(currentPage - 1)}>← Prev</button>
+              <button className="exlib-page-btn" disabled={currentPage === 1} onClick={() => handlePageChange(currentPage - 1)}>Prev</button>
               <PageButtons currentPage={currentPage} totalPages={totalPages} onChange={handlePageChange} />
-              <button className="exlib-page-btn" disabled={currentPage === totalPages} onClick={() => handlePageChange(currentPage + 1)}>Next →</button>
+              <button className="exlib-page-btn" disabled={currentPage === totalPages} onClick={() => handlePageChange(currentPage + 1)}>Next</button>
             </div>
           )}
         </div>
