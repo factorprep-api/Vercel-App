@@ -34,7 +34,22 @@ export default function ProgramLibrary() {
 
   const athleteNames = useMemo(() => {
     if (!athletesData.length) return [];
-    return athletesData.slice(1).map(row => String(row[0] || '').trim()).filter(Boolean).sort();
+    const headers = athletesData[0] || [];
+    let roleCol = -1;
+    for (let i = 0; i < headers.length; i++) {
+      if (String(headers[i] || '').trim().toLowerCase() === 'role') { roleCol = i; break; }
+    }
+    return athletesData.slice(1)
+      .filter(row => {
+        if (roleCol !== -1) {
+          const role = String(row[roleCol] || '').trim().toLowerCase();
+          return role !== 'coach';
+        }
+        return true;
+      })
+      .map(row => String(row[0] || '').trim())
+      .filter(Boolean)
+      .sort();
   }, [athletesData]);
 
   const programs = useMemo(() => {
