@@ -49,7 +49,7 @@ export default function AthleteHub() {
               flex: '1 1 250px',
               maxWidth: '300px',
               height: '240px',
-              background: card.bgImage ? `url(${card.bgImage}) center center / cover` : 'white',
+              background: card.bgImage ? `url(${card.bgImage}) center top / cover` : 'white',
               border: '1px solid #ddd',
               borderRadius: '12px',
               cursor: 'pointer',
