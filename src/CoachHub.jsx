@@ -48,7 +48,7 @@ export default function CoachHub() {
             style={{
               flex: '1 1 250px',
               maxWidth: '300px',
-              minHeight: '200px',
+              height: '240px',
               background: card.bgImage ? `url(${card.bgImage}) center center / cover` : 'white',
               border: '1px solid #ddd',
               borderRadius: '12px',
@@ -75,8 +75,8 @@ export default function CoachHub() {
               <>
                 <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0) 60%)' }} />
                 <div style={{ position: 'relative', zIndex: 1, textAlign: 'left' }}>
-                  <h2 style={{ fontSize: '18px', color: '#ffffff', marginBottom: '4px', fontWeight: '700' }}>{card.title}</h2>
-                  <p style={{ fontSize: '13px', color: 'rgba(255,255,255,0.85)' }}>{card.desc}</p>
+                  <h2 style={{ fontSize: '18px', color: '#ffffff', marginBottom: '4px', fontWeight: '700', lineHeight: '1.2' }}>{card.title}</h2>
+                  <p style={{ fontSize: '13px', color: 'rgba(255,255,255,0.85)', lineHeight: '1.4' }}>{card.desc}</p>
                 </div>
               </>
             ) : (
