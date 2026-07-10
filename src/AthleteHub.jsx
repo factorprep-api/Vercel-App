@@ -28,7 +28,7 @@ export default function AthleteHub() {
   }, []);
 
   const cards = [
-    { title: 'My Programs', desc: 'View assigned workouts', icon: ClipboardList, path: '/my-programs', color: '#008ed3', bgImage: '/av-card.png' },
+    { title: 'My Programs', desc: 'View assigned workouts', icon: ClipboardList, path: '/program-viewer', color: '#008ed3', bgImage: '/av-card.png' },
     { title: 'Public Programs', desc: 'Browse free workouts', icon: TrendingUp, path: '/public-programs', color: '#2e7d32', bgImage: '/progress-card.png' },
     { title: 'Exercise Library', desc: 'Browse exercises with videos', icon: Dumbbell, path: '/exercise-library', color: '#d3ca17', bgImage: '/el-athlete-card.png' }
   ];
