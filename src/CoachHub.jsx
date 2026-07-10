@@ -48,7 +48,7 @@ export default function CoachHub() {
             style={{
               flex: '1 1 250px',
               maxWidth: '300px',
-              height: '240px',
+              height: '180px',
               background: card.bgImage ? `url(${card.bgImage}) center center / cover` : 'white',
               border: '1px solid #ddd',
               borderRadius: '12px',
