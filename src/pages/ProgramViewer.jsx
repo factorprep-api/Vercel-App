@@ -15,13 +15,26 @@ function getYouTubeId(url) {
 
 function extractVideoUrl(rawVid) {
   if (!rawVid) return '';
-  let match = rawVid.match(/https:\/\/[^"'\s<>]+/i);
+  let match = String(rawVid).match(/https:\/\/[^"'\s<>]+/i);
   if (match) {
     let cleanUrl = match[0];
     if (cleanUrl.includes('b-cdn.net') && !cleanUrl.toLowerCase().endsWith('.mp4')) cleanUrl += '.mp4';
     return cleanUrl;
   }
-  if (rawVid.includes('youtube') || rawVid.includes('youtu.be')) return rawVid;
+  if (String(rawVid).includes('youtube') || String(rawVid).includes('youtu.be')) return String(rawVid);
+  // Also try http:// URLs
+  match = String(rawVid).match(/http:\/\/[^"'\s<>]+/i);
+  if (match) {
+    let cleanUrl = match[0];
+    if (cleanUrl.includes('b-cdn.net') && !cleanUrl.toLowerCase().endsWith('.mp4')) cleanUrl += '.mp4';
+    return cleanUrl;
+  }
+  // If it looks like a URL without protocol, add https://
+  if (String(rawVid).match(/^www\./) || String(rawVid).match(/\.com|\.net|\.be/)) {
+    let url = 'https://' + String(rawVid).trim();
+    if (url.includes('b-cdn.net') && !url.toLowerCase().endsWith('.mp4')) url += '.mp4';
+    return url;
+  }
   return '';
 }
 
@@ -90,6 +103,19 @@ export default function ProgramViewer() {
       setAthletesData(allData.athletes);
       setProgramData(allData.programs);
       setLibraryData(allData.library);
+      
+      // DEBUG: Log library data structure
+      console.log('=== PROGRAM VIEWER DEBUG ===');
+      console.log('Library rows:', allData.library.length);
+      if (allData.library.length > 0) {
+        console.log('Library header row:', allData.library[0]);
+        if (allData.library.length > 1) {
+          console.log('Library first data row:', allData.library[1]);
+          console.log('Library first row col 0 (name):', allData.library[1][0]);
+          console.log('Library first row col 1 (video):', allData.library[1][1]);
+        }
+      }
+      
       const athleteResult = await getAthleteByEmail(user.email);
       let rowIndex = null;
       if (athleteResult.status === 'Success' && athleteResult.rowIndex) {
@@ -171,19 +197,34 @@ export default function ProgramViewer() {
       currentGroup.details.push({ sets, reps, intensity, tempo, rest });
     });
     if (currentGroup) groups.push(currentGroup);
+    
+    // Match each group against the library
+    console.log('--- Matching exercises to library ---');
+    console.log('Library data length:', libraryData.length);
+    if (libraryData.length > 0) {
+      console.log('Library first row (should be headers):', libraryData[0]);
+    }
+    
     groups.forEach(group => {
       const normalizedName = normalizeString(group.name);
+      let matched = false;
       for (let k = 0; k < libraryData.length; k++) {
         const libRow = libraryData[k];
         if (!libRow) continue;
-        if (normalizeString(libRow[0]) === normalizedName) {
+        const libName = normalizeString(libRow[0]);
+        if (libName === normalizedName) {
+          matched = true;
           group.baseLift = libRow.length > 3 ? String(libRow[3] || '').trim() : '';
           group.multiplier = (libRow.length > 4 && String(libRow[4] || '').trim() !== '') ? parseFloat(libRow[4]) : 1.0;
           const rawVid = String(libRow[1] || '').trim();
           group.videoUrl = extractVideoUrl(rawVid);
           group.ytId = getYouTubeId(rawVid);
+          console.log(`MATCH: "${group.name}" → libRow[${k}] | videoUrl: "${group.videoUrl}" | ytId: "${group.ytId}" | rawVid: "${rawVid}"`);
           break;
         }
+      }
+      if (!matched) {
+        console.log(`NO MATCH: "${group.name}" (normalized: "${normalizedName}")`);
       }
     });
     return groups;
