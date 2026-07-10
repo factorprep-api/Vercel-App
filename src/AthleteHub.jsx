@@ -28,8 +28,8 @@ export default function AthleteHub() {
   }, []);
 
   const cards = [
-    { title: 'My Programs', desc: 'View assigned workouts', icon: ClipboardList, path: '/program-viewer', color: '#008ed3', bgImage: '/av-card.png' },
-    { title: 'My Progress', desc: 'Track maxes and history', icon: TrendingUp, path: '/progress', color: '#2e7d32', bgImage: '/progress-card.png' },
+    { title: 'My Programs', desc: 'View assigned workouts', icon: ClipboardList, path: '/my-programs', color: '#008ed3', bgImage: '/av-card.png' },
+    { title: 'Public Programs', desc: 'Browse free workouts', icon: TrendingUp, path: '/public-programs', color: '#2e7d32', bgImage: '/progress-card.png' },
     { title: 'Exercise Library', desc: 'Browse exercises with videos', icon: Dumbbell, path: '/exercise-library', color: '#d3ca17', bgImage: '/el-athlete-card.png' }
   ];
 
@@ -70,9 +70,9 @@ export default function AthleteHub() {
             {card.bgImage ? (
               <>
                 <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0) 60%)' }} />
-                <div style={{ position: 'absolute', bottom: '16px', left: '20px', right: '20px', zIndex: 1 }}>
-                  <h2 style={{ fontSize: '16px', color: '#ffffff', marginBottom: '4px', fontWeight: '700', lineHeight: '1.2' }}>{card.title}</h2>
-                  <p style={{ fontSize: '12px', color: 'rgba(255,255,255,0.85)', lineHeight: '1.4' }}>{card.desc}</p>
+                <div style={{ position: 'absolute', bottom: '20px', left: '24px', right: '24px', zIndex: 1 }}>
+                  <h2 style={{ fontSize: '18px', color: '#ffffff', marginBottom: '4px', fontWeight: '700', lineHeight: '1.2' }}>{card.title}</h2>
+                  <p style={{ fontSize: '13px', color: 'rgba(255,255,255,0.85)', lineHeight: '1.4' }}>{card.desc}</p>
                 </div>
               </>
             ) : (
