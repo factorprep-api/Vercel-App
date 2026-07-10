@@ -28,9 +28,9 @@ export default function AthleteHub() {
   }, []);
 
   const cards = [
-    { title: 'My Programs', desc: 'View assigned workouts', icon: ClipboardList, path: '/program-viewer', color: '#008ed3' },
-    { title: 'My Progress', desc: 'Track maxes and history', icon: TrendingUp, path: '/progress', color: '#2e7d32' },
-    { title: 'Exercise Library', desc: 'Browse exercises with videos', icon: Dumbbell, path: '/exercise-library', color: '#d3ca17' }
+    { title: 'My Programs', desc: 'View assigned workouts', icon: ClipboardList, path: '/program-viewer', color: '#008ed3', bgImage: '/av-card.png' },
+    { title: 'My Progress', desc: 'Track maxes and history', icon: TrendingUp, path: '/progress', color: '#2e7d32', bgImage: '/progress-card.png' },
+    { title: 'Exercise Library', desc: 'Browse exercises with videos', icon: Dumbbell, path: '/exercise-library', color: '#d3ca17', bgImage: '/el-athlete-card.png' }
   ];
 
   return (
@@ -48,13 +48,15 @@ export default function AthleteHub() {
             style={{
               flex: '1 1 250px',
               maxWidth: '300px',
-              background: 'white',
+              height: '180px',
+              background: card.bgImage ? `url(${card.bgImage}) center center / cover` : 'white',
               border: '1px solid #ddd',
               borderRadius: '12px',
-              padding: '24px',
               cursor: 'pointer',
               boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-              transition: 'transform 0.15s, box-shadow 0.15s'
+              transition: 'transform 0.15s, box-shadow 0.15s',
+              position: 'relative',
+              overflow: 'hidden'
             }}
             onMouseEnter={e => {
               e.currentTarget.style.transform = 'translateY(-3px)';
@@ -65,15 +67,27 @@ export default function AthleteHub() {
               e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.06)';
             }}
           >
-            <div style={{
-              width: '50px', height: '50px', borderRadius: '50%', background: card.color,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              marginBottom: '16px'
-            }}>
-              <card.icon size={24} color="white" strokeWidth={2} />
-            </div>
-            <h2 style={{ fontSize: '18px', color: '#333', marginBottom: '6px' }}>{card.title}</h2>
-            <p style={{ fontSize: '13px', color: '#888' }}>{card.desc}</p>
+            {card.bgImage ? (
+              <>
+                <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0) 60%)' }} />
+                <div style={{ position: 'absolute', bottom: '16px', left: '20px', right: '20px', zIndex: 1 }}>
+                  <h2 style={{ fontSize: '16px', color: '#ffffff', marginBottom: '4px', fontWeight: '700', lineHeight: '1.2' }}>{card.title}</h2>
+                  <p style={{ fontSize: '12px', color: 'rgba(255,255,255,0.85)', lineHeight: '1.4' }}>{card.desc}</p>
+                </div>
+              </>
+            ) : (
+              <div style={{ padding: '24px' }}>
+                <div style={{
+                  width: '50px', height: '50px', borderRadius: '50%', background: card.color,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  marginBottom: '16px'
+                }}>
+                  <card.icon size={24} color="white" strokeWidth={2} />
+                </div>
+                <h2 style={{ fontSize: '18px', color: '#333', marginBottom: '6px' }}>{card.title}</h2>
+                <p style={{ fontSize: '13px', color: '#888' }}>{card.desc}</p>
+              </div>
+            )}
           </div>
         ))}
       </div>
