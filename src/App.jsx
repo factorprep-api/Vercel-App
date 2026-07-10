@@ -10,6 +10,8 @@ import ProgramViewer from './pages/ProgramViewer';
 import ExerciseLibrary from './pages/ExerciseLibrary';
 import ProgramBuilder from './pages/ProgramBuilder';
 import ProgramLibrary from './pages/ProgramLibrary';
+import PublicPrograms from './pages/PublicPrograms';
+import Shop from './pages/Shop';
 import AppShell from './components/AppShell';
 
 function ProtectedRoute({ session, role, allowedRoles, children }) {
@@ -122,6 +124,16 @@ export default function App() {
         <Route path="/program-viewer" element={
           <ProtectedRoute session={session} role={role} allowedRoles={['athlete']}>
             <ProgramViewer />
+          </ProtectedRoute>
+        } />
+        <Route path="/public-programs" element={
+          <ProtectedRoute session={session} role={role} allowedRoles={['athlete']}>
+            <PublicPrograms />
+          </ProtectedRoute>
+        } />
+        <Route path="/shop" element={
+          <ProtectedRoute session={session} role={role} allowedRoles={['athlete']}>
+            <Shop />
           </ProtectedRoute>
         } />
         <Route path="/exercise-library" element={
