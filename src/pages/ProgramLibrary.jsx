@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Search, ChevronDown, Trash2, UserPlus, CheckCircle, X, Layers, Dumbbell, FolderClosed } from 'lucide-react';
+import { Search, Trash2, UserPlus, CheckCircle, X, Layers, Dumbbell, FolderClosed } from 'lucide-react';
 import { fetchAllData, deleteProgram, updateAssignment } from '../api';
 import './program-library.css';
 
@@ -215,7 +215,6 @@ export default function ProgramLibrary() {
                     <button className="pl-delete-btn" onClick={() => handleDelete(program.name)} disabled={deleting === program.name}>
                       <Trash2 size={14} /> {deleting === program.name ? '...' : 'Delete'}
                     </button>
-                    <ChevronDown className={`pl-chevron ${expandedProgram === program.name ? 'expanded' : ''}`} size={20} />
                   </div>
                 </div>
                 {expandedProgram === program.name && (
