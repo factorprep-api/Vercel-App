@@ -5,7 +5,12 @@ import { fetchAllData, getAthleteByEmail, saveSession } from '../api';
 import './program-viewer.css';
 
 function normalizeString(str) {
-  return String(str).toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim();
+  return String(str)
+    .toLowerCase()
+    .replace(/\./g, ' ')
+    .replace(/[^\w\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function getYouTubeId(url) {
@@ -198,32 +203,35 @@ export default function ProgramViewer() {
     });
     if (currentGroup) groups.push(currentGroup);
     
-    // Match each group against the library
+    // Build lookup map once (skip header row at index 0)
+    const libMap = new Map();
+    for (let k = 1; k < libraryData.length; k++) {
+      const libRow = libraryData[k];
+      if (!libRow) continue;
+      const libName = normalizeString(libRow[0]);
+      if (libName && !libMap.has(libName)) {
+        libMap.set(libName, libRow);
+      }
+    }
+    
     console.log('--- Matching exercises to library ---');
     console.log('Library data length:', libraryData.length);
     if (libraryData.length > 0) {
       console.log('Library first row (should be headers):', libraryData[0]);
     }
     
+    // Match each group against the library using the map
     groups.forEach(group => {
       const normalizedName = normalizeString(group.name);
-      let matched = false;
-      for (let k = 0; k < libraryData.length; k++) {
-        const libRow = libraryData[k];
-        if (!libRow) continue;
-        const libName = normalizeString(libRow[0]);
-        if (libName === normalizedName) {
-          matched = true;
-          group.baseLift = libRow.length > 3 ? String(libRow[3] || '').trim() : '';
-          group.multiplier = (libRow.length > 4 && String(libRow[4] || '').trim() !== '') ? parseFloat(libRow[4]) : 1.0;
-          const rawVid = String(libRow[1] || '').trim();
-          group.videoUrl = extractVideoUrl(rawVid);
-          group.ytId = getYouTubeId(rawVid);
-          console.log(`MATCH: "${group.name}" → libRow[${k}] | videoUrl: "${group.videoUrl}" | ytId: "${group.ytId}" | rawVid: "${rawVid}"`);
-          break;
-        }
-      }
-      if (!matched) {
+      const libRow = libMap.get(normalizedName);
+      if (libRow) {
+        group.baseLift = libRow.length > 3 ? String(libRow[3] || '').trim() : '';
+        group.multiplier = (libRow.length > 4 && String(libRow[4] || '').trim() !== '') ? parseFloat(libRow[4]) : 1.0;
+        const rawVid = String(libRow[1] || '').trim();
+        group.videoUrl = extractVideoUrl(rawVid);
+        group.ytId = getYouTubeId(rawVid);
+        console.log(`MATCH: "${group.name}" → videoUrl: "${group.videoUrl}" | ytId: ${group.ytId} | rawVid: "${rawVid}"`);
+      } else {
         console.log(`NO MATCH: "${group.name}" (normalized: "${normalizedName}")`);
       }
     });
