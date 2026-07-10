@@ -61,7 +61,22 @@ export default function ProgramBuilder() {
 
   const athleteOptions = useMemo(() => {
     if (!athletes.length) return [];
-    return athletes.slice(1).map((row, i) => ({ row: i + 1, name: String(row[0] || '').trim() })).filter(a => a.name);
+    const headers = athletes[0] || [];
+    let roleCol = -1;
+    for (let i = 0; i < headers.length; i++) {
+      if (String(headers[i] || '').trim().toLowerCase() === 'role') { roleCol = i; break; }
+    }
+    return athletes.slice(1)
+      .map((row, i) => ({ row: i + 1, name: String(row[0] || '').trim(), rawData: row }))
+      .filter(a => {
+        if (!a.name) return false;
+        if (roleCol !== -1) {
+          const role = String(a.rawData[roleCol] || '').trim().toLowerCase();
+          return role !== 'coach';
+        }
+        return true;
+      })
+      .map(a => ({ row: a.row, name: a.name }));
   }, [athletes]);
 
   const filteredAthletes = useMemo(() => {
