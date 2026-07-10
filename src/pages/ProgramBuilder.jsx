@@ -190,7 +190,7 @@ export default function ProgramBuilder() {
   const tabs = [
     { id: 'builder', label: '1. Build Program', icon: Hammer },
     { id: 'assign', label: '2. Assign To Athletes', icon: Users },
-    { id: 'library', label: '3. Manage Library', icon: LibIcon }
+    { id: 'library', label: '3. Add Exercise', icon: LibIcon }
   ];
 
   return (
