@@ -14,7 +14,7 @@ export default function ProgramBuilder() {
   const [saving, setSaving] = useState(false);
 
   const [draft, setDraft] = useState([]);
-  const [form, setForm] = useState({ name: '', category: '', notes: '', phase: 'Work Block', exercise: '', sets: '', reps: '', intensity: '', tempo: '', rest: '' });
+  const [form, setForm] = useState({ name: '', category: '', notes: '', phase: 'Work Block', exercise: '', sets: '', reps: '', intensity: '', tempo: '', rest: '', privacyLevel: 'PRIVATE' });
 
   const [selectedAthletes, setSelectedAthletes] = useState(new Set());
   const [athleteSearch, setAthleteSearch] = useState('');
@@ -125,13 +125,13 @@ export default function ProgramBuilder() {
     if (!form.name) { showToast('Program Name is required.', true); return; }
     if (draft.length === 0) { showToast('Draft is empty. Add movements first.', true); return; }
     setSaving(true);
-    const rows = draft.map(i => [form.name, form.category, i.phase, i.exercise, i.sets, i.reps, i.intensity, i.tempo, i.rest, form.notes]);
+    const rows = draft.map(i => [form.name, form.category, i.phase, i.exercise, i.sets, i.reps, i.intensity, i.tempo, i.rest, form.notes, form.privacyLevel]);
     try {
       const res = await saveFullProgram(rows);
       if (res.status === 'Success') {
         showToast(`Program saved! (${res.rowCount} rows)`);
         setDraft([]);
-        setForm(f => ({ ...f, name: '', notes: '' }));
+        setForm(f => ({ ...f, name: '', notes: '', privacyLevel: 'PRIVATE' }));
         await loadData();
       } else { showToast('Save failed: ' + (res.message || 'Unknown error'), true); }
     } catch (err) { showToast('Network error', true); }
@@ -238,6 +238,20 @@ export default function ProgramBuilder() {
             <div className="pb-field-group">
               <label className="pb-label">Coach's Notes (Optional):</label>
               <textarea className="pb-textarea" value={form.notes} onChange={e => setForm({...form, notes: e.target.value})} placeholder="e.g. Focus on tempo today." />
+            </div>
+
+            <div className="pb-field-group">
+              <label className="pb-label">Privacy Level:</label>
+              <select className="pb-select" value={form.privacyLevel} onChange={e => setForm({...form, privacyLevel: e.target.value})}>
+                <option value="PRIVATE">Private (only you can see)</option>
+                <option value="ASSIGNED">Assigned (specific athletes only)</option>
+                <option value="PUBLIC">Public (free for all athletes)</option>
+              </select>
+              <p className="pb-hint" style={{ fontSize: 11, color: '#888', marginTop: 4 }}>
+                {form.privacyLevel === 'PRIVATE' && 'Only visible to you, can assign to athletes manually.'}
+                {form.privacyLevel === 'ASSIGNED' && 'Shows in Public Programs but requires explicit assignment.'}
+                {form.privacyLevel === 'PUBLIC' && 'Appears in Public Programs for all athletes to access.'}
+              </p>
             </div>
 
             <h3 className="pb-section-title">2. Add Movement</h3>
