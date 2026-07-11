@@ -106,7 +106,7 @@ export default function ProgramBuilder() {
       phase: form.phase, exercise: form.exercise, sets: form.sets,
       reps: form.reps, intensity: form.intensity, tempo: form.tempo, rest: form.rest
     }]);
-    setForm(f => ({ ...f, exercise: '', sets: '', reps: '', intensity: '', tempo: '', rest: '' }));
+    setForm(f => ({ ...f, exercise: '' }));
   }
 
   function moveItem(i, dir) {
