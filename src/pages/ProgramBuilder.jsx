@@ -382,7 +382,7 @@ export default function ProgramBuilder() {
                 <input type="number" step="0.1" className="pb-input" value={libForm.multiplier} onChange={e => setLibForm({...libForm, multiplier: e.target.value})} placeholder="1.0" />
               </div>
             </div>
-            <button className="pb-save-btn" style={{ marginTop: 20 }} onClick={handleAddExercise}>
+            <button className="pb-save-btn"  onClick={handleAddExercise}>
               <Plus size={18} /> Add To Library
             </button>
           </div>
