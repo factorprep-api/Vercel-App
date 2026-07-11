@@ -47,3 +47,6 @@
 
 @media(min-width: 768px) { .exlib-video-card { width: calc(33.333% - 8px); } }
 @media(min-width: 1024px) { .exlib-video-card { width: calc(20% - 10px); } }
+
+/* Coach Badge */
+.exlib-coach-badge { display: inline-block; margin-left: 6px; padding: 2px 6px; background: #e8f5e9; color: #2e7d32; border-radius: 4px; font-size: 11px; font-weight: 600; }

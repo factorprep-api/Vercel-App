@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Play, Search, X } from 'lucide-react';
+import { supabase } from '../supabase';
 import { fetchExerciseLibrary } from '../api.js';
 import './exercise-library.css';
 
@@ -74,8 +75,10 @@ export default function ExerciseLibrary() {
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [modalVideo, setModalVideo] = useState(null);
+  const [coachEmail, setCoachEmail] = useState('');
 
   useEffect(() => {
+    loadCoachEmail();
     const t = setTimeout(() => setDebouncedQuery(searchQuery), 300);
     return () => clearTimeout(t);
   }, [searchQuery]);
@@ -92,6 +95,22 @@ export default function ExerciseLibrary() {
       }
     })();
   }, []);
+
+  async function loadCoachEmail() {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) { setCoachEmail(user.email); }
+  }
+
+  function isCoachOwned(exercise) {
+    // Check if exercise has an ownerEmail field and matches current coach
+    if (!exercise.ownerEmail || !coachEmail) return false;
+    return exercise.ownerEmail.toLowerCase() === coachEmail.toLowerCase();
+  }
+
+  function renderCoachBadge(exercise) {
+    if (!isCoachOwned(exercise)) return null;
+    return <span className="exlib-coach-badge">• Coach</span>;
+  }
 
   const groupedLibrary = useMemo(() => buildGrouped(fullLibrary), [fullLibrary]);
 
@@ -153,7 +172,11 @@ export default function ExerciseLibrary() {
                       )}
                       <Play className="exlib-play-icon" size={32} fill="currentColor" stroke="none" />
                     </div>
-                    <div className="exlib-card-info"><p className="exlib-v-title">{ex.name}</p></div>
+                    <div className="exlib-card-info">
+                      <p className="exlib-v-title">
+                        {ex.name} {renderCoachBadge(ex)}
+                      </p>
+                    </div>
                   </div>
                 );
               })}
