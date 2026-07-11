@@ -51,9 +51,12 @@ export default function ProgramBuilder() {
   }, [form.exercise, exerciseList]);
   const uniqueProgramNames = useMemo(() => {
     if (!programs.length) return [];
-    const names = [...new Set(programs.slice(1).map(r => String(r[0] || '').trim()))].filter(Boolean);
-    return names.sort();
-  }, [programs]);
+    const names = programs.slice(1).filter(row => {
+      const owner = String(row[11] || '').trim();
+      return owner === coachEmail;
+    }).map(r => String(r[0] || '').trim()).filter(Boolean);
+    return [...new Set(names)].sort();
+  }, [programs, coachEmail]);
   const athleteOptions = useMemo(() => {
     if (!athletes.length) return [];
     const headers = athletes[0] || [];
