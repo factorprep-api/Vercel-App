@@ -61,3 +61,10 @@
 .pb-lib-preview { background: #f9f9f9; border: 1px solid #eee; border-radius: 6px; padding: 12px; max-height: 200px; overflow-y: auto; }
 .pb-lib-result { padding: 8px; border-bottom: 1px solid #eee; font-size: 13px; display: flex; justify-content: space-between; }
 .pb-lib-result:last-child { border-bottom: none; }
+
+/* Load Existing Program */
+.pb-load-section { margin-bottom: 20px; padding: 14px; background: #f0f7ff; border: 1px solid #b3d9f2; border-radius: 8px; }
+.pb-load-row { display: flex; gap: 8px; align-items: flex-end; }
+.pb-load-row > div:first-child { flex: 1; }
+.pb-load-btn { padding: 10px 16px; background: #008ed3; color: white; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.pb-load-btn:hover { background: #0077b5; }

@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { Plus, Save, ArrowUp, ArrowDown, Trash2, UserCheck, Hammer, CheckCircle, X, Search, Users } from 'lucide-react';
+import { Plus, Save, ArrowUp, ArrowDown, Trash2, Hammer, CheckCircle, X, Library as LibIcon } from 'lucide-react';
 import { supabase } from '../supabase';
-import { fetchAllData, saveFullProgram, assignProgramBulk } from '../api';
+import { fetchAllData, saveFullProgram } from '../api';
 import './program-builder.css';
 export default function ProgramBuilder() {
   const [loading, setLoading] = useState(true);
@@ -14,10 +14,8 @@ export default function ProgramBuilder() {
   const [saving, setSaving] = useState(false);
   const [draft, setDraft] = useState([]);
   const [form, setForm] = useState({ name: '', category: '', notes: '', phase: 'Work Block', exercise: '', sets: '', reps: '', intensity: '', tempo: '', rest: '', privacyLevel: 'PRIVATE' });
-  const [selectedAthletes, setSelectedAthletes] = useState(new Set());
-  const [athleteSearch, setAthleteSearch] = useState('');
-  const [selectedPrograms, setSelectedPrograms] = useState([]);
   const [coachEmail, setCoachEmail] = useState('');
+  const [loadProgramName, setLoadProgramName] = useState('');
   const draftRef = useRef(null);
   useEffect(() => { loadCoachEmail(); loadData(); }, []);
   useEffect(() => { if (draftRef.current) draftRef.current.scrollTop = draftRef.current.scrollHeight; }, [draft]);
@@ -55,30 +53,6 @@ export default function ProgramBuilder() {
     }).map(r => String(r[0] || '').trim()).filter(Boolean);
     return [...new Set(names)].sort();
   }, [programs, coachEmail]);
-  const athleteOptions = useMemo(() => {
-    if (!athletes.length) return [];
-    const headers = athletes[0] || [];
-    let roleCol = -1;
-    for (let i = 0; i < headers.length; i++) {
-      if (String(headers[i] || '').trim().toLowerCase() === 'role') { roleCol = i; break; }
-    }
-    return athletes.slice(1)
-      .map((row, i) => ({ row: i + 1, name: String(row[0] || '').trim(), rawData: row }))
-      .filter(a => {
-        if (!a.name) return false;
-        if (roleCol !== -1) {
-          const role = String(a.rawData[roleCol] || '').trim().toLowerCase();
-          return role !== 'coach';
-        }
-        return true;
-      })
-      .map(a => ({ row: a.row, name: a.name }));
-  }, [athletes]);
-  const filteredAthletes = useMemo(() => {
-    if (!athleteSearch.trim()) return athleteOptions;
-    const q = athleteSearch.toLowerCase();
-    return athleteOptions.filter(a => a.name.toLowerCase().includes(q));
-  }, [athleteOptions, athleteSearch]);
   function showToast(message, isError = false) {
     setToast({ message, isError });
     setTimeout(() => setToast(null), 3500);
@@ -113,73 +87,59 @@ export default function ProgramBuilder() {
         showToast(`Program saved! (${res.rowCount} rows)`);
         setDraft([]);
         setForm(f => ({ ...f, name: '', notes: '', privacyLevel: 'PRIVATE' }));
+        setLoadProgramName('');
         await loadData();
       } else { showToast('Save failed: ' + (res.message || 'Unknown error'), true); }
     } catch (err) { showToast('Network error', true); }
     setSaving(false);
   }
-  function toggleAthlete(rowNum) {
-    setSelectedAthletes(prev => {
-      const next = new Set(prev);
-      if (next.has(rowNum)) next.delete(rowNum); else next.add(rowNum);
-      return next;
+  function handleLoadExisting() {
+    if (!loadProgramName) { showToast('Select a program to load.', true); return; }
+    const programRows = programs.slice(1).filter(row => {
+      const name = String(row[0] || '').trim();
+      const owner = String(row[11] || '').trim();
+      return name === loadProgramName && owner === coachEmail;
     });
-  }
-  function selectAllFiltered() {
-    setSelectedAthletes(prev => {
-      const next = new Set(prev);
-      filteredAthletes.forEach(a => next.add(a.row));
-      return next;
-    });
-  }
-  function deselectAllFiltered() {
-    setSelectedAthletes(prev => {
-      const next = new Set(prev);
-      filteredAthletes.forEach(a => next.delete(a.row));
-      return next;
-    });
-  }
-  function clearAthleteSelection() {
-    setSelectedAthletes(new Set());
-  }
-  async function handleAssign() {
-    if (selectedAthletes.size === 0) { showToast('Select at least one athlete.', true); return; }
-    if (selectedPrograms.length === 0) { showToast('Select at least one program.', true); return; }
-    const headers = athletes[0] || [];
-    let assignCol = -1;
-    for (let c = 0; c < headers.length; c++) {
-      if (String(headers[c] || '').trim().toLowerCase() === 'program assignment') { assignCol = c; break; }
-    }
-    if (assignCol === -1) { showToast('Program Assignment column not found.', true); return; }
-    const rows = Array.from(selectedAthletes);
-    try {
-      const res = await assignProgramBulk(rows, selectedPrograms.join(', '), assignCol);
-      if (res.status === 'Success') {
-        showToast(`Assigned to ${res.rowsUpdated} athlete(s)`);
-        setSelectedAthletes(new Set());
-        setSelectedPrograms([]);
-      } else { showToast('Assignment failed', true); }
-    } catch (err) { showToast('Network error', true); }
+    if (programRows.length === 0) { showToast('Program not found or not owned by you.', true); return; }
+    const loadedDraft = programRows.map(row => ({
+      phase: String(row[2] || 'Work Block').trim(),
+      exercise: String(row[3] || '').trim(),
+      sets: String(row[4] || '1').trim(),
+      reps: String(row[5] || '1').trim(),
+      intensity: String(row[6] || '').trim(),
+      tempo: String(row[7] || '').trim(),
+      rest: String(row[8] || '').trim()
+    }));
+    const firstRow = programRows[0];
+    setForm(f => ({
+      ...f,
+      name: String(firstRow[0] || '').trim(),
+      category: String(firstRow[1] || '').trim(),
+      notes: String(firstRow[9] || '').trim(),
+      privacyLevel: String(firstRow[10] || 'PRIVATE').trim().toUpperCase() || 'PRIVATE'
+    }));
+    setDraft(loadedDraft);
+    showToast(`Loaded "${loadProgramName}" (${loadedDraft.length} movements). Edit and save — will overwrite if name matches.`);
   }
   const phaseColors = { 'Warm Up': '#fd7e14', 'Work Block': '#008ed3', 'Cool Down': '#0dcaf0' };
-  const tabs = [
-    { id: 'builder', label: '1. Build Program', icon: Hammer },
-    { id: 'assign', label: '2. Assign To Athletes', icon: Users }
-  ];
   return (
     <div className="pb-wrapper">
       <h2 style={{ fontSize: '24px', color: '#008ed3', marginBottom: '16px', fontWeight: '700' }}>Program Builder</h2>
-      <div className="pb-tabs">
-        {tabs.map(tab => (
-          <button key={tab.id} className={`pb-tab ${activeTab === tab.id ? 'active' : ''}`} onClick={() => setActiveTab(tab.id)}>
-            <tab.icon size={14} style={{ display: 'inline', marginRight: 6 }} />
-            {tab.label}
-          </button>
-        ))}
-      </div>
-      {activeTab === 'builder' && !loading && !error && (
+      {!loading && !error && (
         <div className="pb-panel-container">
           <div className="pb-left">
+            <div className="pb-load-section">
+              <label className="pb-label">Load Existing Program (Your Own):</label>
+              <div className="pb-load-row">
+                <div>
+                  <select className="pb-select" value={loadProgramName} onChange={e => setLoadProgramName(e.target.value)}>
+                    <option value="">— Select a program to edit —</option>
+                    {uniqueProgramNames.map(p => <option key={p} value={p}>{p}</option>)}
+                  </select>
+                </div>
+                <button className="pb-load-btn" onClick={handleLoadExisting}>Load</button>
+              </div>
+            </div>
             <h3 className="pb-section-title">1. Categorize & Name</h3>
             <div className="pb-field-row" >
               <div style={{ flex: 2 }}>
@@ -276,75 +236,6 @@ export default function ProgramBuilder() {
               <Save size={18} /> {saving ? 'Saving...' : 'Save Entire Program'}
             </button>
           </div>
-        </div>
-      )}
-      {activeTab === 'assign' && !loading && !error && (
-        <div style={{ background: '#f9f9f9', padding: 20, borderRadius: 8, border: '1px solid #ddd' }}>
-          <h3 className="pb-section-title">Assign Programs To Athletes</h3>
-          <div className="pb-assign-grid">
-            <div className="pb-assign-card">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-                <h4 style={{ margin: 0, color: '#555', fontSize: 14 }}>Step 1: Select Athlete(s)</h4>
-                <span style={{ fontSize: 12, color: '#008ed3', fontWeight: 'bold' }}>{selectedAthletes.size} selected</span>
-              </div>
-              <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-                <div style={{ position: 'relative', flex: 1 }}>
-                  <Search size={16} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#999' }} />
-                  <input
-                    className="pb-input"
-                    style={{ paddingLeft: 32 }}
-                    value={athleteSearch}
-                    onChange={e => setAthleteSearch(e.target.value)}
-                    placeholder="Search athletes..."
-                  />
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: 8, marginBottom: 15 }}>
-                <button onClick={selectAllFiltered} style={{ flex: 1, padding: '8px', fontSize: 12, fontWeight: 'bold', background: '#e3f2fd', color: '#008ed3', border: '1px solid #008ed3', borderRadius: 4, cursor: 'pointer' }}>Select All Visible</button>
-                <button onClick={deselectAllFiltered} style={{ flex: 1, padding: '8px', fontSize: 12, fontWeight: 'bold', background: '#fafafa', color: '#666', border: '1px solid #ddd', borderRadius: 4, cursor: 'pointer' }}>Clear Visible</button>
-                <button onClick={clearAthleteSelection} style={{ flex: 1, padding: '8px', fontSize: 12, fontWeight: 'bold', background: '#fee', color: '#dc3545', border: '1px solid #fcc', borderRadius: 4, cursor: 'pointer' }}>Clear All</button>
-              </div>
-              <div style={{ maxHeight: '300px', overflowY: 'auto', border: '1px solid #eee', borderRadius: 6, background: '#fff' }}>
-                {filteredAthletes.length === 0 ? (
-                  <p style={{ padding: 16, color: '#888', textAlign: 'center' }}>No athletes found.</p>
-                ) : filteredAthletes.map(a => (
-                  <label
-                    key={a.row}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
-                      borderBottom: '1px solid #f5f5f5', cursor: 'pointer',
-                      background: selectedAthletes.has(a.row) ? '#e3f2fd' : 'transparent',
-                      transition: 'background 0.1s'
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedAthletes.has(a.row)}
-                      onChange={() => toggleAthlete(a.row)}
-                      style={{ width: 18, height: 18, cursor: 'pointer' }}
-                    />
-                    <span style={{ fontSize: 14, color: '#333' }}>{a.name}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-            <div className="pb-assign-card">
-              <h4 style={{ margin: '0 0 15px 0', color: '#555', fontSize: 14 }}>Step 2: Select Program(s)</h4>
-              <label className="pb-label">Available Programs:</label>
-              <select
-                className="pb-multi-select"
-                multiple
-                value={selectedPrograms}
-                onChange={e => setSelectedPrograms(Array.from(e.target.selectedOptions).map(o => o.value))}
-              >
-                {uniqueProgramNames.map(p => <option key={p} value={p}>{p}</option>)}
-              </select>
-              <p className="pb-hint">Hold Ctrl/Cmd to select multiple programs.</p>
-            </div>
-          </div>
-          <button className="pb-save-btn" style={{ marginTop: 25, background: '#008ed3' }} onClick={handleAssign}>
-            <UserCheck size={18} /> Assign to {selectedAthletes.size} Athlete(s)
-          </button>
         </div>
       )}
       {loading && <p className="pb-placeholder">Loading...</p>}
