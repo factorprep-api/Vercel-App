@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Play, ChevronDown, ChevronUp, Video, Save, CheckCircle, MessageSquare } from 'lucide-react';
+import { Play, ChevronDown, ChevronUp, Video, Save, CheckCircle, MessageSquare, UserPlus, Globe, Lock, Dumbbell, Layers, FolderClosed } from 'lucide-react';
 import { supabase } from '../supabase';
 import { fetchAllData, getAthleteByEmail, saveSession } from '../api';
 import './program-viewer.css';
@@ -27,14 +27,12 @@ function extractVideoUrl(rawVid) {
     return cleanUrl;
   }
   if (String(rawVid).includes('youtube') || String(rawVid).includes('youtu.be')) return String(rawVid);
-  // Also try http:// URLs
   match = String(rawVid).match(/http:\/\/[^"'\s<>]+/i);
   if (match) {
     let cleanUrl = match[0];
     if (cleanUrl.includes('b-cdn.net') && !cleanUrl.toLowerCase().endsWith('.mp4')) cleanUrl += '.mp4';
     return cleanUrl;
   }
-  // If it looks like a URL without protocol, add https://
   if (String(rawVid).match(/^www\./) || String(rawVid).match(/\.com|\.net|\.be/)) {
     let url = 'https://' + String(rawVid).trim();
     if (url.includes('b-cdn.net') && !url.toLowerCase().endsWith('.mp4')) url += '.mp4';
@@ -89,7 +87,6 @@ export default function ProgramViewer() {
   const [athleteName, setAthleteName] = useState('');
   const [selectedProgram, setSelectedProgram] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
-  const [vaultVisible, setVaultVisible] = useState(false);
   const [expandedVideos, setExpandedVideos] = useState(new Set());
   const [inputValues, setInputValues] = useState({});
   const [saving, setSaving] = useState(false);
@@ -108,18 +105,6 @@ export default function ProgramViewer() {
       setAthletesData(allData.athletes);
       setProgramData(allData.programs);
       setLibraryData(allData.library);
-      
-      // DEBUG: Log library data structure
-      console.log('=== PROGRAM VIEWER DEBUG ===');
-      console.log('Library rows:', allData.library.length);
-      if (allData.library.length > 0) {
-        console.log('Library header row:', allData.library[0]);
-        if (allData.library.length > 1) {
-          console.log('Library first data row:', allData.library[1]);
-          console.log('Library first row col 0 (name):', allData.library[1][0]);
-          console.log('Library first row col 1 (video):', allData.library[1][1]);
-        }
-      }
       
       const athleteResult = await getAthleteByEmail(user.email);
       let rowIndex = null;
@@ -145,16 +130,6 @@ export default function ProgramViewer() {
     }
   }
 
-  const uniquePrograms = useMemo(() => {
-    if (!programData.length) return [];
-    return [...new Set(programData.slice(1).map(r => String(r[0] || '').trim()))].filter(Boolean).sort();
-  }, [programData]);
-
-  const categories = useMemo(() => {
-    if (!selectedProgram || !programData.length) return [];
-    return [...new Set(programData.slice(1).filter(r => String(r[0] || '').trim() === selectedProgram).map(r => String(r[1] || '').trim()))].filter(Boolean).sort();
-  }, [selectedProgram, programData]);
-
   const assignedPrograms = useMemo(() => {
     if (athleteRowIndex === null || !athletesData.length) return [];
     const headers = athletesData[0] || [];
@@ -167,6 +142,42 @@ export default function ProgramViewer() {
     if (!assignedStr) return [];
     return assignedStr.split(',').map(s => s.trim()).filter(Boolean);
   }, [athletesData, athleteRowIndex]);
+
+  const publicPrograms = useMemo(() => {
+    if (!programData.length) return [];
+    const map = {};
+    programData.slice(1).forEach(row => {
+      const name = String(row[0] || '').trim();
+      const privacy = String(row[10] || '').trim().toUpperCase();
+      if (!name) return;
+      if (privacy === 'PUBLIC' && !map[name]) {
+        const cat = String(row[1] || '').trim();
+        const ex = String(row[3] || '').trim();
+        map[name] = { name, categories: new Set(), exercises: new Set(), phases: new Set() };
+        if (cat) map[name].categories.add(cat);
+        if (ex) map[name].exercises.add(ex);
+        map[name].phases.add(String(row[2] || 'Work Block').trim());
+      }
+      if (map[name]) {
+        const cat = String(row[1] || '').trim();
+        const ex = String(row[3] || '').trim();
+        if (cat) map[name].categories.add(cat);
+        if (ex) map[name].exercises.add(ex);
+        map[name].phases.add(String(row[2] || 'Work Block').trim());
+      }
+    });
+    return Object.values(map).sort((a, b) => a.name.localeCompare(b.name));
+  }, [programData]);
+
+  const uniquePrograms = useMemo(() => {
+    if (!programData.length) return [];
+    return [...new Set(programData.slice(1).map(r => String(r[0] || '').trim()))].filter(Boolean).sort();
+  }, [programData]);
+
+  const categories = useMemo(() => {
+    if (!selectedProgram || !programData.length) return [];
+    return [...new Set(programData.slice(1).filter(r => String(r[0] || '').trim() === selectedProgram).map(r => String(r[1] || '').trim()))].filter(Boolean).sort();
+  }, [selectedProgram, programData]);
 
   const coachNote = useMemo(() => {
     if (!selectedProgram || !programData.length) return '';
@@ -203,7 +214,6 @@ export default function ProgramViewer() {
     });
     if (currentGroup) groups.push(currentGroup);
     
-    // Build lookup map once (skip header row at index 0)
     const libMap = new Map();
     for (let k = 1; k < libraryData.length; k++) {
       const libRow = libraryData[k];
@@ -214,13 +224,6 @@ export default function ProgramViewer() {
       }
     }
     
-    console.log('--- Matching exercises to library ---');
-    console.log('Library data length:', libraryData.length);
-    if (libraryData.length > 0) {
-      console.log('Library first row (should be headers):', libraryData[0]);
-    }
-    
-    // Match each group against the library using the map
     groups.forEach(group => {
       const normalizedName = normalizeString(group.name);
       const libRow = libMap.get(normalizedName);
@@ -230,9 +233,6 @@ export default function ProgramViewer() {
         const rawVid = String(libRow[1] || '').trim();
         group.videoUrl = extractVideoUrl(rawVid);
         group.ytId = getYouTubeId(rawVid);
-        console.log(`MATCH: "${group.name}" → videoUrl: "${group.videoUrl}" | ytId: ${group.ytId} | rawVid: "${rawVid}"`);
-      } else {
-        console.log(`NO MATCH: "${group.name}" (normalized: "${normalizedName}")`);
       }
     });
     return groups;
@@ -252,11 +252,6 @@ export default function ProgramViewer() {
     setSelectedCategory('');
     setInputValues({});
     setSaveSuccess(false);
-  }
-
-  function startAssignedProgram(progName) {
-    handleProgramChange(progName);
-    setVaultVisible(false);
   }
 
   function toggleVideo(groupId) {
@@ -344,41 +339,69 @@ export default function ProgramViewer() {
     <div className="pv-container">
       <div className="pv-body">
         <h2 style={{ fontSize: '24px', color: '#008ed3', marginBottom: '16px', fontWeight: '700' }}>Today's Workout</h2>
+        {athleteName && <p style={{ color: '#666', fontSize: '15px', marginBottom: '20px' }}>Welcome, {athleteName}</p>}
 
-        {assignedPrograms.length > 0 && (
-          <div className="pv-assigned-section">
-            <h3 className="pv-assigned-label">Assigned Workouts</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '15px' }}>
-              {assignedPrograms.map(prog => (
-                <button key={prog} className="pv-assigned-btn" onClick={() => startAssignedProgram(prog)}>
-                  <Play size={18} /> START: {prog}
-                </button>
-              ))}
+        {/* Two Panels: My Programs + Public Programs */}
+        <div className="pv-panels">
+          <div className="pv-panel">
+            <div className="pv-panel-header">
+              <h3 className="pv-panel-title" style={{ color: '#008ed3' }}>
+                <UserPlus size={20} style={{ verticalAlign: 'middle', marginRight: 8 }} />
+                My Programs
+              </h3>
+              <span className="pv-count-badge">{assignedPrograms.length}</span>
             </div>
-            <button className="pv-vault-toggle" onClick={() => setVaultVisible(!vaultVisible)}>
-              {vaultVisible ? <><ChevronUp size={16} /> Hide Vault</> : <><ChevronDown size={16} /> Browse the Vault</>}
-            </button>
-          </div>
-        )}
-
-        {(vaultVisible || assignedPrograms.length === 0) && (
-          <div className="pv-selectors">
-            <div className="pv-selector-group">
-              <label>Program Name:</label>
-              <select value={selectedProgram} onChange={e => handleProgramChange(e.target.value)}>
-                <option value="">- Select Program Name -</option>
-                {uniquePrograms.map(prog => <option key={prog} value={prog}>{prog}</option>)}
-              </select>
-            </div>
-            {categories.length > 0 && (
-              <div className="pv-selector-divider pv-selector-group">
-                <label>Filter by Category (Opt):</label>
-                <select value={selectedCategory} onChange={e => { setSelectedCategory(e.target.value); setSaveSuccess(false); }}>
-                  <option value="">- All Categories -</option>
-                  {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                </select>
+            {assignedPrograms.length === 0 ? (
+              <p className="pv-panel-empty">No programs assigned yet.</p>
+            ) : (
+              <div className="pv-program-buttons">
+                {assignedPrograms.map(prog => (
+                  <button
+                    key={prog}
+                    className={`pv-program-btn ${selectedProgram === prog ? 'active' : ''}`}
+                    onClick={() => handleProgramChange(prog)}
+                  >
+                    <Play size={16} /> {prog}
+                  </button>
+                ))}
               </div>
             )}
+          </div>
+
+          <div className="pv-panel">
+            <div className="pv-panel-header">
+              <h3 className="pv-panel-title" style={{ color: '#2e7d32' }}>
+                <Globe size={20} style={{ verticalAlign: 'middle', marginRight: 8 }} />
+                Public Programs
+              </h3>
+              <span className="pv-count-badge">{publicPrograms.length}</span>
+            </div>
+            {publicPrograms.length === 0 ? (
+              <p className="pv-panel-empty">No public programs available.</p>
+            ) : (
+              <div className="pv-program-buttons">
+                {publicPrograms.map(prog => (
+                  <button
+                    key={prog.name}
+                    className={`pv-program-btn ${selectedProgram === prog.name ? 'active' : ''}`}
+                    onClick={() => handleProgramChange(prog.name)}
+                  >
+                    <Play size={16} /> {prog.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Category filter if program selected */}
+        {selectedProgram && categories.length > 0 && (
+          <div className="pv-category-filter">
+            <label>Category:</label>
+            <select value={selectedCategory} onChange={e => { setSelectedCategory(e.target.value); setSaveSuccess(false); }}>
+              <option value="">- All Categories -</option>
+              {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+            </select>
           </div>
         )}
 
@@ -393,8 +416,8 @@ export default function ProgramViewer() {
           <p className="pv-placeholder">No exercises found for this program.</p>
         )}
 
-        {!selectedProgram && assignedPrograms.length === 0 && (
-          <p className="pv-placeholder">Select a program to view your workout.</p>
+        {!selectedProgram && (
+          <p className="pv-placeholder">Select a program from above to view your workout.</p>
         )}
 
         {phaseSections.map(section => (

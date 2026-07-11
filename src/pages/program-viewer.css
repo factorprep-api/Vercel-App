@@ -55,3 +55,28 @@
 
 .pv-placeholder { text-align: center; color: #888; padding: 30px; }
 .pv-error { text-align: center; color: #dc3545; padding: 30px; }
+
+/* Two Panels Layout */
+.pv-panels { display: flex; gap: 20px; margin-bottom: 24px; }
+.pv-panel { flex: 1 1 45%; min-width: 280px; background: #f9f9f9; border: 1px solid #eee; border-radius: 10px; padding: 16px; }
+.pv-panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 2px solid #e0e0e0; }
+.pv-panel-title { font-size: 16px; font-weight: 700; display: flex; align-items: center; margin: 0; }
+.pv-count-badge { background: #e0e0e0; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; color: #555; }
+.pv-panel-empty { text-align: center; color: #888; padding: 16px; font-size: 14px; }
+
+/* Program Buttons in Panels */
+.pv-program-buttons { display: flex; flex-direction: column; gap: 8px; }
+.pv-program-btn { display: flex; align-items: center; gap: 8px; padding: 10px 14px; background: white; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; color: #333; cursor: pointer; transition: all 0.15s; text-align: left; }
+.pv-program-btn:hover { border-color: #008ed3; background: #f0f7ff; }
+.pv-program-btn.active { background: #008ed3; color: white; border-color: #008ed3; }
+
+/* Category Filter */
+.pv-category-filter { display: flex; gap: 10px; align-items: center; margin-bottom: 16px; }
+.pv-category-filter label { font-size: 14px; font-weight: 600; color: #555; }
+.pv-category-filter select { padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; }
+
+/* Responsive */
+@media (max-width: 768px) {
+  .pv-panels { flex-direction: column; }
+  .pv-panel { flex: 1 1 100%; }
+}
