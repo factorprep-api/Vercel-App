@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { Plus, Save, ArrowUp, ArrowDown, Trash2, UserCheck, Library as LibIcon, Hammer, CheckCircle, X, Search, Users } from 'lucide-react';
+import { Plus, Save, ArrowUp, ArrowDown, Trash2, UserCheck, Hammer, CheckCircle, X, Search, Users } from 'lucide-react';
 import { supabase } from '../supabase';
-import { fetchAllData, saveFullProgram, assignProgramBulk, addExerciseToLibrary } from '../api';
+import { fetchAllData, saveFullProgram, assignProgramBulk } from '../api';
 import './program-builder.css';
 export default function ProgramBuilder() {
   const [loading, setLoading] = useState(true);
@@ -17,8 +17,6 @@ export default function ProgramBuilder() {
   const [selectedAthletes, setSelectedAthletes] = useState(new Set());
   const [athleteSearch, setAthleteSearch] = useState('');
   const [selectedPrograms, setSelectedPrograms] = useState([]);
-  const [libForm, setLibForm] = useState({ name: '', video: '', baseLift: '', multiplier: '' });
-  const [libSearch, setLibSearch] = useState('');
   const [coachEmail, setCoachEmail] = useState('');
   const draftRef = useRef(null);
   useEffect(() => { loadCoachEmail(); loadData(); }, []);
@@ -81,14 +79,6 @@ export default function ProgramBuilder() {
     const q = athleteSearch.toLowerCase();
     return athleteOptions.filter(a => a.name.toLowerCase().includes(q));
   }, [athleteOptions, athleteSearch]);
-  const libSearchResults = useMemo(() => {
-    if (!libSearch.trim()) return [];
-    const tokens = libSearch.toLowerCase().split(/\s+/);
-    return library.slice(1).filter(row => {
-      const exName = String(row[0] || '').toLowerCase();
-      return tokens.every(t => exName.includes(t));
-    }).slice(0, 10);
-  }, [libSearch, library]);
   function showToast(message, isError = false) {
     setToast({ message, isError });
     setTimeout(() => setToast(null), 3500);
@@ -171,22 +161,10 @@ export default function ProgramBuilder() {
       } else { showToast('Assignment failed', true); }
     } catch (err) { showToast('Network error', true); }
   }
-  async function handleAddExercise() {
-    if (!libForm.name) { showToast('Exercise name is required.', true); return; }
-    try {
-      const res = await addExerciseToLibrary({ name: libForm.name, video: libForm.video, baseLift: libForm.baseLift, multiplier: libForm.multiplier });
-      if (res.status === 'Success') {
-        showToast(res.operation === 'UPDATE' ? 'Exercise updated!' : 'Exercise added!');
-        setLibForm({ name: '', video: '', baseLift: '', multiplier: '' });
-        await loadData();
-      } else { showToast('Add failed: ' + (res.message || ''), true); }
-    } catch (err) { showToast('Network error', true); }
-  }
   const phaseColors = { 'Warm Up': '#fd7e14', 'Work Block': '#008ed3', 'Cool Down': '#0dcaf0' };
   const tabs = [
     { id: 'builder', label: '1. Build Program', icon: Hammer },
-    { id: 'assign', label: '2. Assign To Athletes', icon: Users },
-    { id: 'library', label: '3. Add Exercise', icon: LibIcon }
+    { id: 'assign', label: '2. Assign To Athletes', icon: Users }
   ];
   return (
     <div className="pb-wrapper">
@@ -367,51 +345,6 @@ export default function ProgramBuilder() {
           <button className="pb-save-btn" style={{ marginTop: 25, background: '#008ed3' }} onClick={handleAssign}>
             <UserCheck size={18} /> Assign to {selectedAthletes.size} Athlete(s)
           </button>
-        </div>
-      )}
-      {activeTab === 'library' && !loading && !error && (
-        <div style={{ background: '#f9f9f9', padding: 20, borderRadius: 8, border: '1px solid #ddd' }}>
-          <h3 className="pb-section-title">Add New Exercise To Library</h3>
-          <div className="pb-assign-card">
-            <div className="pb-lib-form">
-              <div>
-                <label className="pb-label">Exercise Name (Required):</label>
-                <input className="pb-input" value={libForm.name} onChange={e => setLibForm({...libForm, name: e.target.value})} placeholder="e.g. Goblet Squat" />
-              </div>
-              <div>
-                <label className="pb-label">Video URL:</label>
-                <input className="pb-input" value={libForm.video} onChange={e => setLibForm({...libForm, video: e.target.value})} placeholder="https://..." />
-              </div>
-              <div>
-                <label className="pb-label">Base Lift (Optional):</label>
-                <input className="pb-input" value={libForm.baseLift} onChange={e => setLibForm({...libForm, baseLift: e.target.value})} placeholder="e.g. Back Squat" />
-              </div>
-              <div>
-                <label className="pb-label">Multiplier (Optional):</label>
-                <input type="number" step="0.1" className="pb-input" value={libForm.multiplier} onChange={e => setLibForm({...libForm, multiplier: e.target.value})} placeholder="1.0" />
-              </div>
-            </div>
-            <button className="pb-save-btn"  onClick={handleAddExercise}>
-              <Plus size={18} /> Add To Library
-            </button>
-          </div>
-          <div style={{ marginTop: 30, paddingTop: 20, borderTop: '1px solid #ddd' }}>
-            <h4 style={{ margin: '0 0 15px 0', color: '#555', fontSize: 14 }}>Quick Search Library Preview:</h4>
-            <div style={{ position: 'relative', marginBottom: 15 }}>
-              <Search size={18} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#999' }} />
-              <input className="pb-input" style={{ paddingLeft: 40 }} value={libSearch} onChange={e => setLibSearch(e.target.value)} placeholder="Search existing exercises..." />
-            </div>
-            <div className="pb-lib-preview">
-              {libSearch && libSearchResults.length === 0 && <p style={{ color: '#888', padding: 8 }}>No matches found.</p>}
-              {!libSearch && <p style={{ color: '#888', padding: 8 }}>Start typing to search...</p>}
-              {libSearchResults.map((row, i) => (
-                <div key={i} className="pb-lib-result">
-                  <span style={{ fontWeight: 'bold', color: '#111' }}>{row[0]}</span>
-                  <span style={{ color: '#888', fontSize: 12 }}>{row[1] ? 'Video ✓' : 'No Video'}</span>
-                </div>
-              ))}
-            </div>
-          </div>
         </div>
       )}
       {loading && <p className="pb-placeholder">Loading...</p>}
