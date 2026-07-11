@@ -130,3 +130,25 @@ export const addExerciseToLibrary = async (exerciseData) => {
     return { status: 'Error', message: err.message };
   }
 };
+
+export const deleteExerciseFromLibrary = async (exerciseName) => {
+  try {
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=deleteExercise&exName=${encodeURIComponent(exerciseName)}`;
+    let resp = await fetch(url);
+    let json = await resp.json();
+    return json;
+  } catch (err) {
+    return { status: 'Error', message: err.message };
+  }
+};
+
+export const updateExerciseInLibrary = async (exerciseData) => {
+  try {
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=updateExercise&data=${encodeURIComponent(JSON.stringify(exerciseData))}`;
+    let resp = await fetch(url);
+    let json = await resp.json();
+    return json;
+  } catch (err) {
+    return { status: 'Error', message: err.message };
+  }
+};

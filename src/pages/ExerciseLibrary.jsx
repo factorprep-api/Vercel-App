@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Play, Search, X } from 'lucide-react';
+import { Play, Search, X, Pencil, Trash2 } from 'lucide-react';
 import { supabase } from '../supabase';
-import { fetchExerciseLibrary } from '../api.js';
+import { fetchExerciseLibrary, deleteExerciseFromLibrary, updateExerciseInLibrary } from '../api.js';
 import './exercise-library.css';
 
 const ITEMS_PER_PAGE = 50;
@@ -76,7 +76,12 @@ export default function ExerciseLibrary() {
   const [currentPage, setCurrentPage] = useState(1);
   const [modalVideo, setModalVideo] = useState(null);
   const [coachEmail, setCoachEmail] = useState('');
-  const [viewFilter, setViewFilter] = useState('all'); // 'all' or 'my'
+  const [viewFilter, setViewFilter] = useState('all');
+  const [toast, setToast] = useState(null);
+  const [editing, setEditing] = useState(null);
+  const [editName, setEditName] = useState('');
+  const [editVideo, setEditVideo] = useState('');
+  const [deleting, setDeleting] = useState(null);
 
   useEffect(() => {
     loadCoachEmail();
@@ -112,11 +117,68 @@ export default function ExerciseLibrary() {
     return <span className="exlib-coach-badge">• Coach</span>;
   }
 
+  function showToast(message, isError = false) {
+    setToast({ message, isError });
+    setTimeout(() => setToast(null), 3000);
+  }
+
+  async function reloadLibrary() {
+    try {
+      const lib = await fetchExerciseLibrary();
+      setFullLibrary(lib);
+    } catch {
+      // ignore reload errors
+    }
+  }
+
+  function openEditModal(exercise) {
+    setEditing(exercise);
+    setEditName(exercise.name);
+    setEditVideo(exercise.rawUrl || '');
+  }
+
+  async function handleEditSave() {
+    if (!editName.trim()) { showToast('Exercise name is required.', true); return; }
+    try {
+      const res = await updateExerciseInLibrary({
+        name: editName.trim(),
+        video: editVideo.trim(),
+        originalName: editing.name
+      });
+      if (res.status === 'Success') {
+        showToast('Exercise updated!');
+        setEditing(null);
+        await reloadLibrary();
+      } else {
+        showToast('Update failed', true);
+      }
+    } catch (err) {
+      showToast('Network error', true);
+    }
+  }
+
+  async function handleDelete(exercise) {
+    if (!confirm(`Delete "${exercise.name}"? This cannot be undone.`)) return;
+    setDeleting(exercise.name);
+    try {
+      const res = await deleteExerciseFromLibrary(exercise.name);
+      if (res.status === 'Success') {
+        showToast(`"${exercise.name}" deleted`);
+        await reloadLibrary();
+      } else {
+        showToast('Delete failed', true);
+      }
+    } catch (err) {
+      showToast('Network error', true);
+    }
+    setDeleting(null);
+  }
+
   const filteredForView = useMemo(() => {
     if (viewFilter === 'my') {
       return fullLibrary.filter(ex => isCoachOwned(ex));
     }
-    return fullLibrary; // 'all' view
+    return fullLibrary;
   }, [fullLibrary, viewFilter, coachEmail]);
 
   const groupedLibrary = useMemo(() => buildGrouped(filteredForView), [filteredForView]);
@@ -186,6 +248,7 @@ export default function ExerciseLibrary() {
             <div className="exlib-video-row">
               {group.items.map((ex, idx) => {
                 const ytId = getYouTubeId(ex.rawUrl);
+                const owned = isCoachOwned(ex);
                 return (
                   <div key={`${group.cat}-${idx}`} className="exlib-video-card" onClick={() => openModal(ex.rawUrl)} title={ex.name}>
                     <div className="exlib-thumbnail">
@@ -195,6 +258,16 @@ export default function ExerciseLibrary() {
                         <video className="exlib-vid-thumb-video" src={`${normalizeVideoUrl(ex.rawUrl)}#t=0.001`} preload="metadata" muted playsInline />
                       )}
                       <Play className="exlib-play-icon" size={32} fill="currentColor" stroke="none" />
+                      {owned && (
+                        <div className="exlib-owner-actions" onClick={e => e.stopPropagation()}>
+                          <button className="exlib-edit-btn" onClick={() => openEditModal(ex)} title="Edit">
+                            <Pencil size={14} />
+                          </button>
+                          <button className="exlib-delete-btn" onClick={() => handleDelete(ex)} disabled={deleting === ex.name} title="Delete">
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      )}
                     </div>
                     <div className="exlib-card-info">
                       <p className="exlib-v-title">
@@ -229,6 +302,31 @@ export default function ExerciseLibrary() {
               )}
             </div>
           </div>
+        </div>
+      )}
+
+      {editing && (
+        <div className="exlib-modal-overlay" onClick={() => setEditing(null)}>
+          <div className="exlib-edit-modal" onClick={e => e.stopPropagation()}>
+            <button className="exlib-close-btn" onClick={() => setEditing(null)}><X size={24} /></button>
+            <h3 className="exlib-edit-title">Edit Exercise</h3>
+            <div className="exlib-edit-field">
+              <label className="exlib-edit-label">Exercise Name:</label>
+              <input className="exlib-edit-input" value={editName} onChange={e => setEditName(e.target.value)} />
+            </div>
+            <div className="exlib-edit-field">
+              <label className="exlib-edit-label">Video URL:</label>
+              <input className="exlib-edit-input" value={editVideo} onChange={e => setEditVideo(e.target.value)} />
+            </div>
+            <button className="exlib-edit-save-btn" onClick={handleEditSave}>Save Changes</button>
+          </div>
+        </div>
+      )}
+
+      {toast && (
+        <div className={`exlib-toast ${toast.isError ? 'error' : ''}`}>
+          {toast.isError ? <X size={16} /> : <Pencil size={16} />}
+          {toast.message}
         </div>
       )}
     </div>
