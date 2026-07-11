@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { Plus, Save, ArrowUp, ArrowDown, Trash2, UserCheck, Library as LibIcon, Hammer, CheckCircle, X, Search, Users } from 'lucide-react';
+import { supabase } from '../supabase';
 import { fetchAllData, saveFullProgram, assignProgramBulk, addExerciseToLibrary } from '../api';
 import './program-builder.css';
 export default function ProgramBuilder() {
@@ -18,9 +19,14 @@ export default function ProgramBuilder() {
   const [selectedPrograms, setSelectedPrograms] = useState([]);
   const [libForm, setLibForm] = useState({ name: '', video: '', baseLift: '', multiplier: '' });
   const [libSearch, setLibSearch] = useState('');
+  const [coachEmail, setCoachEmail] = useState('');
   const draftRef = useRef(null);
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => { loadCoachEmail(); loadData(); }, []);
   useEffect(() => { if (draftRef.current) draftRef.current.scrollTop = draftRef.current.scrollHeight; }, [draft]);
+  async function loadCoachEmail() {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) { setCoachEmail(user.email); }
+  }
   async function loadData() {
     try {
       const allData = await fetchAllData();
@@ -107,7 +113,7 @@ export default function ProgramBuilder() {
     if (!form.name) { showToast('Program Name is required.', true); return; }
     if (draft.length === 0) { showToast('Draft is empty. Add movements first.', true); return; }
     setSaving(true);
-    const rows = draft.map(i => [form.name, form.category, i.phase, i.exercise, i.sets, i.reps, i.intensity, i.tempo, i.rest, form.notes, form.privacyLevel]);
+    const rows = draft.map(i => [form.name, form.category, i.phase, i.exercise, i.sets, i.reps, i.intensity, i.tempo, i.rest, form.notes, form.privacyLevel, coachEmail]);
     try {
       const res = await saveFullProgram(rows);
       if (res.status === 'Success') {
