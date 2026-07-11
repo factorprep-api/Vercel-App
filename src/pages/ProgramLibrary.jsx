@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Search, Trash2, UserPlus, CheckCircle, X, Layers, Dumbbell, FolderClosed } from 'lucide-react';
+import { Search, Trash2, UserPlus, CheckCircle, X, Layers, Dumbbell, FolderClosed, Lock, Globe, Eye } from 'lucide-react';
+import { supabase } from '../supabase';
 import { fetchAllData, deleteProgram, updateAssignment } from '../api';
 import './program-library.css';
 
@@ -14,10 +15,18 @@ export default function ProgramLibrary() {
   const [assignAthlete, setAssignAthlete] = useState('');
   const [toast, setToast] = useState(null);
   const [deleting, setDeleting] = useState(null);
+  const [coachEmail, setCoachEmail] = useState('');
+  const [privacyFilter, setPrivacyFilter] = useState('all');
 
   useEffect(() => {
+    loadCoachEmail();
     loadData();
   }, []);
+
+  async function loadCoachEmail() {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) { setCoachEmail(user.email); }
+  }
 
   async function loadData() {
     try {
@@ -59,7 +68,7 @@ export default function ProgramLibrary() {
       const name = String(row[0] || '').trim();
       if (!name) return;
       if (!map[name]) {
-        map[name] = { name, categories: new Set(), exercises: new Set(), phases: new Set(), rows: [] };
+        map[name] = { name, categories: new Set(), exercises: new Set(), phases: new Set(), rows: [], privacyLevel: '', ownerEmail: '' };
       }
       const cat = String(row[1] || '').trim();
       const phase = String(row[2] || '').trim() || 'Work Block';
@@ -68,15 +77,36 @@ export default function ProgramLibrary() {
       if (ex) map[name].exercises.add(ex);
       map[name].phases.add(phase);
       map[name].rows.push(row);
+      // Capture privacy level and owner email from first row that has them
+      const privacy = String(row[10] || '').trim().toUpperCase();
+      const owner = String(row[11] || '').trim();
+      if (privacy && !map[name].privacyLevel) map[name].privacyLevel = privacy;
+      if (owner && !map[name].ownerEmail) map[name].ownerEmail = owner;
     });
     return Object.values(map).sort((a, b) => a.name.localeCompare(b.name));
   }, [programData]);
 
   const filteredPrograms = useMemo(() => {
-    if (!searchQuery.trim()) return programs;
-    const q = searchQuery.toLowerCase();
-    return programs.filter(p => p.name.toLowerCase().includes(q));
-  }, [programs, searchQuery]);
+    let result = programs;
+
+    // Filter by privacy tab
+    if (privacyFilter === 'private') {
+      result = result.filter(p => p.privacyLevel === 'PRIVATE' && p.ownerEmail === coachEmail);
+    } else if (privacyFilter === 'public') {
+      result = result.filter(p => p.privacyLevel === 'PUBLIC');
+    } else {
+      // "all" — show programs the coach owns + all public programs
+      result = result.filter(p => p.ownerEmail === coachEmail || p.privacyLevel === 'PUBLIC' || !p.privacyLevel);
+    }
+
+    // Filter by search query
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(p => p.name.toLowerCase().includes(q));
+    }
+
+    return result;
+  }, [programs, privacyFilter, coachEmail, searchQuery]);
 
   function toggleExpand(name) {
     setExpandedProgram(expandedProgram === name ? null : name);
@@ -122,6 +152,17 @@ export default function ProgramLibrary() {
       }
     } catch (err) {
       showToast('Network error', true);
+    }
+  }
+
+  function renderPrivacyBadge(program) {
+    const level = program.privacyLevel || 'PRIVATE';
+    if (level === 'PUBLIC') {
+      return <span className="pl-privacy-badge pl-privacy-public"><Globe size={10} /> Public</span>;
+    } else if (level === 'ASSIGNED') {
+      return <span className="pl-privacy-badge pl-privacy-assigned"><UserPlus size={10} /> Assigned</span>;
+    } else {
+      return <span className="pl-privacy-badge pl-privacy-private"><Lock size={10} /> Private</span>;
     }
   }
 
@@ -173,10 +214,28 @@ export default function ProgramLibrary() {
     ));
   }
 
+  const privacyTabs = [
+    { id: 'all', label: 'All Programs' },
+    { id: 'private', label: 'Private' },
+    { id: 'public', label: 'Public' }
+  ];
+
   return (
     <div className="pl-container">
       <div className="pl-body">
         <h2 style={{ fontSize: '24px', color: '#008ed3', marginBottom: '16px', fontWeight: '700' }}>Program Library</h2>
+
+        <div className="pl-privacy-tabs">
+          {privacyTabs.map(tab => (
+            <button
+              key={tab.id}
+              className={`pl-privacy-tab ${privacyFilter === tab.id ? 'active' : ''}`}
+              onClick={() => setPrivacyFilter(tab.id)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
 
         <div className="pl-search-wrapper">
           <Search className="pl-search-icon" size={18} />
@@ -206,6 +265,7 @@ export default function ProgramLibrary() {
                       <span className="pl-meta-badge"><Layers size={10} /> {program.categories.size} categor{program.categories.size === 1 ? 'y' : 'ies'}</span>
                       <span className="pl-meta-badge"><Dumbbell size={10} /> {program.exercises.size} exercises</span>
                       <span className="pl-meta-badge"><FolderClosed size={10} /> {program.phases.size} phases</span>
+                      {renderPrivacyBadge(program)}
                     </div>
                   </div>
                   <div className="pl-actions" onClick={e => e.stopPropagation()}>
