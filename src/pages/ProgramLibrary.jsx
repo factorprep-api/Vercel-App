@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Search, Trash2, UserPlus, CheckCircle, X, Layers, Dumbbell, FolderClosed, Lock, Globe, Eye } from 'lucide-react';
 import { supabase } from '../supabase';
-import { fetchAllData, deleteProgram, updateAssignment } from '../api';
+import { fetchAllData, deleteProgram, updateAssignment, assignProgramBulk } from '../api';
 import './program-library.css';
 
 export default function ProgramLibrary() {
@@ -11,12 +11,15 @@ export default function ProgramLibrary() {
   const [athletesData, setAthletesData] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedProgram, setExpandedProgram] = useState(null);
-  const [assignModal, setAssignModal] = useState(null);
-  const [assignAthlete, setAssignAthlete] = useState('');
+  const [assignModalOpen, setAssignModalOpen] = useState(false);
+  const [assignAthletes, setAssignAthletes] = useState(new Set());
+  const [assignPrograms, setAssignPrograms] = useState([]);
+  const [athleteSearch, setAthleteSearch] = useState('');
   const [toast, setToast] = useState(null);
   const [deleting, setDeleting] = useState(null);
   const [coachEmail, setCoachEmail] = useState('');
   const [privacyFilter, setPrivacyFilter] = useState('all');
+  const [bulkAssigning, setBulkAssigning] = useState(false);
 
   useEffect(() => {
     loadCoachEmail();
@@ -61,6 +64,41 @@ export default function ProgramLibrary() {
       .sort();
   }, [athletesData]);
 
+  const athleteOptions = useMemo(() => {
+    if (!athletesData.length) return [];
+    const headers = athletesData[0] || [];
+    let roleCol = -1;
+    for (let i = 0; i < headers.length; i++) {
+      if (String(headers[i] || '').trim().toLowerCase() === 'role') { roleCol = i; break; }
+    }
+    return athletesData.slice(1)
+      .map((row, i) => ({ row: i + 1, name: String(row[0] || '').trim(), rawData: row }))
+      .filter(a => {
+        if (!a.name) return false;
+        if (roleCol !== -1) {
+          const role = String(a.rawData[roleCol] || '').trim().toLowerCase();
+          return role !== 'coach';
+        }
+        return true;
+      })
+      .map(a => ({ row: a.row, name: a.name }));
+  }, [athletesData]);
+
+  const filteredAthletes = useMemo(() => {
+    if (!athleteSearch.trim()) return athleteOptions;
+    const q = athleteSearch.toLowerCase();
+    return athleteOptions.filter(a => a.name.toLowerCase().includes(q));
+  }, [athleteOptions, athleteSearch]);
+
+  const ownedProgramNames = useMemo(() => {
+    if (!programData.length) return [];
+    const names = programData.slice(1).filter(row => {
+      const owner = String(row[11] || '').trim();
+      return owner === coachEmail;
+    }).map(r => String(r[0] || '').trim()).filter(Boolean);
+    return [...new Set(names)].sort();
+  }, [programData, coachEmail]);
+
   const programs = useMemo(() => {
     if (!programData.length) return [];
     const map = {};
@@ -77,7 +115,6 @@ export default function ProgramLibrary() {
       if (ex) map[name].exercises.add(ex);
       map[name].phases.add(phase);
       map[name].rows.push(row);
-      // Capture privacy level and owner email from first row that has them
       const privacy = String(row[10] || '').trim().toUpperCase();
       const owner = String(row[11] || '').trim();
       if (privacy && !map[name].privacyLevel) map[name].privacyLevel = privacy;
@@ -89,17 +126,14 @@ export default function ProgramLibrary() {
   const filteredPrograms = useMemo(() => {
     let result = programs;
 
-    // Filter by privacy tab
     if (privacyFilter === 'private') {
       result = result.filter(p => p.privacyLevel === 'PRIVATE' && p.ownerEmail === coachEmail);
     } else if (privacyFilter === 'public') {
       result = result.filter(p => p.privacyLevel === 'PUBLIC');
     } else {
-      // "all" — show programs the coach owns + all public programs
       result = result.filter(p => p.ownerEmail === coachEmail || p.privacyLevel === 'PUBLIC' || !p.privacyLevel);
     }
 
-    // Filter by search query
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       result = result.filter(p => p.name.toLowerCase().includes(q));
@@ -134,25 +168,51 @@ export default function ProgramLibrary() {
     setDeleting(null);
   }
 
-  function openAssignModal(programName) {
-    setAssignModal(programName);
-    setAssignAthlete('');
+  function toggleAthlete(rowNum) {
+    setAssignAthletes(prev => {
+      const next = new Set(prev);
+      if (next.has(rowNum)) next.delete(rowNum); else next.add(rowNum);
+      return next;
+    });
   }
 
-  async function handleAssign() {
-    if (!assignAthlete || !assignModal) return;
+  function selectAllFiltered() {
+    setAssignAthletes(prev => {
+      const next = new Set(prev);
+      filteredAthletes.forEach(a => next.add(a.row));
+      return next;
+    });
+  }
+
+  function clearAthleteSelection() {
+    setAssignAthletes(new Set());
+  }
+
+  async function handleBulkAssign() {
+    if (assignAthletes.size === 0) { showToast('Select at least one athlete.', true); return; }
+    if (assignPrograms.length === 0) { showToast('Select at least one program.', true); return; }
+    const headers = athletesData[0] || [];
+    let assignCol = -1;
+    for (let c = 0; c < headers.length; c++) {
+      if (String(headers[c] || '').trim().toLowerCase() === 'program assignment') { assignCol = c; break; }
+    }
+    if (assignCol === -1) { showToast('Program Assignment column not found.', true); return; }
+    const rows = Array.from(assignAthletes);
+    setBulkAssigning(true);
     try {
-      const res = await updateAssignment(assignAthlete, assignModal);
+      const res = await assignProgramBulk(rows, assignPrograms.join(', '), assignCol);
       if (res.status === 'Success') {
-        showToast(`"${assignModal}" assigned to ${assignAthlete}`);
-        setAssignModal(null);
-        setAssignAthlete('');
+        showToast(`Assigned to ${res.rowsUpdated} athlete(s)`);
+        setAssignModalOpen(false);
+        setAssignAthletes(new Set());
+        setAssignPrograms([]);
       } else {
         showToast('Assignment failed', true);
       }
     } catch (err) {
       showToast('Network error', true);
     }
+    setBulkAssigning(false);
   }
 
   function renderPrivacyBadge(program) {
@@ -223,7 +283,12 @@ export default function ProgramLibrary() {
   return (
     <div className="pl-container">
       <div className="pl-body">
-        <h2 style={{ fontSize: '24px', color: '#008ed3', marginBottom: '16px', fontWeight: '700' }}>Program Library</h2>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+          <h2 style={{ fontSize: '24px', color: '#008ed3', fontWeight: '700', margin: 0 }}>Program Library</h2>
+          <button className="pl-bulk-assign-btn" onClick={() => setAssignModalOpen(true)}>
+            <UserPlus size={16} /> Assign Programs
+          </button>
+        </div>
 
         <div className="pl-privacy-tabs">
           {privacyTabs.map(tab => (
@@ -269,12 +334,12 @@ export default function ProgramLibrary() {
                     </div>
                   </div>
                   <div className="pl-actions" onClick={e => e.stopPropagation()}>
-                    <button className="pl-assign-btn" onClick={() => openAssignModal(program.name)}>
-                      <UserPlus size={14} /> Assign
-                    </button>
-                    <button className="pl-delete-btn" onClick={() => handleDelete(program.name)} disabled={deleting === program.name}>
-                      <Trash2 size={14} /> {deleting === program.name ? '...' : 'Delete'}
-                    </button>
+                    {/* Only show Delete button for owned programs */}
+                    {program.ownerEmail === coachEmail && (
+                      <button className="pl-delete-btn" onClick={() => handleDelete(program.name)} disabled={deleting === program.name}>
+                        <Trash2 size={14} /> {deleting === program.name ? '...' : 'Delete'}
+                      </button>
+                    )}
                   </div>
                 </div>
                 {expandedProgram === program.name && (
@@ -288,18 +353,74 @@ export default function ProgramLibrary() {
         )}
       </div>
 
-      {assignModal && (
-        <div className="pl-assign-modal" onClick={() => setAssignModal(null)}>
+      {/* Bulk Assign Modal */}
+      {assignModalOpen && (
+        <div className="pl-assign-modal" onClick={() => setAssignModalOpen(false)}>
           <div className="pl-assign-content" onClick={e => e.stopPropagation()}>
-            <div className="pl-assign-title">Assign "{assignModal}"</div>
-            <select className="pl-assign-select" value={assignAthlete} onChange={e => setAssignAthlete(e.target.value)}>
-              <option value="">- Select Athlete -</option>
-              {athleteNames.map(name => <option key={name} value={name}>{name}</option>)}
-            </select>
-            <div className="pl-assign-actions">
-              <button className="pl-assign-cancel" onClick={() => setAssignModal(null)}>Cancel</button>
-              <button className="pl-assign-confirm" onClick={handleAssign} disabled={!assignAthlete}>Confirm Assign</button>
+            <button className="pl-assign-close" onClick={() => setAssignModalOpen(false)}><X size={20} /></button>
+            <h3 className="pl-assign-title">Assign Programs To Athletes</h3>
+            
+            <div className="pl-assign-step">
+              <h4>Step 1: Select Athlete(s)</h4>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+                <div style={{ position: 'relative', flex: 1 }}>
+                  <Search size={16} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#999' }} />
+                  <input
+                    type="text"
+                    className="pl-input"
+                    style={{ paddingLeft: 32 }}
+                    value={athleteSearch}
+                    onChange={e => setAthleteSearch(e.target.value)}
+                    placeholder="Search athletes..."
+                  />
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 15 }}>
+                <button onClick={selectAllFiltered} style={{ flex: 1, padding: '8px', fontSize: 12, fontWeight: 'bold', background: '#e3f2fd', color: '#008ed3', border: '1px solid #008ed3', borderRadius: 4, cursor: 'pointer' }}>Select All Visible</button>
+                <button onClick={clearAthleteSelection} style={{ flex: 1, padding: '8px', fontSize: 12, fontWeight: 'bold', background: '#fee', color: '#dc3545', border: '1px solid #fcc', borderRadius: 4, cursor: 'pointer' }}>Clear All</button>
+              </div>
+              <div style={{ maxHeight: '200px', overflowY: 'auto', border: '1px solid #eee', borderRadius: 6, background: '#fff' }}>
+                {filteredAthletes.length === 0 ? (
+                  <p style={{ padding: 16, color: '#888', textAlign: 'center' }}>No athletes found.</p>
+                ) : filteredAthletes.map(a => (
+                  <label
+                    key={a.row}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
+                      borderBottom: '1px solid #f5f5f5', cursor: 'pointer',
+                      background: assignAthletes.has(a.row) ? '#e3f2fd' : 'transparent'
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={assignAthletes.has(a.row)}
+                      onChange={() => toggleAthlete(a.row)}
+                      style={{ width: 18, height: 18, cursor: 'pointer' }}
+                    />
+                    <span style={{ fontSize: 14, color: '#333' }}>{a.name}</span>
+                  </label>
+                ))}
+              </div>
+              <p style={{ fontSize: 12, color: '#008ed3', margin: '10px 0 0 0', fontWeight: 'bold' }}>{assignAthletes.size} athlete(s) selected</p>
             </div>
+
+            <div className="pl-assign-step">
+              <h4>Step 2: Select Program(s)</h4>
+              <label style={{ fontSize: 13, fontWeight: 600, color: '#555', display: 'block', marginBottom: 6 }}>Available Programs:</label>
+              <select
+                className="pl-multi-select"
+                multiple
+                value={assignPrograms}
+                onChange={e => setAssignPrograms(Array.from(e.target.selectedOptions).map(o => o.value))}
+              >
+                {ownedProgramNames.map(p => <option key={p} value={p}>{p}</option>)}
+              </select>
+              <p style={{ fontSize: 12, color: '#888', margin: '4px 0 0 0' }}>Hold Ctrl/Cmd to select multiple programs.</p>
+            </div>
+
+            <button className="pl-assign-confirm-btn" onClick={handleBulkAssign} disabled={bulkAssigning}>
+              {bulkAssigning ? 'Assigning...' : `Assign to ${assignAthletes.size} Athlete(s)`}
+            </button>
           </div>
         </div>
       )}
