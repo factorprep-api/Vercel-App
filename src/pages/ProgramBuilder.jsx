@@ -194,7 +194,7 @@ export default function ProgramBuilder() {
         <div className="pb-panel-container">
           <div className="pb-left">
             <h3 className="pb-section-title">1. Categorize & Name</h3>
-            <div className="pb-field-row" style={{ marginBottom: 15 }}>
+            <div className="pb-field-row" >
               <div style={{ flex: 2 }}>
                 <label className="pb-label">Program Name (Required):</label>
                 <input className="pb-input" value={form.name} onChange={e => setForm({...form, name: e.target.value})} placeholder="e.g. Push Workout A" />
@@ -244,11 +244,11 @@ export default function ProgramBuilder() {
                 {filteredExercises.map(ex => <option key={ex} value={ex} />)}
               </datalist>
             </div>
-            <div className="pb-field-row" style={{ marginBottom: 10 }}>
+            <div className="pb-field-row">
               <div><label className="pb-label">Sets:</label><input type="number" className="pb-input" value={form.sets} onChange={e => setForm({...form, sets: e.target.value})} placeholder="e.g. 1" /></div>
               <div><label className="pb-label">Reps:</label><input className="pb-input" value={form.reps} onChange={e => setForm({...form, reps: e.target.value})} placeholder="e.g. 5" /></div>
             </div>
-            <div className="pb-field-row" style={{ marginBottom: 20 }}>
+            <div className="pb-field-row">
               <div><label className="pb-label">% (Opt):</label><input type="number" className="pb-input" value={form.intensity} onChange={e => setForm({...form, intensity: e.target.value})} placeholder="80" /></div>
               <div><label className="pb-label">Tempo:</label><input className="pb-input" value={form.tempo} onChange={e => setForm({...form, tempo: e.target.value})} placeholder="e.g. 30X0" /></div>
               <div><label className="pb-label">Rest:</label><input className="pb-input" value={form.rest} onChange={e => setForm({...form, rest: e.target.value})} placeholder="90s" /></div>

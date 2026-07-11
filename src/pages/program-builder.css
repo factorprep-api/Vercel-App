@@ -19,7 +19,8 @@
 .pb-right { background: #e9ecef; border: 2px dashed #adb5bd; border-radius: 8px; padding: 20px; box-sizing: border-box; display: flex; flex-direction: column; }
 
 .pb-section-title { margin: 0 0 15px 0; color: #333; font-size: 18px; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
-.pb-field-group { margin-bottom: 15px; }
+.pb-field-group { margin-bottom: 20px; }
+.pb-field-row { margin-bottom: 20px; }
 .pb-label { font-weight: bold; font-size: 13px; color: #555; display: block; margin-bottom: 5px; }
 .pb-input, .pb-select, .pb-textarea { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; font-size: 14px; outline: none; font-family: inherit; }
 .pb-input:focus, .pb-select:focus, .pb-textarea:focus { border-color: #008ed3; }
