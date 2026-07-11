@@ -76,6 +76,7 @@ export default function ExerciseLibrary() {
   const [currentPage, setCurrentPage] = useState(1);
   const [modalVideo, setModalVideo] = useState(null);
   const [coachEmail, setCoachEmail] = useState('');
+  const [viewFilter, setViewFilter] = useState('all'); // 'all' or 'my'
 
   useEffect(() => {
     loadCoachEmail();
@@ -102,7 +103,6 @@ export default function ExerciseLibrary() {
   }
 
   function isCoachOwned(exercise) {
-    // Check if exercise has an ownerEmail field and matches current coach
     if (!exercise.ownerEmail || !coachEmail) return false;
     return exercise.ownerEmail.toLowerCase() === coachEmail.toLowerCase();
   }
@@ -112,12 +112,19 @@ export default function ExerciseLibrary() {
     return <span className="exlib-coach-badge">• Coach</span>;
   }
 
-  const groupedLibrary = useMemo(() => buildGrouped(fullLibrary), [fullLibrary]);
+  const filteredForView = useMemo(() => {
+    if (viewFilter === 'my') {
+      return fullLibrary.filter(ex => isCoachOwned(ex));
+    }
+    return fullLibrary; // 'all' view
+  }, [fullLibrary, viewFilter, coachEmail]);
+
+  const groupedLibrary = useMemo(() => buildGrouped(filteredForView), [filteredForView]);
 
   const currentDataset = useMemo(() => {
     if (debouncedQuery.length >= 2) {
       const tokens = debouncedQuery.toLowerCase().split(/\s+/);
-      const filtered = fullLibrary.filter(ex => {
+      const filtered = filteredForView.filter(ex => {
         const n = ex.name.toLowerCase();
         const m = ex.muscle.toLowerCase();
         return tokens.every(t => n.includes(t) || m.includes(t));
@@ -125,7 +132,7 @@ export default function ExerciseLibrary() {
       return buildGrouped(filtered);
     }
     return groupedLibrary;
-  }, [debouncedQuery, fullLibrary, groupedLibrary]);
+  }, [debouncedQuery, filteredForView, groupedLibrary]);
 
   const pageGroups = useMemo(() => getPageSlice(currentDataset, currentPage), [currentDataset, currentPage]);
   const totalItems = currentDataset.reduce((s, g) => s + g.items.length, 0);
@@ -136,10 +143,27 @@ export default function ExerciseLibrary() {
   const openModal = (rawUrl) => setModalVideo({ url: rawUrl, ytId: getYouTubeId(rawUrl) });
   const closeModal = () => setModalVideo(null);
 
+  const viewFilters = [
+    { id: 'all', label: 'All Exercises' },
+    { id: 'my', label: 'My Exercises' }
+  ];
+
   return (
     <div className="exlib-container">
       <div className="exlib-body">
         <h2 style={{ fontSize: '24px', color: '#008ed3', marginBottom: '16px', fontWeight: '700' }}>Exercise Library</h2>
+
+        <div className="exlib-view-filters">
+          {viewFilters.map(filter => (
+            <button
+              key={filter.id}
+              className={`exlib-view-filter ${viewFilter === filter.id ? 'active' : ''}`}
+              onClick={() => { setViewFilter(filter.id); setCurrentPage(1); }}
+            >
+              {filter.label}
+            </button>
+          ))}
+        </div>
 
         <div className="exlib-search-wrapper">
           <Search className="exlib-search-icon" size={18} />
