@@ -2,7 +2,6 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { Plus, Save, ArrowUp, ArrowDown, Trash2, UserCheck, Library as LibIcon, Hammer, CheckCircle, X, Search, Users } from 'lucide-react';
 import { fetchAllData, saveFullProgram, assignProgramBulk, addExerciseToLibrary } from '../api';
 import './program-builder.css';
-
 export default function ProgramBuilder() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -12,22 +11,16 @@ export default function ProgramBuilder() {
   const [activeTab, setActiveTab] = useState('builder');
   const [toast, setToast] = useState(null);
   const [saving, setSaving] = useState(false);
-
   const [draft, setDraft] = useState([]);
   const [form, setForm] = useState({ name: '', category: '', notes: '', phase: 'Work Block', exercise: '', sets: '', reps: '', intensity: '', tempo: '', rest: '', privacyLevel: 'PRIVATE' });
-
   const [selectedAthletes, setSelectedAthletes] = useState(new Set());
   const [athleteSearch, setAthleteSearch] = useState('');
   const [selectedPrograms, setSelectedPrograms] = useState([]);
-
   const [libForm, setLibForm] = useState({ name: '', video: '', baseLift: '', multiplier: '' });
   const [libSearch, setLibSearch] = useState('');
-
   const draftRef = useRef(null);
-
   useEffect(() => { loadData(); }, []);
   useEffect(() => { if (draftRef.current) draftRef.current.scrollTop = draftRef.current.scrollHeight; }, [draft]);
-
   async function loadData() {
     try {
       const allData = await fetchAllData();
@@ -40,25 +33,21 @@ export default function ProgramBuilder() {
       setError('Failed to load data.'); setLoading(false);
     }
   }
-
   const exerciseList = useMemo(() => {
     if (!library.length) return [];
     const names = library.slice(1).map(r => String(r[0] || '').trim()).filter(Boolean);
     return [...new Set(names)].sort();
   }, [library]);
-
   const filteredExercises = useMemo(() => {
     if (!form.exercise.trim()) return exerciseList.slice(0, 50);
     const tokens = form.exercise.toLowerCase().split(/\s+/);
     return exerciseList.filter(ex => tokens.every(t => ex.toLowerCase().includes(t))).slice(0, 50);
   }, [form.exercise, exerciseList]);
-
   const uniqueProgramNames = useMemo(() => {
     if (!programs.length) return [];
     const names = [...new Set(programs.slice(1).map(r => String(r[0] || '').trim()))].filter(Boolean);
     return names.sort();
   }, [programs]);
-
   const athleteOptions = useMemo(() => {
     if (!athletes.length) return [];
     const headers = athletes[0] || [];
@@ -78,13 +67,11 @@ export default function ProgramBuilder() {
       })
       .map(a => ({ row: a.row, name: a.name }));
   }, [athletes]);
-
   const filteredAthletes = useMemo(() => {
     if (!athleteSearch.trim()) return athleteOptions;
     const q = athleteSearch.toLowerCase();
     return athleteOptions.filter(a => a.name.toLowerCase().includes(q));
   }, [athleteOptions, athleteSearch]);
-
   const libSearchResults = useMemo(() => {
     if (!libSearch.trim()) return [];
     const tokens = libSearch.toLowerCase().split(/\s+/);
@@ -93,12 +80,10 @@ export default function ProgramBuilder() {
       return tokens.every(t => exName.includes(t));
     }).slice(0, 10);
   }, [libSearch, library]);
-
   function showToast(message, isError = false) {
     setToast({ message, isError });
     setTimeout(() => setToast(null), 3500);
   }
-
   function addDraftExercise() {
     if (!form.exercise) { showToast('Please select an exercise.', true); return; }
     if (!form.sets || !form.reps) { showToast('Sets and Reps are required.', true); return; }
@@ -108,7 +93,6 @@ export default function ProgramBuilder() {
     }]);
     setForm(f => ({ ...f, exercise: '' }));
   }
-
   function moveItem(i, dir) {
     const newDraft = [...draft];
     const j = i + dir;
@@ -116,11 +100,9 @@ export default function ProgramBuilder() {
     [newDraft[i], newDraft[j]] = [newDraft[j], newDraft[i]];
     setDraft(newDraft);
   }
-
   function deleteItem(i) {
     setDraft(draft.filter((_, idx) => idx !== i));
   }
-
   async function handleSaveProgram() {
     if (!form.name) { showToast('Program Name is required.', true); return; }
     if (draft.length === 0) { showToast('Draft is empty. Add movements first.', true); return; }
@@ -137,7 +119,6 @@ export default function ProgramBuilder() {
     } catch (err) { showToast('Network error', true); }
     setSaving(false);
   }
-
   function toggleAthlete(rowNum) {
     setSelectedAthletes(prev => {
       const next = new Set(prev);
@@ -145,7 +126,6 @@ export default function ProgramBuilder() {
       return next;
     });
   }
-
   function selectAllFiltered() {
     setSelectedAthletes(prev => {
       const next = new Set(prev);
@@ -153,7 +133,6 @@ export default function ProgramBuilder() {
       return next;
     });
   }
-
   function deselectAllFiltered() {
     setSelectedAthletes(prev => {
       const next = new Set(prev);
@@ -161,22 +140,18 @@ export default function ProgramBuilder() {
       return next;
     });
   }
-
   function clearAthleteSelection() {
     setSelectedAthletes(new Set());
   }
-
   async function handleAssign() {
     if (selectedAthletes.size === 0) { showToast('Select at least one athlete.', true); return; }
     if (selectedPrograms.length === 0) { showToast('Select at least one program.', true); return; }
-
     const headers = athletes[0] || [];
     let assignCol = -1;
     for (let c = 0; c < headers.length; c++) {
       if (String(headers[c] || '').trim().toLowerCase() === 'program assignment') { assignCol = c; break; }
     }
     if (assignCol === -1) { showToast('Program Assignment column not found.', true); return; }
-
     const rows = Array.from(selectedAthletes);
     try {
       const res = await assignProgramBulk(rows, selectedPrograms.join(', '), assignCol);
@@ -187,7 +162,6 @@ export default function ProgramBuilder() {
       } else { showToast('Assignment failed', true); }
     } catch (err) { showToast('Network error', true); }
   }
-
   async function handleAddExercise() {
     if (!libForm.name) { showToast('Exercise name is required.', true); return; }
     try {
@@ -199,19 +173,15 @@ export default function ProgramBuilder() {
       } else { showToast('Add failed: ' + (res.message || ''), true); }
     } catch (err) { showToast('Network error', true); }
   }
-
   const phaseColors = { 'Warm Up': '#fd7e14', 'Work Block': '#008ed3', 'Cool Down': '#0dcaf0' };
-
   const tabs = [
     { id: 'builder', label: '1. Build Program', icon: Hammer },
     { id: 'assign', label: '2. Assign To Athletes', icon: Users },
     { id: 'library', label: '3. Add Exercise', icon: LibIcon }
   ];
-
   return (
     <div className="pb-wrapper">
       <h2 style={{ fontSize: '24px', color: '#008ed3', marginBottom: '16px', fontWeight: '700' }}>Program Builder</h2>
-
       <div className="pb-tabs">
         {tabs.map(tab => (
           <button key={tab.id} className={`pb-tab ${activeTab === tab.id ? 'active' : ''}`} onClick={() => setActiveTab(tab.id)}>
@@ -220,7 +190,6 @@ export default function ProgramBuilder() {
           </button>
         ))}
       </div>
-
       {activeTab === 'builder' && !loading && !error && (
         <div className="pb-panel-container">
           <div className="pb-left">
@@ -239,7 +208,6 @@ export default function ProgramBuilder() {
               <label className="pb-label">Coach's Notes (Optional):</label>
               <textarea className="pb-textarea" value={form.notes} onChange={e => setForm({...form, notes: e.target.value})} placeholder="e.g. Focus on tempo today." />
             </div>
-
             <div className="pb-field-group">
               <label className="pb-label">Privacy Level:</label>
               <select className="pb-select" value={form.privacyLevel} onChange={e => setForm({...form, privacyLevel: e.target.value})}>
@@ -253,7 +221,6 @@ export default function ProgramBuilder() {
                 {form.privacyLevel === 'PUBLIC' && 'Appears in Public Programs for all athletes to access.'}
               </p>
             </div>
-
             <h3 className="pb-section-title">2. Add Movement</h3>
             <div className="pb-field-group">
               <label className="pb-label">Training Phase:</label>
@@ -290,7 +257,6 @@ export default function ProgramBuilder() {
               <Plus size={16} /> Add to Draft
             </button>
           </div>
-
           <div className="pb-right">
             <h3 className="pb-section-title" style={{ textAlign: 'center', textTransform: 'uppercase', color: '#495057' }}>Live Draft View</h3>
             <div className="pb-draft-list" ref={draftRef}>
@@ -325,7 +291,6 @@ export default function ProgramBuilder() {
           </div>
         </div>
       )}
-
       {activeTab === 'assign' && !loading && !error && (
         <div style={{ background: '#f9f9f9', padding: 20, borderRadius: 8, border: '1px solid #ddd' }}>
           <h3 className="pb-section-title">Assign Programs To Athletes</h3>
@@ -395,7 +360,6 @@ export default function ProgramBuilder() {
           </button>
         </div>
       )}
-
       {activeTab === 'library' && !loading && !error && (
         <div style={{ background: '#f9f9f9', padding: 20, borderRadius: 8, border: '1px solid #ddd' }}>
           <h3 className="pb-section-title">Add New Exercise To Library</h3>
@@ -441,10 +405,8 @@ export default function ProgramBuilder() {
           </div>
         </div>
       )}
-
       {loading && <p className="pb-placeholder">Loading...</p>}
       {error && <p className="pb-placeholder" style={{ color: '#dc3545' }}>{error}</p>}
-
       {toast && (
         <div className={`pb-toast ${toast.isError ? 'error' : ''}`}>
           {toast.isError ? <X size={16} /> : <CheckCircle size={16} />}
