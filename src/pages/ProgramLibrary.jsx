@@ -335,7 +335,6 @@ export default function ProgramLibrary() {
                     </div>
                   </div>
                   <div className="pl-actions" onClick={e => e.stopPropagation()}>
-                    {/* Only show Delete button for owned programs */}
                     {program.ownerEmail === coachEmail && (
                       <button className="pl-delete-btn" onClick={() => handleDelete(program.name)} disabled={deleting === program.name}>
                         <Trash2 size={14} /> {deleting === program.name ? '...' : 'Delete'}
@@ -354,7 +353,6 @@ export default function ProgramLibrary() {
         )}
       </div>
 
-      {/* Bulk Assign Modal */}
       {assignModalOpen && (
         <div className="pl-assign-modal" onClick={() => setAssignModalOpen(false)}>
           <div className="pl-assign-content" onClick={e => e.stopPropagation()}>
@@ -426,7 +424,7 @@ export default function ProgramLibrary() {
         </div>
       )}
 
-      <HelpButton videoUrl="https://youtube.com/watch?v=YOUR_HELP_VIDEO_ID" position="bottom-right" />
+      <HelpButton pageName="Program Library" position="bottom-right" />
 
       {toast && (
         <div className={`pl-toast ${toast.isError ? 'error' : ''}`}>

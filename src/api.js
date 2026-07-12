@@ -155,3 +155,15 @@ export const updateExerciseInLibrary = async (exerciseData) => {
     return { status: 'Error', message: err.message };
   }
 };
+
+export const fetchHelpVideos = async () => {
+  try {
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=getHelpVideos`;
+    let resp = await fetch(url);
+    let json = await resp.json();
+    return json.data || {};
+  } catch (err) {
+    return {};
+  }
+};
+

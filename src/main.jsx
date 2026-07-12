@@ -1,11 +1,13 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
+import { HelpVideosProvider } from './context/HelpVideosContext.jsx'
 import './index.css'
 import App from './App.jsx'
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <App />
+    <HelpVideosProvider>
+      <App />
+    </HelpVideosProvider>
   </StrictMode>,
 )
-// redeploy Thu Jul  9 06:54:55 PM CEST 2026

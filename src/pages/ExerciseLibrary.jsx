@@ -303,7 +303,6 @@ export default function ExerciseLibrary() {
         )}
       </div>
 
-      {/* Add Exercise Modal */}
       {adding && (
         <AddExerciseModal
           coachEmail={coachEmail}
@@ -350,7 +349,7 @@ export default function ExerciseLibrary() {
         </div>
       )}
 
-      <HelpButton videoUrl="https://youtube.com/watch?v=YOUR_HELP_VIDEO_ID" position="bottom-right" />
+      <HelpButton pageName="Exercise Library" position="bottom-right" />
 
       {toast && (
         <div className={`exlib-toast ${toast.isError ? 'error' : ''}`}>

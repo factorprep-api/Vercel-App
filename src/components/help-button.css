@@ -26,3 +26,12 @@
 .help-btn.bottom-right { right: 16px; bottom: 16px; }
 .help-btn.top-left { top: 16px; left: 16px; bottom: auto; right: auto; }
 .help-btn.top-right { top: 16px; right: 16px; bottom: auto; left: auto; }
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.help-btn .spin {
+  animation: spin 1s linear infinite;
+}
