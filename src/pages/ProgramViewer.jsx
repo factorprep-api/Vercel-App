@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Play, ChevronDown, ChevronUp, Video, Save, CheckCircle, X, MessageSquare } from 'lucide-react';
+import { Play, ChevronDown, ChevronUp, Video, Save, CheckCircle, X, MessageSquare, UserPlus, Globe } from 'lucide-react';
 import { supabase } from '../supabase';
 import { fetchAllData, getAthleteByEmail, saveSession, getMediaType } from '../api';
 import './program-viewer.css';
@@ -169,11 +169,6 @@ export default function ProgramViewer() {
       }
     });
     return Object.values(map).sort((a, b) => a.name.localeCompare(b.name));
-  }, [programData]);
-
-  const uniquePrograms = useMemo(() => {
-    if (!programData.length) return [];
-    return [...new Set(programData.slice(1).map(r => String(r[0] || '').trim()))].filter(Boolean).sort();
   }, [programData]);
 
   const categories = useMemo(() => {
@@ -348,8 +343,6 @@ export default function ProgramViewer() {
     );
   }
 
-  const availablePrograms = [...new Set([...assignedPrograms, ...publicPrograms.map(p => p.name)])].sort();
-
   const programMediaType = programMediaUrl ? getMediaType(programMediaUrl) : null;
   const programMediaYtId = programMediaUrl ? getYouTubeId(programMediaUrl) : null;
 
@@ -369,161 +362,203 @@ export default function ProgramViewer() {
           </div>
         </div>
 
-        {availablePrograms.length === 0 && (
-          <p className="pv-placeholder">No programs assigned yet. Ask your coach to assign you a program.</p>
+        {/* Two Panels: My Programs + Public Programs */}
+        <div className="pv-panels">
+          <div className="pv-panel">
+            <div className="pv-panel-header">
+              <h3 className="pv-panel-title" style={{ color: '#008ed3' }}>
+                <UserPlus size={20} style={{ verticalAlign: 'middle', marginRight: 8 }} />
+                My Programs
+              </h3>
+              <span className="pv-count-badge">{assignedPrograms.length}</span>
+            </div>
+            {assignedPrograms.length === 0 ? (
+              <p className="pv-panel-empty">No programs assigned yet.</p>
+            ) : (
+              <div className="pv-program-buttons">
+                {assignedPrograms.map(prog => (
+                  <button
+                    key={prog}
+                    className={'pv-program-btn' + (selectedProgram === prog ? ' active' : '')}
+                    onClick={() => handleProgramChange(prog)}
+                  >
+                    <Play size={16} /> {prog}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="pv-panel">
+            <div className="pv-panel-header">
+              <h3 className="pv-panel-title" style={{ color: '#2e7d32' }}>
+                <Globe size={20} style={{ verticalAlign: 'middle', marginRight: 8 }} />
+                Public Programs
+              </h3>
+              <span className="pv-count-badge">{publicPrograms.length}</span>
+            </div>
+            {publicPrograms.length === 0 ? (
+              <p className="pv-panel-empty">No public programs available.</p>
+            ) : (
+              <div className="pv-program-buttons">
+                {publicPrograms.map(prog => (
+                  <button
+                    key={prog.name}
+                    className={'pv-program-btn' + (selectedProgram === prog.name ? ' active' : '')}
+                    onClick={() => handleProgramChange(prog.name)}
+                  >
+                    <Play size={16} /> {prog.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Category filter if program selected */}
+        {selectedProgram && categories.length > 0 && (
+          <div className="pv-category-filter">
+            <label>Category:</label>
+            <select value={selectedCategory} onChange={e => { setSelectedCategory(e.target.value); setSaveSuccess(false); }}>
+              <option value="">- All Categories -</option>
+              {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+            </select>
+          </div>
         )}
 
-        {availablePrograms.length > 0 && (
-          <>
-            <div className="pv-form-row">
-              <label className="pv-label">Select Program:</label>
-              <select className="pv-select" value={selectedProgram} onChange={e => handleProgramChange(e.target.value)}>
-                <option value="">-- Select Program --</option>
-                {availablePrograms.map(p => <option key={p} value={p}>{p}</option>)}
-              </select>
+        {coachNote && (
+          <div className="pv-note-box">
+            <MessageSquare size={14} style={{ marginRight: 8, color: '#008ed3' }} />
+            <strong>Coach's Note:</strong> {coachNote}
+          </div>
+        )}
+
+        {programMediaUrl && (
+          <div className="pv-media-container">
+            <div className="pv-media-header" onClick={() => setShowProgramMedia(!showProgramMedia)} style={{ cursor: 'pointer' }}>
+              <span className="pv-media-title">
+                {programMediaType === 'audio' ? 'Voice Note' : 'Video'} - Coach Program Overview
+              </span>
+              <button className="pv-media-toggle-btn">
+                {showProgramMedia ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                {showProgramMedia ? 'Hide' : 'Play'}
+              </button>
             </div>
-
-            {selectedProgram && categories.length > 0 && (
-              <div className="pv-form-row">
-                <label className="pv-label">Filter by Category:</label>
-                <select className="pv-select" value={selectedCategory} onChange={e => setSelectedCategory(e.target.value)}>
-                  <option value="">All Categories</option>
-                  {categories.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </div>
-            )}
-
-            {coachNote && (
-              <div className="pv-note-box">
-                <MessageSquare size={14} style={{ marginRight: 8, color: '#008ed3' }} />
-                <strong>Coach's Note:</strong> {coachNote}
-              </div>
-            )}
-
-            {programMediaUrl && (
-              <div className="pv-media-container">
-                <div className="pv-media-header" onClick={() => setShowProgramMedia(!showProgramMedia)} style={{ cursor: 'pointer' }}>
-                  <span className="pv-media-title">
-                    {programMediaType === 'audio' ? 'Voice Note' : 'Video'} - Coach Program Overview
-                  </span>
-                  <button className="pv-media-toggle-btn">
-                    {showProgramMedia ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                    {showProgramMedia ? 'Hide' : 'Play'}
-                  </button>
-                </div>
-                {showProgramMedia && (
-                  <div className="pv-media-player-wrap">
-                    {programMediaYtId ? (
-                      <iframe
-                        src={'https://www.youtube.com/embed/' + programMediaYtId + '?rel=0'}
-                        allowFullScreen
-                        title="Coach Program Media"
-                        className="pv-media-iframe"
-                      />
-                    ) : programMediaType === 'audio' ? (
-                      <audio src={programMediaUrl} controls preload="metadata" className="pv-media-audio" />
-                    ) : (
-                      <video src={programMediaUrl} controls playsInline preload="metadata" className="pv-media-video" />
-                    )}
-                  </div>
+            {showProgramMedia && (
+              <div className="pv-media-player-wrap">
+                {programMediaYtId ? (
+                  <iframe
+                    src={'https://www.youtube.com/embed/' + programMediaYtId + '?rel=0'}
+                    allowFullScreen
+                    title="Coach Program Media"
+                    className="pv-media-iframe"
+                  />
+                ) : programMediaType === 'audio' ? (
+                  <audio src={programMediaUrl} controls preload="metadata" className="pv-media-audio" />
+                ) : (
+                  <video src={programMediaUrl} controls playsInline preload="metadata" className="pv-media-video" />
                 )}
               </div>
             )}
+          </div>
+        )}
 
-            {phaseSections.length > 0 ? (
-              phaseSections.map(section => (
-                <div key={section.title} className="pv-section">
-                  <div className="pv-section-header" style={{ borderLeft: '4px solid ' + section.color }}>
-                    <h3 className="pv-section-title" style={{ color: section.color }}>{section.title}</h3>
-                    <span className="pv-section-count">{section.items.length} exercise{section.items.length !== 1 ? 's' : ''}</span>
+        {phaseSections.length > 0 ? (
+          phaseSections.map(section => (
+            <div key={section.title} className="pv-section">
+              <div className="pv-section-header" style={{ borderLeft: '4px solid ' + section.color }}>
+                <h3 className="pv-section-title" style={{ color: section.color }}>{section.title}</h3>
+                <span className="pv-section-count">{section.items.length} exercise{section.items.length !== 1 ? 's' : ''}</span>
+              </div>
+              {section.items.map(group => (
+                <div key={group.id} className="pv-workout-card">
+                  <div className="pv-workout-main">
+                    <div className="pv-ex-title">{group.name}</div>
+                    <div className="pv-ex-meta">
+                      {group.details.length} set{group.details.length !== 1 ? 's' : ''}
+                      {group.baseLift && group.baseLift !== 'none' && (
+                        <span className="pv-base-lift">(Base: {group.baseLift} | Mult: {group.multiplier}x)</span>
+                      )}
+                    </div>
                   </div>
-                  {section.items.map(group => (
-                    <div key={group.id} className="pv-workout-card">
-                      <div className="pv-workout-main">
-                        <div className="pv-ex-title">{group.name}</div>
-                        <div className="pv-ex-meta">
-                          {group.details.length} set{group.details.length !== 1 ? 's' : ''}
-                          {group.baseLift && group.baseLift !== 'none' && (
-                            <span className="pv-base-lift">(Base: {group.baseLift} | Mult: {group.multiplier}x)</span>
-                          )}
-                        </div>
-                      </div>
-                      {group.videoUrl && (
-                        <div className="pv-video-action">
-                          <button className="pv-video-toggle" onClick={() => toggleVideo(group.id)}>
-                            {expandedVideos.has(group.id) ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                            {expandedVideos.has(group.id) ? 'Hide Video' : 'Show Video'}
-                          </button>
-                          {expandedVideos.has(group.id) && (
-                            <div className="pv-video-container">
-                              {group.ytId ? (
-                                <iframe src={'https://www.youtube.com/embed/' + group.ytId + '?rel=0'} allowFullScreen title={group.name} />
-                              ) : (
-                                <video controls playsInline controlsList="nodownload">
-                                  <source src={group.videoUrl} type="video/mp4" />
-                                </video>
-                              )}
-                            </div>
+                  {group.videoUrl && (
+                    <div className="pv-video-action">
+                      <button className="pv-video-toggle" onClick={() => toggleVideo(group.id)}>
+                        {expandedVideos.has(group.id) ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                        {expandedVideos.has(group.id) ? 'Hide Video' : 'Show Video'}
+                      </button>
+                      {expandedVideos.has(group.id) && (
+                        <div className="pv-video-container">
+                          {group.ytId ? (
+                            <iframe src={'https://www.youtube.com/embed/' + group.ytId + '?rel=0'} allowFullScreen title={group.name} />
+                          ) : (
+                            <video controls playsInline controlsList="nodownload">
+                              <source src={group.videoUrl} type="video/mp4" />
+                            </video>
                           )}
                         </div>
                       )}
-                      <div className="pv-details-table">
-                        <table>
-                          <thead>
-                            <tr>
-                              <th>Set</th>
-                              <th>% Intensity</th>
-                              <th>Target Load</th>
-                              <th>Tempo</th>
-                              <th>Reps (Target)</th>
-                              <th>Your Weight</th>
-                              <th>Your Reps</th>
-                              <th>Rest</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {group.details.map((detail, dIdx) => {
-                              const key = group.id + '_' + dIdx;
-                              const input = inputValues[key] || {};
-                              const target = calculateTargetLoad(athletesData, athleteRowIndex, group.baseLift, group.multiplier, group.name, detail.reps, detail.intensity);
-                              return (
-                                <tr key={dIdx}>
-                                  <td>{dIdx + 1}</td>
-                                  <td>{detail.intensity || '-'}</td>
-                                  <td className={target !== 'Auto' ? 'pv-target-cell' : ''}>{target}</td>
-                                  <td>{detail.tempo || '-'}</td>
-                                  <td>{detail.reps}</td>
-                                  <td><input className="pv-input-sm" type="number" placeholder="kg" value={input.wt || ''} onChange={e => handleInputChange(group.id, dIdx, 'wt', e.target.value)} /></td>
-                                  <td><input className="pv-input-sm" type="number" placeholder="" value={input.reps || ''} onChange={e => handleInputChange(group.id, dIdx, 'reps', e.target.value)} /></td>
-                                  <td>{detail.rest || '-'}</td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
                     </div>
-                  ))}
-                </div>
-              ))
-            ) : (
-              selectedProgram && <p className="pv-placeholder">No exercises found for this program.</p>
-            )}
-
-            {workoutGroups.length > 0 && (
-              <div className="pv-save-section">
-                <button className="pv-save-btn" onClick={handleSaveSession} disabled={saving}>
-                  <Save size={18} /> {saving ? 'Saving...' : 'Save Session'}
-                </button>
-                {saveSuccess && (
-                  <div className="pv-save-success">
-                    <CheckCircle size={18} style={{ color: '#28a745', marginRight: 8 }} />
-                    Session saved successfully!
+                  )}
+                  <div className="pv-details-table">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Set</th>
+                          <th>% Intensity</th>
+                          <th>Target Load</th>
+                          <th>Tempo</th>
+                          <th>Reps (Target)</th>
+                          <th>Your Weight</th>
+                          <th>Your Reps</th>
+                          <th>Rest</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {group.details.map((detail, dIdx) => {
+                          const key = group.id + '_' + dIdx;
+                          const input = inputValues[key] || {};
+                          const target = calculateTargetLoad(athletesData, athleteRowIndex, group.baseLift, group.multiplier, group.name, detail.reps, detail.intensity);
+                          return (
+                            <tr key={dIdx}>
+                              <td>{dIdx + 1}</td>
+                              <td>{detail.intensity || '-'}</td>
+                              <td className={target !== 'Auto' ? 'pv-target-cell' : ''}>{target}</td>
+                              <td>{detail.tempo || '-'}</td>
+                              <td>{detail.reps}</td>
+                              <td><input className="pv-input-sm" type="number" placeholder="kg" value={input.wt || ''} onChange={e => handleInputChange(group.id, dIdx, 'wt', e.target.value)} /></td>
+                              <td><input className="pv-input-sm" type="number" placeholder="" value={input.reps || ''} onChange={e => handleInputChange(group.id, dIdx, 'reps', e.target.value)} /></td>
+                              <td>{detail.rest || '-'}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   </div>
-                )}
+                </div>
+              ))}
+            </div>
+          ))
+        ) : (
+          selectedProgram && <p className="pv-placeholder">No exercises found for this program.</p>
+        )}
+
+        {!selectedProgram && (
+          <p className="pv-placeholder">Select a program from above to view your workout.</p>
+        )}
+
+        {workoutGroups.length > 0 && (
+          <div className="pv-save-section">
+            <button className="pv-save-btn" onClick={handleSaveSession} disabled={saving}>
+              <Save size={18} /> {saving ? 'Saving...' : 'Save Session'}
+            </button>
+            {saveSuccess && (
+              <div className="pv-save-success">
+                <CheckCircle size={18} style={{ color: '#28a745', marginRight: 8 }} />
+                Session saved successfully!
               </div>
             )}
-          </>
+          </div>
         )}
       </div>
       <HelpButton pageName="Program View" position="bottom-right" />
