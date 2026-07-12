@@ -175,6 +175,12 @@ export default function ExerciseLibrary() {
     setDeleting(null);
   }
 
+  const existingCategories = useMemo(() => {
+    const cats = new Set();
+    fullLibrary.forEach(ex => { if (ex.muscle) cats.add(ex.muscle); });
+    return [...cats].sort();
+  }, [fullLibrary]);
+
   const filteredForView = useMemo(() => {
     if (viewFilter === 'my') {
       return fullLibrary.filter(ex => isCoachOwned(ex));
@@ -300,9 +306,11 @@ export default function ExerciseLibrary() {
       {adding && (
         <AddExerciseModal
           coachEmail={coachEmail}
+          existingCategories={existingCategories}
           onClose={() => setAdding(false)}
           onSuccess={async () => {
             setAdding(false);
+            showToast('Exercise added! It will appear with a • Coach badge.');
             await reloadLibrary();
           }}
         />
@@ -351,9 +359,10 @@ export default function ExerciseLibrary() {
   );
 }
 
-function AddExerciseModal({ coachEmail, onClose, onSuccess }) {
+function AddExerciseModal({ coachEmail, existingCategories, onClose, onSuccess }) {
   const [name, setName] = useState('');
   const [video, setVideo] = useState('');
+  const [muscle, setMuscle] = useState('Coach Exercises');
   const [baseLift, setBaseLift] = useState('');
   const [multiplier, setMultiplier] = useState('');
   const [saving, setSaving] = useState(false);
@@ -366,12 +375,12 @@ function AddExerciseModal({ coachEmail, onClose, onSuccess }) {
       const res = await addExerciseToLibrary({
         name: name.trim(),
         video: video.trim(),
+        muscle: muscle.trim() || 'Coach Exercises',
         baseLift: baseLift.trim(),
         multiplier: multiplier ? parseFloat(multiplier) : 1.0,
-        ownerEmail: coachEmail  // IMPORTANT: Send owner email!
+        ownerEmail: coachEmail
       });
       if (res.status === 'Success') {
-        alert('Exercise added! It will appear with a • Coach badge.');
         await onSuccess();
       } else {
         alert('Add failed: ' + (res.message || 'Unknown error'));
@@ -394,6 +403,15 @@ function AddExerciseModal({ coachEmail, onClose, onSuccess }) {
         <div className="exlib-add-field">
           <label className="exlib-add-label">Video URL:</label>
           <input className="exlib-add-input" value={video} onChange={e => setVideo(e.target.value)} placeholder="YouTube or MP4 link" />
+        </div>
+        <div className="exlib-add-field">
+          <label className="exlib-add-label">Muscle / Category:</label>
+          <input className="exlib-add-input" list="exlib-muscle-list" value={muscle} onChange={e => setMuscle(e.target.value)} placeholder="e.g. Chest" />
+          <datalist id="exlib-muscle-list">
+            <option value="Coach Exercises" />
+            {existingCategories.map(cat => <option key={cat} value={cat} />)}
+          </datalist>
+          <p style={{ fontSize: 11, color: '#888', margin: '4px 0 0 0' }}>Defaults to "Coach Exercises". Type or select existing categories.</p>
         </div>
         <div className="exlib-add-field">
           <label className="exlib-add-label">Base Lift (Optional):</label>

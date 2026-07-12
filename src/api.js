@@ -69,8 +69,11 @@ export async function fetchExerciseLibrary() {
     const name = String(row[0] || '').trim();
     const url = String(row[1] || '').trim();
     const muscle = (row.length > 2 && String(row[2]).trim()) ? String(row[2]).trim() : 'Other';
+    const baseLift = (row.length > 3 && String(row[3]).trim()) ? String(row[3]).trim() : '';
+    const multiplier = (row.length > 4 && String(row[4]).trim()) ? parseFloat(row[4]) || 1.0 : 1.0;
+    const ownerEmail = (row.length > 5 && String(row[5]).trim()) ? String(row[5]).trim() : '';
     if (!name || !url) continue;
-    lib.push({ name, muscle, rawUrl: url });
+    lib.push({ name, muscle, rawUrl: url, baseLift, multiplier, ownerEmail });
   }
   return lib;
 }
