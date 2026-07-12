@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Play, ChevronDown, ChevronUp, Video, Save, CheckCircle, X } from 'lucide-react';
+import { Play, ChevronDown, ChevronUp, Video, Save, CheckCircle, X, MessageSquare } from 'lucide-react';
 import { supabase } from '../supabase';
-import { fetchAllData, getAthleteByEmail, saveSession } from '../api';
+import { fetchAllData, getAthleteByEmail, saveSession, getMediaType } from '../api';
 import './program-viewer.css';
 import HelpButton from '../components/HelpButton';
 
@@ -92,6 +92,7 @@ export default function ProgramViewer() {
   const [inputValues, setInputValues] = useState({});
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [showProgramMedia, setShowProgramMedia] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -192,6 +193,19 @@ export default function ProgramViewer() {
     return note && note.toLowerCase() !== 'undefined' ? note : '';
   }, [selectedProgram, selectedCategory, programData]);
 
+  // NEW: Extract program-level media URL from Column M (index 12)
+  const programMediaUrl = useMemo(() => {
+    if (!selectedProgram || !programData.length) return '';
+    const rows = programData.slice(1).filter(r => {
+      if (String(r[0] || '').trim() !== selectedProgram) return false;
+      if (selectedCategory && String(r[1] || '').trim() !== selectedCategory) return false;
+      return true;
+    });
+    if (!rows.length) return '';
+    const url = String(rows[0][12] || '').trim();
+    return url && url.toLowerCase() !== 'undefined' ? url : '';
+  }, [selectedProgram, selectedCategory, programData]);
+
   const workoutGroups = useMemo(() => {
     if (!selectedProgram || !programData.length) return [];
     let rows = programData.slice(1).filter(r => String(r[0] || '').trim() === selectedProgram);
@@ -253,6 +267,7 @@ export default function ProgramViewer() {
     setSelectedCategory('');
     setInputValues({});
     setSaveSuccess(false);
+    setShowProgramMedia(false);
   }
 
   function toggleVideo(groupId) {
@@ -336,6 +351,10 @@ export default function ProgramViewer() {
 
   const availablePrograms = [...new Set([...assignedPrograms, ...publicPrograms.map(p => p.name)])].sort();
 
+  // Determine media type for program-level media
+  const programMediaType = programMediaUrl ? getMediaType(programMediaUrl) : null;
+  const programMediaYtId = programMediaUrl ? getYouTubeId(programMediaUrl) : null;
+
   return (
     <div className="pv-container">
       <div className="pv-body">
@@ -380,6 +399,48 @@ export default function ProgramViewer() {
               <div className="pv-note-box">
                 <MessageSquare size={14} style={{ marginRight: 8, color: '#008ed3' }} />
                 <strong>Coach's Note:</strong> {coachNote}
+              </div>
+            )}
+
+            {/* === PROGRAM-LEVEL COACH MEDIA === */}
+            {programMediaUrl && (
+              <div className="pv-media-container">
+                <div className="pv-media-header" onClick={() => setShowProgramMedia(!showProgramMedia)} style={{ cursor: 'pointer' }}>
+                  <span className="pv-media-title">
+                    {programMediaType === 'audio' ? '🎙️' : '🎬'} Coach {programMediaType === 'audio' ? 'Voice Note' : 'Video'} — Program Overview
+                  </span>
+                  <button className="pv-media-toggle-btn">
+                    {showProgramMedia ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                    {showProgramMedia ? 'Hide' : 'Play'}
+                  </button>
+                </div>
+                {showProgramMedia && (
+                  <div className="pv-media-player-wrap">
+                    {programMediaYtId ? (
+                      <iframe
+                        src={`https://www.youtube.com/embed/${programMediaYtId}?rel=0`}
+                        allowFullScreen
+                        title="Coach Program Media"
+                        className="pv-media-iframe"
+                      />
+                    ) : programMediaType === 'audio' ? (
+                      <audio
+                        src={programMediaUrl}
+                        controls
+                        preload="metadata"
+                        className="pv-media-audio"
+                      />
+                    ) : (
+                      <video
+                        src={programMediaUrl}
+                        controls
+                        playsInline
+                        preload="metadata"
+                        className="pv-media-video"
+                      />
+                    )}
+                  </div>
+                )}
               </div>
             )}
 

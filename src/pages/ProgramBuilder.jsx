@@ -1,9 +1,23 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { Plus, Save, ArrowUp, ArrowDown, Trash2, Hammer, CheckCircle, X, Library as LibIcon } from 'lucide-react';
 import { supabase } from '../supabase';
-import { fetchAllData, saveFullProgram } from '../api';
+import { fetchAllData, saveFullProgram, getMediaType } from '../api';
 import './program-builder.css';
 import HelpButton from '../components/HelpButton';
+
+function MediaPlayer({ url, compact = false }) {
+  if (!url) return null;
+  const mediaType = getMediaType(url);
+  return (
+    <div className={compact ? 'media-player-compact' : 'media-player'}>
+      {mediaType === 'video' ? (
+        <video src={url} controls preload="metadata" className="media-video" />
+      ) : (
+        <audio src={url} controls preload="metadata" className="media-audio" />
+      )}
+    </div>
+  );
+}
 
 export default function ProgramBuilder() {
   const [loading, setLoading] = useState(true);
@@ -18,6 +32,9 @@ export default function ProgramBuilder() {
   const [form, setForm] = useState({ name: '', category: '', notes: '', phase: 'Work Block', exercise: '', sets: '', reps: '', intensity: '', tempo: '', rest: '', privacyLevel: 'PRIVATE' });
   const [coachEmail, setCoachEmail] = useState('');
   const [loadProgramName, setLoadProgramName] = useState('');
+  const [mediaUrl, setMediaUrl] = useState('');
+  const [showMediaInput, setShowMediaInput] = useState(false);
+  const [mediaInputDraft, setMediaInputDraft] = useState('');
   const draftRef = useRef(null);
 
   useEffect(() => { loadCoachEmail(); loadData(); }, []);
@@ -93,7 +110,7 @@ export default function ProgramBuilder() {
     if (!form.name) { showToast('Program Name is required.', true); return; }
     if (draft.length === 0) { showToast('Draft is empty. Add movements first.', true); return; }
     setSaving(true);
-    const rows = draft.map(i => [form.name, form.category, i.phase, i.exercise, i.sets, i.reps, i.intensity, i.tempo, i.rest, form.notes, form.privacyLevel, coachEmail]);
+    const rows = draft.map(i => [form.name, form.category, i.phase, i.exercise, i.sets, i.reps, i.intensity, i.tempo, i.rest, form.notes, form.privacyLevel, coachEmail, mediaUrl]);
     try {
       const res = await saveFullProgram(rows);
       if (res.status === 'Success') {
@@ -101,6 +118,7 @@ export default function ProgramBuilder() {
         setDraft([]);
         setForm(f => ({ ...f, name: '', notes: '', privacyLevel: 'PRIVATE' }));
         setLoadProgramName('');
+        setMediaUrl('');
         await loadData();
       } else { showToast('Save failed: ' + (res.message || 'Unknown error'), true); }
     } catch (err) { showToast('Network error', true); }
@@ -108,7 +126,7 @@ export default function ProgramBuilder() {
   }
 
   function handleLoadExisting() {
-    if (!loadProgramName) { showToast('Select a program to load.', true); return; }
+    if (!loadProgramName) { showToast('Select a program to edit.', true); return; }
     const programRows = programs.slice(1).filter(row => {
       const name = String(row[0] || '').trim();
       const owner = String(row[11] || '').trim();
@@ -125,6 +143,7 @@ export default function ProgramBuilder() {
       rest: String(row[8] || '').trim()
     }));
     const firstRow = programRows[0];
+    const loadedMediaUrl = (firstRow.length > 12 && String(firstRow[12]).trim()) ? String(firstRow[12]).trim() : '';
     setForm(f => ({
       ...f,
       name: String(firstRow[0] || '').trim(),
@@ -133,6 +152,7 @@ export default function ProgramBuilder() {
       privacyLevel: String(firstRow[10] || 'PRIVATE').trim().toUpperCase() || 'PRIVATE'
     }));
     setDraft(loadedDraft);
+    setMediaUrl(loadedMediaUrl);
     showToast(`Loaded "${loadProgramName}" (${loadedDraft.length} movements). Edit and save — will overwrite if name matches.`);
   }
 
@@ -156,7 +176,7 @@ export default function ProgramBuilder() {
                 <button className="pb-load-btn" onClick={handleLoadExisting}>Load</button>
               </div>
             </div>
-            <h3 className="pb-section-title">1. Categorize & Name</h3>
+            <h3 className="pb-section-title">1. Categorize and Name</h3>
             <div className="pb-field-row">
               <div style={{ flex: 2 }}>
                 <label className="pb-label">Program Name (Required):</label>
@@ -171,6 +191,74 @@ export default function ProgramBuilder() {
               <label className="pb-label">Coach's Notes (Optional):</label>
               <textarea className="pb-textarea" value={form.notes} onChange={e => setForm({...form, notes: e.target.value})} placeholder="e.g. Focus on tempo today." />
             </div>
+
+            <div className="pb-media-section">
+              <div className="pb-media-header">
+                <h4>Coach Media (Voice / Video)</h4>
+                <button
+                  type="button"
+                  className="pb-media-btn"
+                  onClick={() => {
+                    setMediaInputDraft(mediaUrl);
+                    setShowMediaInput(!showMediaInput);
+                  }}
+                >
+                  {mediaUrl ? 'Edit Media Link' : 'Add Media Link'}
+                </button>
+              </div>
+
+              {showMediaInput && (
+                <div className="pb-media-input-row">
+                  <input
+                    type="url"
+                    className="pb-media-input"
+                    placeholder="Paste video or audio file URL (e.g., https://...mp4)"
+                    value={mediaInputDraft}
+                    onChange={(e) => setMediaInputDraft(e.target.value)}
+                  />
+                  <div className="pb-media-input-actions">
+                    <button
+                      type="button"
+                      className="pb-media-save-btn"
+                      onClick={() => {
+                        setMediaUrl(mediaInputDraft.trim());
+                        setShowMediaInput(false);
+                      }}
+                    >
+                      Set Link
+                    </button>
+                    {mediaUrl && (
+                      <button
+                        type="button"
+                        className="pb-media-remove-btn"
+                        onClick={() => {
+                          setMediaUrl('');
+                          setMediaInputDraft('');
+                          setShowMediaInput(false);
+                        }}
+                      >
+                        Remove
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="pb-media-cancel-btn"
+                      onClick={() => setShowMediaInput(false)}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {mediaUrl && !showMediaInput && (
+                <div className="pb-media-preview">
+                  <span className="pb-media-label">DRAFT PREVIEW:</span>
+                  <MediaPlayer url={mediaUrl} compact />
+                </div>
+              )}
+            </div>
+
             <div className="pb-field-group">
               <label className="pb-label">Visibility:</label>
               <select className="pb-select" value={form.privacyLevel} onChange={e => setForm({...form, privacyLevel: e.target.value})}>
