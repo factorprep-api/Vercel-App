@@ -193,7 +193,6 @@ export default function ProgramViewer() {
     return note && note.toLowerCase() !== 'undefined' ? note : '';
   }, [selectedProgram, selectedCategory, programData]);
 
-  // NEW: Extract program-level media URL from Column M (index 12)
   const programMediaUrl = useMemo(() => {
     if (!selectedProgram || !programData.length) return '';
     const rows = programData.slice(1).filter(r => {
@@ -351,7 +350,6 @@ export default function ProgramViewer() {
 
   const availablePrograms = [...new Set([...assignedPrograms, ...publicPrograms.map(p => p.name)])].sort();
 
-  // Determine media type for program-level media
   const programMediaType = programMediaUrl ? getMediaType(programMediaUrl) : null;
   const programMediaYtId = programMediaUrl ? getYouTubeId(programMediaUrl) : null;
 
@@ -402,12 +400,11 @@ export default function ProgramViewer() {
               </div>
             )}
 
-            {/* === PROGRAM-LEVEL COACH MEDIA === */}
             {programMediaUrl && (
               <div className="pv-media-container">
                 <div className="pv-media-header" onClick={() => setShowProgramMedia(!showProgramMedia)} style={{ cursor: 'pointer' }}>
                   <span className="pv-media-title">
-                    {programMediaType === 'audio' ? '🎙️' : '🎬'} Coach {programMediaType === 'audio' ? 'Voice Note' : 'Video'} — Program Overview
+                    {programMediaType === 'audio' ? 'Voice Note' : 'Video'} - Coach Program Overview
                   </span>
                   <button className="pv-media-toggle-btn">
                     {showProgramMedia ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
@@ -418,26 +415,15 @@ export default function ProgramViewer() {
                   <div className="pv-media-player-wrap">
                     {programMediaYtId ? (
                       <iframe
-                        src={`https://www.youtube.com/embed/${programMediaYtId}?rel=0`}
+                        src={'https://www.youtube.com/embed/' + programMediaYtId + '?rel=0'}
                         allowFullScreen
                         title="Coach Program Media"
                         className="pv-media-iframe"
                       />
                     ) : programMediaType === 'audio' ? (
-                      <audio
-                        src={programMediaUrl}
-                        controls
-                        preload="metadata"
-                        className="pv-media-audio"
-                      />
+                      <audio src={programMediaUrl} controls preload="metadata" className="pv-media-audio" />
                     ) : (
-                      <video
-                        src={programMediaUrl}
-                        controls
-                        playsInline
-                        preload="metadata"
-                        className="pv-media-video"
-                      />
+                      <video src={programMediaUrl} controls playsInline preload="metadata" className="pv-media-video" />
                     )}
                   </div>
                 )}
@@ -447,7 +433,7 @@ export default function ProgramViewer() {
             {phaseSections.length > 0 ? (
               phaseSections.map(section => (
                 <div key={section.title} className="pv-section">
-                  <div className="pv-section-header" style={{ borderLeft: `4px solid ${section.color}` }}>
+                  <div className="pv-section-header" style={{ borderLeft: '4px solid ' + section.color }}>
                     <h3 className="pv-section-title" style={{ color: section.color }}>{section.title}</h3>
                     <span className="pv-section-count">{section.items.length} exercise{section.items.length !== 1 ? 's' : ''}</span>
                   </div>
@@ -471,7 +457,7 @@ export default function ProgramViewer() {
                           {expandedVideos.has(group.id) && (
                             <div className="pv-video-container">
                               {group.ytId ? (
-                                <iframe src={`https://www.youtube.com/embed/${group.ytId}?rel=0`} allowFullScreen title={group.name} />
+                                <iframe src={'https://www.youtube.com/embed/' + group.ytId + '?rel=0'} allowFullScreen title={group.name} />
                               ) : (
                                 <video controls playsInline controlsList="nodownload">
                                   <source src={group.videoUrl} type="video/mp4" />
