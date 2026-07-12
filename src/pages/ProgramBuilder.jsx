@@ -3,6 +3,7 @@ import { Plus, Save, ArrowUp, ArrowDown, Trash2, Hammer, CheckCircle, X, Library
 import { supabase } from '../supabase';
 import { fetchAllData, saveFullProgram } from '../api';
 import './program-builder.css';
+
 export default function ProgramBuilder() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -17,12 +18,15 @@ export default function ProgramBuilder() {
   const [coachEmail, setCoachEmail] = useState('');
   const [loadProgramName, setLoadProgramName] = useState('');
   const draftRef = useRef(null);
+
   useEffect(() => { loadCoachEmail(); loadData(); }, []);
   useEffect(() => { if (draftRef.current) draftRef.current.scrollTop = draftRef.current.scrollHeight; }, [draft]);
+
   async function loadCoachEmail() {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) { setCoachEmail(user.email); }
   }
+
   async function loadData() {
     try {
       const allData = await fetchAllData();
@@ -35,16 +39,19 @@ export default function ProgramBuilder() {
       setError('Failed to load data.'); setLoading(false);
     }
   }
+
   const exerciseList = useMemo(() => {
     if (!library.length) return [];
     const names = library.slice(1).map(r => String(r[0] || '').trim()).filter(Boolean);
     return [...new Set(names)].sort();
   }, [library]);
+
   const filteredExercises = useMemo(() => {
     if (!form.exercise.trim()) return exerciseList.slice(0, 50);
     const tokens = form.exercise.toLowerCase().split(/\s+/);
     return exerciseList.filter(ex => tokens.every(t => ex.toLowerCase().includes(t))).slice(0, 50);
   }, [form.exercise, exerciseList]);
+
   const uniqueProgramNames = useMemo(() => {
     if (!programs.length) return [];
     const names = programs.slice(1).filter(row => {
@@ -53,10 +60,12 @@ export default function ProgramBuilder() {
     }).map(r => String(r[0] || '').trim()).filter(Boolean);
     return [...new Set(names)].sort();
   }, [programs, coachEmail]);
+
   function showToast(message, isError = false) {
     setToast({ message, isError });
     setTimeout(() => setToast(null), 3500);
   }
+
   function addDraftExercise() {
     if (!form.exercise) { showToast('Please select an exercise.', true); return; }
     if (!form.sets || !form.reps) { showToast('Sets and Reps are required.', true); return; }
@@ -66,6 +75,7 @@ export default function ProgramBuilder() {
     }]);
     setForm(f => ({ ...f, exercise: '' }));
   }
+
   function moveItem(i, dir) {
     const newDraft = [...draft];
     const j = i + dir;
@@ -73,9 +83,11 @@ export default function ProgramBuilder() {
     [newDraft[i], newDraft[j]] = [newDraft[j], newDraft[i]];
     setDraft(newDraft);
   }
+
   function deleteItem(i) {
     setDraft(draft.filter((_, idx) => idx !== i));
   }
+
   async function handleSaveProgram() {
     if (!form.name) { showToast('Program Name is required.', true); return; }
     if (draft.length === 0) { showToast('Draft is empty. Add movements first.', true); return; }
@@ -93,6 +105,7 @@ export default function ProgramBuilder() {
     } catch (err) { showToast('Network error', true); }
     setSaving(false);
   }
+
   function handleLoadExisting() {
     if (!loadProgramName) { showToast('Select a program to load.', true); return; }
     const programRows = programs.slice(1).filter(row => {
@@ -121,7 +134,9 @@ export default function ProgramBuilder() {
     setDraft(loadedDraft);
     showToast(`Loaded "${loadProgramName}" (${loadedDraft.length} movements). Edit and save — will overwrite if name matches.`);
   }
+
   const phaseColors = { 'Warm Up': '#fd7e14', 'Work Block': '#008ed3', 'Cool Down': '#0dcaf0' };
+
   return (
     <div className="pb-wrapper">
       <h2 style={{ fontSize: '24px', color: '#008ed3', marginBottom: '16px', fontWeight: '700' }}>Program Builder</h2>
@@ -141,7 +156,7 @@ export default function ProgramBuilder() {
               </div>
             </div>
             <h3 className="pb-section-title">1. Categorize & Name</h3>
-            <div className="pb-field-row" >
+            <div className="pb-field-row">
               <div style={{ flex: 2 }}>
                 <label className="pb-label">Program Name (Required):</label>
                 <input className="pb-input" value={form.name} onChange={e => setForm({...form, name: e.target.value})} placeholder="e.g. Push Workout A" />
@@ -156,16 +171,14 @@ export default function ProgramBuilder() {
               <textarea className="pb-textarea" value={form.notes} onChange={e => setForm({...form, notes: e.target.value})} placeholder="e.g. Focus on tempo today." />
             </div>
             <div className="pb-field-group">
-              <label className="pb-label">Privacy Level:</label>
+              <label className="pb-label">Visibility:</label>
               <select className="pb-select" value={form.privacyLevel} onChange={e => setForm({...form, privacyLevel: e.target.value})}>
                 <option value="PRIVATE">Private (only you can see)</option>
-                <option value="ASSIGNED">Assigned (specific athletes only)</option>
-                <option value="PUBLIC">Public (free for all athletes)</option>
+                <option value="PUBLIC">Public (all coaches can use as template)</option>
               </select>
               <p className="pb-hint" style={{ fontSize: 11, color: '#888', marginTop: 4 }}>
-                {form.privacyLevel === 'PRIVATE' && 'Only visible to you, can assign to athletes manually.'}
-                {form.privacyLevel === 'ASSIGNED' && 'Shows in Public Programs but requires explicit assignment.'}
-                {form.privacyLevel === 'PUBLIC' && 'Appears in Public Programs for all athletes to access.'}
+                {form.privacyLevel === 'PRIVATE' && 'Only visible to you. Use Program Library to assign to athletes.'}
+                {form.privacyLevel === 'PUBLIC' && 'Visible to all coaches who can use it as a template.'}
               </p>
             </div>
             <h3 className="pb-section-title">2. Add Movement</h3>
