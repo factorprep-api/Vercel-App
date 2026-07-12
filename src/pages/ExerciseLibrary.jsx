@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Play, Search, X, Pencil, Trash2 } from 'lucide-react';
+import { Play, Search, X, Pencil, Trash2, Plus } from 'lucide-react';
 import { supabase } from '../supabase';
-import { fetchExerciseLibrary, deleteExerciseFromLibrary, updateExerciseInLibrary } from '../api.js';
+import { fetchExerciseLibrary, deleteExerciseFromLibrary, updateExerciseInLibrary, addExerciseToLibrary } from '../api.js';
 import './exercise-library.css';
 
 const ITEMS_PER_PAGE = 50;
@@ -82,6 +82,7 @@ export default function ExerciseLibrary() {
   const [editName, setEditName] = useState('');
   const [editVideo, setEditVideo] = useState('');
   const [deleting, setDeleting] = useState(null);
+  const [adding, setAdding] = useState(false);
 
   useEffect(() => {
     loadCoachEmail();
@@ -213,7 +214,12 @@ export default function ExerciseLibrary() {
   return (
     <div className="exlib-container">
       <div className="exlib-body">
-        <h2 style={{ fontSize: '24px', color: '#008ed3', marginBottom: '16px', fontWeight: '700' }}>Exercise Library</h2>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+          <h2 style={{ fontSize: '24px', color: '#008ed3', fontWeight: '700', margin: 0 }}>Exercise Library</h2>
+          <button className="exlib-add-btn" onClick={() => setAdding(true)}>
+            <Plus size={16} /> Add Exercise
+          </button>
+        </div>
 
         <div className="exlib-view-filters">
           {viewFilters.map(filter => (
@@ -290,6 +296,18 @@ export default function ExerciseLibrary() {
         )}
       </div>
 
+      {/* Add Exercise Modal */}
+      {adding && (
+        <AddExerciseModal
+          coachEmail={coachEmail}
+          onClose={() => setAdding(false)}
+          onSuccess={async () => {
+            setAdding(false);
+            await reloadLibrary();
+          }}
+        />
+      )}
+
       {modalVideo && (
         <div className="exlib-modal-overlay" onClick={closeModal}>
           <div className="exlib-modal-content" onClick={e => e.stopPropagation()}>
@@ -329,6 +347,64 @@ export default function ExerciseLibrary() {
           {toast.message}
         </div>
       )}
+    </div>
+  );
+}
+
+function AddExerciseModal({ coachEmail, onClose, onSuccess }) {
+  const [name, setName] = useState('');
+  const [video, setVideo] = useState('');
+  const [baseLift, setBaseLift] = useState('');
+  const [multiplier, setMultiplier] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  async function handleSave() {
+    if (!name.trim()) { alert('Exercise name is required.'); return; }
+    setSaving(true);
+    try {
+      const res = await addExerciseToLibrary({
+        name: name.trim(),
+        video: video.trim(),
+        baseLift: baseLift.trim(),
+        multiplier: multiplier ? parseFloat(multiplier) : 1.0
+      });
+      if (res.status === 'Success') {
+        alert('Exercise added! It will appear with a • Coach badge.');
+        await onSuccess();
+      } else {
+        alert('Add failed: ' + (res.message || 'Unknown error'));
+      }
+    } catch (err) {
+      alert('Network error. Please try again.');
+    }
+    setSaving(false);
+  }
+
+  return (
+    <div className="exlib-modal-overlay" onClick={onClose}>
+      <div className="exlib-add-modal" onClick={e => e.stopPropagation()}>
+        <button className="exlib-close-btn" onClick={onClose}><X size={24} /></button>
+        <h3 className="exlib-add-title">Add New Exercise</h3>
+        <div className="exlib-add-field">
+          <label className="exlib-add-label">Exercise Name (Required):</label>
+          <input className="exlib-add-input" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Goblet Squat" />
+        </div>
+        <div className="exlib-add-field">
+          <label className="exlib-add-label">Video URL:</label>
+          <input className="exlib-add-input" value={video} onChange={e => setVideo(e.target.value)} placeholder="YouTube or MP4 link" />
+        </div>
+        <div className="exlib-add-field">
+          <label className="exlib-add-label">Base Lift (Optional):</label>
+          <input className="exlib-add-input" value={baseLift} onChange={e => setBaseLift(e.target.value)} placeholder="e.g. Back Squat" />
+        </div>
+        <div className="exlib-add-field">
+          <label className="exlib-add-label">Multiplier (Optional):</label>
+          <input type="number" step="0.1" className="exlib-add-input" value={multiplier} onChange={e => setMultiplier(e.target.value)} placeholder="1.0" />
+        </div>
+        <button className="exlib-add-save-btn" onClick={handleSave} disabled={saving}>
+          {saving ? 'Adding...' : 'Add Exercise'}
+        </button>
+      </div>
     </div>
   );
 }
