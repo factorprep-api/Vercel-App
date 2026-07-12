@@ -68,3 +68,136 @@
 .pb-load-row > div:first-child { flex: 1; }
 .pb-load-btn { padding: 10px 16px; background: #008ed3; color: white; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; }
 .pb-load-btn:hover { background: #0077b5; }
+
+/* ===== COACH MEDIA SECTION ===== */
+.pb-media-section {
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 12px;
+  margin: 12px 0;
+  background: #fafafa;
+}
+
+.pb-media-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.pb-media-header h4 {
+  margin: 0;
+  font-size: 0.95rem;
+  color: #333;
+}
+
+.pb-media-btn {
+  background: #6c63ff;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 14px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: background 0.2s;
+}
+
+.pb-media-btn:hover {
+  background: #5848d4;
+}
+
+.pb-media-input-row {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pb-media-input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  box-sizing: border-box;
+}
+
+.pb-media-input-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.pb-media-save-btn {
+  background: #27ae60;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 14px;
+  cursor: pointer;
+  font-size: 0.82rem;
+}
+
+.pb-media-save-btn:hover {
+  background: #219a52;
+}
+
+.pb-media-remove-btn {
+  background: #e74c3c;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 14px;
+  cursor: pointer;
+  font-size: 0.82rem;
+}
+
+.pb-media-remove-btn:hover {
+  background: #c0392b;
+}
+
+.pb-media-cancel-btn {
+  background: #bdc3c7;
+  color: #333;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 14px;
+  cursor: pointer;
+  font-size: 0.82rem;
+}
+
+.pb-media-cancel-btn:hover {
+  background: #a5acb0;
+}
+
+.pb-media-preview {
+  margin-top: 10px;
+  border: 1px dashed #aaa;
+  border-radius: 6px;
+  padding: 10px;
+  background: #fff;
+}
+
+.pb-media-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #888;
+  margin-bottom: 6px;
+  display: block;
+}
+
+/* Media Player component */
+.media-player video,
+.media-player audio {
+  width: 100%;
+  max-width: 400px;
+  border-radius: 4px;
+}
+
+.media-player-compact video,
+.media-player-compact audio {
+  width: 100%;
+  max-width: 350px;
+  border-radius: 4px;
+}
