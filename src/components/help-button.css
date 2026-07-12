@@ -1,0 +1,28 @@
+.help-btn {
+  position: fixed;
+  width: 44px;
+  height: 44px;
+  background: rgba(0, 142, 211, 0.9);
+  color: white;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  transition: all 0.15s;
+  z-index: 9999;
+  opacity: 0.7;
+}
+
+.help-btn:hover {
+  opacity: 1;
+  transform: scale(1.1);
+  background: #008ed3;
+}
+
+.help-btn.bottom-left { left: 16px; bottom: 16px; }
+.help-btn.bottom-right { right: 16px; bottom: 16px; }
+.help-btn.top-left { top: 16px; left: 16px; bottom: auto; right: auto; }
+.help-btn.top-right { top: 16px; right: 16px; bottom: auto; left: auto; }

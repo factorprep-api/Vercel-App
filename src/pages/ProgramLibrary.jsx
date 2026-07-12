@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Search, Trash2, UserPlus, CheckCircle, X, Layers, Dumbbell, FolderClosed, Lock, Globe, Eye } from 'lucide-react';
+import { Search, Trash2, UserPlus, CheckCircle, X, Layers, Dumbbell, FolderClosed, Lock, Globe, Eye, HelpCircle } from 'lucide-react';
 import { supabase } from '../supabase';
 import { fetchAllData, deleteProgram, updateAssignment, assignProgramBulk } from '../api';
 import './program-library.css';
+import HelpButton from '../components/HelpButton';
 
 export default function ProgramLibrary() {
   const [loading, setLoading] = useState(true);
@@ -424,6 +425,8 @@ export default function ProgramLibrary() {
           </div>
         </div>
       )}
+
+      <HelpButton videoUrl="https://youtube.com/watch?v=YOUR_HELP_VIDEO_ID" position="bottom-right" />
 
       {toast && (
         <div className={`pl-toast ${toast.isError ? 'error' : ''}`}>

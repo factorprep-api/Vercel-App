@@ -3,6 +3,7 @@ import { Plus, Save, ArrowUp, ArrowDown, Trash2, Hammer, CheckCircle, X, Library
 import { supabase } from '../supabase';
 import { fetchAllData, saveFullProgram } from '../api';
 import './program-builder.css';
+import HelpButton from '../components/HelpButton';
 
 export default function ProgramBuilder() {
   const [loading, setLoading] = useState(true);
@@ -253,6 +254,7 @@ export default function ProgramBuilder() {
       )}
       {loading && <p className="pb-placeholder">Loading...</p>}
       {error && <p className="pb-placeholder" style={{ color: '#dc3545' }}>{error}</p>}
+      <HelpButton videoUrl="https://youtube.com/watch?v=YOUR_HELP_VIDEO_ID" position="bottom-right" />
       {toast && (
         <div className={`pb-toast ${toast.isError ? 'error' : ''}`}>
           {toast.isError ? <X size={16} /> : <CheckCircle size={16} />}

@@ -3,6 +3,7 @@ import { Play, Search, X, Pencil, Trash2, Plus } from 'lucide-react';
 import { supabase } from '../supabase';
 import { fetchExerciseLibrary, deleteExerciseFromLibrary, updateExerciseInLibrary, addExerciseToLibrary } from '../api.js';
 import './exercise-library.css';
+import HelpButton from '../components/HelpButton';
 
 const ITEMS_PER_PAGE = 50;
 
@@ -348,6 +349,8 @@ export default function ExerciseLibrary() {
           </div>
         </div>
       )}
+
+      <HelpButton videoUrl="https://youtube.com/watch?v=YOUR_HELP_VIDEO_ID" position="bottom-right" />
 
       {toast && (
         <div className={`exlib-toast ${toast.isError ? 'error' : ''}`}>

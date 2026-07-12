@@ -3,6 +3,7 @@ import { Play, ChevronDown, ChevronUp, Video, Save, CheckCircle, MessageSquare, 
 import { supabase } from '../supabase';
 import { fetchAllData, getAthleteByEmail, saveSession } from '../api';
 import './program-viewer.css';
+import HelpButton from '../components/HelpButton';
 
 function normalizeString(str) {
   return String(str)
@@ -320,6 +321,7 @@ export default function ProgramViewer() {
           <h2 style={{ fontSize: '24px', color: '#008ed3', marginBottom: '16px', fontWeight: '700' }}>Today's Workout</h2>
           <p className="pv-placeholder">Loading program data...</p>
         </div>
+        <HelpButton videoUrl="https://youtube.com/watch?v=YOUR_HELP_VIDEO_ID" position="bottom-right" />
       </div>
     );
   }
@@ -331,6 +333,7 @@ export default function ProgramViewer() {
           <h2 style={{ fontSize: '24px', color: '#008ed3', marginBottom: '16px', fontWeight: '700' }}>Today's Workout</h2>
           <p className="pv-error">{error}</p>
         </div>
+        <HelpButton videoUrl="https://youtube.com/watch?v=YOUR_HELP_VIDEO_ID" position="bottom-right" />
       </div>
     );
   }
@@ -498,6 +501,7 @@ export default function ProgramViewer() {
           </div>
         )}
       </div>
+      <HelpButton videoUrl="https://youtube.com/watch?v=YOUR_HELP_VIDEO_ID" position="bottom-right" />
     </div>
   );
 }
