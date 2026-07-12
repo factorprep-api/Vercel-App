@@ -360,13 +360,15 @@ function AddExerciseModal({ coachEmail, onClose, onSuccess }) {
 
   async function handleSave() {
     if (!name.trim()) { alert('Exercise name is required.'); return; }
+    if (!coachEmail) { alert('Not authenticated. Please sign in again.'); return; }
     setSaving(true);
     try {
       const res = await addExerciseToLibrary({
         name: name.trim(),
         video: video.trim(),
         baseLift: baseLift.trim(),
-        multiplier: multiplier ? parseFloat(multiplier) : 1.0
+        multiplier: multiplier ? parseFloat(multiplier) : 1.0,
+        ownerEmail: coachEmail  // IMPORTANT: Send owner email!
       });
       if (res.status === 'Success') {
         alert('Exercise added! It will appear with a • Coach badge.');
