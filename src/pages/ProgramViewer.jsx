@@ -87,7 +87,6 @@ export default function ProgramViewer() {
   const [athleteRowIndex, setAthleteRowIndex] = useState(null);
   const [athleteName, setAthleteName] = useState('');
   const [selectedProgram, setSelectedProgram] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('');
   const [expandedVideos, setExpandedVideos] = useState(new Set());
   const [inputValues, setInputValues] = useState({});
   const [saving, setSaving] = useState(false);
@@ -153,17 +152,13 @@ export default function ProgramViewer() {
       const privacy = String(row[10] || '').trim().toUpperCase();
       if (!name) return;
       if (privacy === 'PUBLIC' && !map[name]) {
-        const cat = String(row[1] || '').trim();
+        map[name] = { name, exercises: new Set(), phases: new Set() };
         const ex = String(row[3] || '').trim();
-        map[name] = { name, categories: new Set(), exercises: new Set(), phases: new Set() };
-        if (cat) map[name].categories.add(cat);
         if (ex) map[name].exercises.add(ex);
         map[name].phases.add(String(row[2] || 'Work Block').trim());
       }
       if (map[name]) {
-        const cat = String(row[1] || '').trim();
         const ex = String(row[3] || '').trim();
-        if (cat) map[name].categories.add(cat);
         if (ex) map[name].exercises.add(ex);
         map[name].phases.add(String(row[2] || 'Work Block').trim());
       }
@@ -171,39 +166,25 @@ export default function ProgramViewer() {
     return Object.values(map).sort((a, b) => a.name.localeCompare(b.name));
   }, [programData]);
 
-  const categories = useMemo(() => {
-    if (!selectedProgram || !programData.length) return [];
-    return [...new Set(programData.slice(1).filter(r => String(r[0] || '').trim() === selectedProgram).map(r => String(r[1] || '').trim()))].filter(Boolean).sort();
-  }, [selectedProgram, programData]);
-
   const coachNote = useMemo(() => {
     if (!selectedProgram || !programData.length) return '';
-    const rows = programData.slice(1).filter(r => {
-      if (String(r[0] || '').trim() !== selectedProgram) return false;
-      if (selectedCategory && String(r[1] || '').trim() !== selectedCategory) return false;
-      return true;
-    });
+    const rows = programData.slice(1).filter(r => String(r[0] || '').trim() === selectedProgram);
     if (!rows.length) return '';
     const note = String(rows[0][9] || '').trim();
     return note && note.toLowerCase() !== 'undefined' ? note : '';
-  }, [selectedProgram, selectedCategory, programData]);
+  }, [selectedProgram, programData]);
 
   const programMediaUrl = useMemo(() => {
     if (!selectedProgram || !programData.length) return '';
-    const rows = programData.slice(1).filter(r => {
-      if (String(r[0] || '').trim() !== selectedProgram) return false;
-      if (selectedCategory && String(r[1] || '').trim() !== selectedCategory) return false;
-      return true;
-    });
+    const rows = programData.slice(1).filter(r => String(r[0] || '').trim() === selectedProgram);
     if (!rows.length) return '';
     const url = String(rows[0][12] || '').trim();
     return url && url.toLowerCase() !== 'undefined' ? url : '';
-  }, [selectedProgram, selectedCategory, programData]);
+  }, [selectedProgram, programData]);
 
   const workoutGroups = useMemo(() => {
     if (!selectedProgram || !programData.length) return [];
     let rows = programData.slice(1).filter(r => String(r[0] || '').trim() === selectedProgram);
-    if (selectedCategory) rows = rows.filter(r => String(r[1] || '').trim() === selectedCategory);
     if (!rows.length) return [];
     const groups = [];
     let currentGroup = null;
@@ -245,7 +226,7 @@ export default function ProgramViewer() {
       }
     });
     return groups;
-  }, [selectedProgram, selectedCategory, programData, libraryData]);
+  }, [selectedProgram, programData, libraryData]);
 
   const phaseSections = useMemo(() => {
     return [
@@ -258,7 +239,6 @@ export default function ProgramViewer() {
 
   function handleProgramChange(progName) {
     setSelectedProgram(progName);
-    setSelectedCategory('');
     setInputValues({});
     setSaveSuccess(false);
     setShowProgramMedia(false);
@@ -280,7 +260,7 @@ export default function ProgramViewer() {
   async function handleSaveSession() {
     if (!workoutGroups.length) return;
     setSaving(true);
-    const loggedProgStr = selectedCategory ? selectedProgram + ' (' + selectedCategory + ')' : selectedProgram;
+    const loggedProgStr = selectedProgram;
     const setsToLog = [];
     const maxUpdates = {};
     workoutGroups.forEach(group => {
@@ -406,17 +386,6 @@ export default function ProgramViewer() {
           </div>
         </div>
 
-        {/* Category filter if program selected */}
-        {selectedProgram && categories.length > 0 && (
-          <div className="pv-category-filter">
-            <label>Category:</label>
-            <select value={selectedCategory} onChange={e => { setSelectedCategory(e.target.value); setSaveSuccess(false); }}>
-              <option value="">- All Categories -</option>
-              {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-            </select>
-          </div>
-        )}
-
         {coachNote && (
           <div className="pv-coach-note" style={{ marginBottom: '20px' }}>
             <h4><MessageSquare size={14} /> Coach's Notes</h4>
@@ -428,7 +397,7 @@ export default function ProgramViewer() {
           <div className="pv-media-container">
             <div className="pv-media-header" onClick={() => setShowProgramMedia(!showProgramMedia)} style={{ cursor: 'pointer' }}>
               <span className="pv-media-title">
-                {getMediaType(programMediaUrl) === 'audio' ? 'Voice Note' : 'Video'} - Coach Program Overview
+                {getMediaType(programMediaUrl) === 'audio' ? '🎙️ Voice Note' : '🎬 Video'} - Coach Program Overview
               </span>
               <button className="pv-media-toggle-btn">
                 {showProgramMedia ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
