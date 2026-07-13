@@ -16,7 +16,6 @@ export default function Login() {
   async function routeAfterLogin(userEmail) {
     try {
       const result = await getAthleteByEmail(userEmail);
-      console.log('Athlete lookup result:', result);
       
       if (result.status === 'Success' && result.role === 'coach') {
         localStorage.setItem('fp_athlete_data', JSON.stringify({
@@ -40,12 +39,10 @@ export default function Login() {
         navigate('/today');
       } else {
         // Not found in Athletes sheet — still signed in but no profile
-        console.warn('User not found in Athletes sheet');
         setError('Account not found in athlete roster. Contact your coach.');
         await supabase.auth.signOut();
       }
     } catch (err) {
-      console.error('Role check failed:', err);
       setError('Login succeeded but profile lookup failed. Please try again.');
       await supabase.auth.signOut();
     }
@@ -67,8 +64,6 @@ export default function Login() {
         if (signUpError) throw signUpError;
 
         createAthlete({ email, name })
-          .then(result => console.log('Sheets sync result:', result))
-          .catch(err => console.error('Background Sheets sync failed:', err));
 
         // New signups are always athletes
         navigate('/today');
