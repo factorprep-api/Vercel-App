@@ -92,6 +92,7 @@ export default function ProgramViewer() {
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [showProgramMedia, setShowProgramMedia] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     loadData();
@@ -347,7 +348,7 @@ export default function ProgramViewer() {
               <p className="pv-panel-empty">No programs assigned yet.</p>
             ) : (
               <div className="pv-program-buttons">
-                {assignedPrograms.map(prog => (
+                {assignedPrograms.filter(prog => prog.toLowerCase().includes(searchQuery.toLowerCase())).map(prog => (
                   <button
                     key={prog}
                     className={`pv-program-btn ${selectedProgram === prog ? 'active' : ''}`}
@@ -372,7 +373,7 @@ export default function ProgramViewer() {
               <p className="pv-panel-empty">No public programs available.</p>
             ) : (
               <div className="pv-program-buttons">
-                {publicPrograms.map(prog => (
+                {publicPrograms.filter(prog => prog.name.toLowerCase().includes(searchQuery.toLowerCase())).map(prog => (
                   <button
                     key={prog.name}
                     className={`pv-program-btn ${selectedProgram === prog.name ? 'active' : ''}`}

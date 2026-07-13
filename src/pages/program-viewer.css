@@ -204,3 +204,28 @@
     max-width: 100%;
   }
 }
+
+/* Search Box */
+.pv-search-box {
+  margin-bottom: 16px;
+}
+
+.pv-search-box input {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  font-size: 14px;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.pv-search-box input:focus {
+  border-color: #008ed3;
+  box-shadow: 0 0 0 2px rgba(0, 142, 211, 0.1);
+}
+
+.pv-search-box input::placeholder {
+  color: #aaa;
+}
