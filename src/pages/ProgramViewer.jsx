@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Play, ChevronDown, ChevronUp, Video, Save, CheckCircle, MessageSquare, UserPlus, Globe } from 'lucide-react';
+import { getYouTubeId } from '../utils/helpers';
 import { supabase } from '../supabase';
 import { fetchAllData, getAthleteByEmail, saveSession, getMediaType } from '../api';
 import HelpButton from '../components/HelpButton';
@@ -12,11 +13,6 @@ function normalizeString(str) {
     .replace(/[^\w\s]/g, '')
     .replace(/\s+/g, ' ')
     .trim();
-}
-
-function getYouTubeId(url) {
-  const m = String(url).match(/(?:v=|v\/|vi=|vi\/|youtu\.be\/|embed\/|shorts\/)([a-zA-Z0-9_-]{11})/);
-  return m ? m[1] : null;
 }
 
 function extractVideoUrl(rawVid) {

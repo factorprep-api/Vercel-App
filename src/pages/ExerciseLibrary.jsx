@@ -1,23 +1,12 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Play, Search, X, Pencil, Trash2, Plus } from 'lucide-react';
+import { getYouTubeId, normalizeVideoUrl } from '../utils/helpers';
 import { supabase } from '../supabase';
 import { fetchExerciseLibrary, deleteExerciseFromLibrary, updateExerciseInLibrary, addExerciseToLibrary } from '../api.js';
 import './exercise-library.css';
 import HelpButton from '../components/HelpButton';
 
 const ITEMS_PER_PAGE = 50;
-
-function getYouTubeId(url) {
-  const m = url.match(/(?:v=|v\/|vi=|vi\/|youtu\.be\/|embed\/|shorts\/)([a-zA-Z0-9_-]{11})/);
-  return m ? m[1] : null;
-}
-
-function normalizeVideoUrl(rawUrl) {
-  let url = rawUrl;
-  if (!url.startsWith('http')) url = 'https://' + url;
-  if (url.includes('b-cdn.net') && !url.toLowerCase().endsWith('.mp4')) url += '.mp4';
-  return url;
-}
 
 function buildGrouped(data) {
   const map = {};
