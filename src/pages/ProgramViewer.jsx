@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Play, ChevronDown, ChevronUp, Video, Save, CheckCircle, MessageSquare, UserPlus, Globe, Lock, Dumbbell, Layers, FolderClosed } from 'lucide-react';
+import { Play, ChevronDown, ChevronUp, Video, Save, CheckCircle, MessageSquare, UserPlus, Globe } from 'lucide-react';
 import { supabase } from '../supabase';
 import { fetchAllData, getAthleteByEmail, saveSession, getMediaType } from '../api';
 import './program-viewer.css';
@@ -189,6 +189,9 @@ export default function ProgramViewer() {
     });
     if (!rows.length) return '';
     const note = String(rows[0][9] || '').trim();
+    console.log('[DEBUG] coachNote:', note);
+    console.log('[DEBUG] selectedProgram:', selectedProgram);
+    console.log('[DEBUG] programData slice(1):', programData.slice(1).length);
     return note && note.toLowerCase() !== 'undefined' ? note : '';
   }, [selectedProgram, selectedCategory, programData]);
 
@@ -201,6 +204,7 @@ export default function ProgramViewer() {
     });
     if (!rows.length) return '';
     const url = String(rows[0][12] || '').trim();
+    console.log('[DEBUG] programMediaUrl:', url);
     return url && url.toLowerCase() !== 'undefined' ? url : '';
   }, [selectedProgram, selectedCategory, programData]);
 
@@ -349,11 +353,23 @@ export default function ProgramViewer() {
     );
   }
 
+  // Debug info
+  useEffect(() => {
+    console.log('[DEBUG RENDER] ProgramViewer rendering');
+    console.log('[DEBUG RENDER] selectedProgram:', selectedProgram);
+    console.log('[DEBUG RENDER] coachNote value:', coachNote);
+  });
+
   return (
     <div className="pv-container">
       <div className="pv-body">
         <h2 style={{ fontSize: '24px', color: '#008ed3', marginBottom: '16px', fontWeight: '700' }}>Today's Workout</h2>
         {athleteName && <p style={{ color: '#666', fontSize: '15px', marginBottom: '20px' }}>Welcome, {athleteName}</p>}
+
+        {/* Debug: Show coach note value */}
+        {selectedProgram && (
+          <p style={{ color: 'red', fontSize: '12px' }}>DEBUG: selectedProgram='{selectedProgram}', coachNote='{coachNote}'</p>
+        )}
 
         {/* Two Panels: My Programs + Public Programs */}
         <div className="pv-panels">
@@ -430,7 +446,7 @@ export default function ProgramViewer() {
           <div className="pv-media-container">
             <div className="pv-media-header" onClick={() => setShowProgramMedia(!showProgramMedia)} style={{ cursor: 'pointer' }}>
               <span className="pv-media-title">
-                {getMediaType(programMediaUrl) === 'audio' ? 'Voice Note' : 'Video'} - Coach Program Overview
+                {getMediaType(programMediaUrl) === 'audio' ? '🎙️ Voice Note' : '🎬 Video'} - Coach Program Overview
               </span>
               <button className="pv-media-toggle-btn">
                 {showProgramMedia ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
