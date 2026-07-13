@@ -11,7 +11,7 @@ const ITEMS_PER_PAGE = 50;
 function buildGrouped(data) {
   const map = {};
   data.forEach(ex => {
-    const cat = ex.muscle.toUpperCase();
+    const cat = (ex.muscle || 'Uncategorized').toUpperCase();
     if (!map[cat]) map[cat] = [];
     map[cat].push(ex);
   });
@@ -66,22 +66,21 @@ export default function ExerciseLibrary() {
   const [currentPage, setCurrentPage] = useState(1);
   const [modalVideo, setModalVideo] = useState(null);
   const [coachEmail, setCoachEmail] = useState('');
+  const [role, setRole] = useState(null);
   const [viewFilter, setViewFilter] = useState('all');
   const [toast, setToast] = useState(null);
   const [editing, setEditing] = useState(null);
   const [editName, setEditName] = useState('');
   const [editVideo, setEditVideo] = useState('');
   const [deleting, setDeleting] = useState(null);
-  const [role, setRole] = useState(null);
   const [adding, setAdding] = useState(false);
 
-  useEffect(() => {
-    loadCoachEmail();
-    loadRole();
-    loadRole();
-    const t = setTimeout(() => setDebouncedQuery(searchQuery), 300);
-    return () => clearTimeout(t);
-  }, [searchQuery]);
+useEffect(() => {
+  loadCoachEmail();
+  loadRole();  // ← Keep this ONE call
+  const t = setTimeout(() => setDebouncedQuery(searchQuery), 300);
+  return () => clearTimeout(t);
+}, [searchQuery]);
 
   useEffect(() => {
     (async () => {
@@ -106,7 +105,12 @@ export default function ExerciseLibrary() {
     }
   }
 
-  async function loadRole() {
+  async function loadCoachEmail() {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (user) { 
+    setCoachEmail(user.email);
+    
+    // Also load the user's role
     const cached = localStorage.getItem('fp_athlete_data');
     if (cached) {
       try {
@@ -115,11 +119,7 @@ export default function ExerciseLibrary() {
       } catch {}
     }
   }
-
-  async function loadCoachEmail() {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) { setCoachEmail(user.email); }
-  }
+}
 
   function isCoachOwned(exercise) {
     if (!exercise.ownerEmail || !coachEmail) return false;
@@ -208,7 +208,7 @@ export default function ExerciseLibrary() {
       const tokens = debouncedQuery.toLowerCase().split(/\s+/);
       const filtered = filteredForView.filter(ex => {
         const n = ex.name.toLowerCase();
-        const m = ex.muscle.toLowerCase();
+        const m = (ex.muscle || '').toLowerCase();
         return tokens.every(t => n.includes(t) || m.includes(t));
       });
       return buildGrouped(filtered);
@@ -230,6 +230,39 @@ export default function ExerciseLibrary() {
     ...(role === 'coach' ? [{ id: 'my', label: 'My Exercises' }] : [])
   ];
 
+// Add these THREE guard clauses BEFORE the return statement:
+
+if (loading) {
+  return (
+    <div className="exlib-container">
+      <div className="exlib-body">
+        <p className="exlib-placeholder">Loading exercises...</p>
+      </div>
+    </div>
+  );
+}
+
+if (!role) {
+  return (
+    <div className="exlib-container">
+      <div className="exlib-body">
+        <p className="exlib-placeholder">Loading your role...</p>
+      </div>
+    </div>
+  );
+}
+
+if (!coachEmail) {
+  return (
+    <div className="exlib-container">
+      <div className="exlib-body">
+        <p className="exlib-placeholder">You must be logged in to view exercises.</p>
+      </div>
+    </div>
+  );
+}
+
+// NOW the normal return statement continues:  
   return (
     <div className="exlib-container">
       <div className="exlib-body">
