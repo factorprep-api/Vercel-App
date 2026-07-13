@@ -1,13 +1,11 @@
 import { useNavigate } from 'react-router-dom';
-import { useState, useEffect } from 'react';
-import { supabase } from './supabase';
-import { getAthleteByEmail } from './api';
+import { useAuth } from './hooks/useAuth';
 import { Wrench, BookOpen, Dumbbell } from 'lucide-react';
 
 export default function CoachHub() {
   const navigate = useNavigate();
   const [coachName, setCoachName] = useState('');
-  const [loading, setLoading] = useState(true);
+  // Loading handled by useAuth hook
 
   useEffect(() => {
     const loadName = async () => {
