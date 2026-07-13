@@ -86,13 +86,12 @@ export default function ExerciseLibrary() {
   const [role, setRole] = useState(null);
   const [adding, setAdding] = useState(false);
 
-  useEffect(() => {
-    loadCoachEmail();
-    loadRole();
-    loadRole();
-    const t = setTimeout(() => setDebouncedQuery(searchQuery), 300);
-    return () => clearTimeout(t);
-  }, [searchQuery]);
+useEffect(() => {
+  loadCoachEmail();
+  loadRole();  // ← Keep this ONE call
+  const t = setTimeout(() => setDebouncedQuery(searchQuery), 300);
+  return () => clearTimeout(t);
+}, [searchQuery]);
 
   useEffect(() => {
     (async () => {
