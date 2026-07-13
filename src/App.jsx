@@ -125,11 +125,6 @@ export default function App() {
             <ProgramViewer />
           </ProtectedRoute>
         } />
-        <Route path="/public-programs" element={
-          <ProtectedRoute session={session} role={role} allowedRoles={['athlete']}>
-            <PublicPrograms />
-          </ProtectedRoute>
-        } />
         <Route path="/shop" element={
           <ProtectedRoute session={session} role={role} allowedRoles={['athlete']}>
             <Shop />
