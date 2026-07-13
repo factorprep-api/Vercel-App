@@ -89,6 +89,7 @@ export default function ExerciseLibrary() {
   useEffect(() => {
     loadCoachEmail();
     loadRole();
+    loadRole();
     const t = setTimeout(() => setDebouncedQuery(searchQuery), 300);
     return () => clearTimeout(t);
   }, [searchQuery]);
@@ -105,6 +106,16 @@ export default function ExerciseLibrary() {
       }
     })();
   }, []);
+
+  async function loadRole() {
+    const cached = localStorage.getItem('fp_athlete_data');
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        if (parsed.role) setRole(parsed.role);
+      } catch {}
+    }
+  }
 
   async function loadRole() {
     const cached = localStorage.getItem('fp_athlete_data');
