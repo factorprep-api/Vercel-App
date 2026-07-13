@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Play, ChevronDown, ChevronUp, Video, Save, CheckCircle, MessageSquare, UserPlus, Globe } from 'lucide-react';
 import { supabase } from '../supabase';
 import { fetchAllData, getAthleteByEmail, saveSession, getMediaType } from '../api';
+import HelpButton from '../components/HelpButton';
 import './program-viewer.css';
 
 function normalizeString(str) {
@@ -170,11 +171,6 @@ export default function ProgramViewer() {
     return Object.values(map).sort((a, b) => a.name.localeCompare(b.name));
   }, [programData]);
 
-  const uniquePrograms = useMemo(() => {
-    if (!programData.length) return [];
-    return [...new Set(programData.slice(1).map(r => String(r[0] || '').trim()))].filter(Boolean).sort();
-  }, [programData]);
-
   const categories = useMemo(() => {
     if (!selectedProgram || !programData.length) return [];
     return [...new Set(programData.slice(1).filter(r => String(r[0] || '').trim() === selectedProgram).map(r => String(r[1] || '').trim()))].filter(Boolean).sort();
@@ -189,9 +185,6 @@ export default function ProgramViewer() {
     });
     if (!rows.length) return '';
     const note = String(rows[0][9] || '').trim();
-    console.log('[DEBUG] coachNote:', note);
-    console.log('[DEBUG] selectedProgram:', selectedProgram);
-    console.log('[DEBUG] programData slice(1):', programData.slice(1).length);
     return note && note.toLowerCase() !== 'undefined' ? note : '';
   }, [selectedProgram, selectedCategory, programData]);
 
@@ -204,7 +197,6 @@ export default function ProgramViewer() {
     });
     if (!rows.length) return '';
     const url = String(rows[0][12] || '').trim();
-    console.log('[DEBUG] programMediaUrl:', url);
     return url && url.toLowerCase() !== 'undefined' ? url : '';
   }, [selectedProgram, selectedCategory, programData]);
 
@@ -338,6 +330,7 @@ export default function ProgramViewer() {
           <h2 style={{ fontSize: '24px', color: '#008ed3', marginBottom: '16px', fontWeight: '700' }}>Today's Workout</h2>
           <p className="pv-placeholder">Loading program data...</p>
         </div>
+        <HelpButton pageName="Program View" position="bottom-right" />
       </div>
     );
   }
@@ -349,27 +342,16 @@ export default function ProgramViewer() {
           <h2 style={{ fontSize: '24px', color: '#008ed3', marginBottom: '16px', fontWeight: '700' }}>Today's Workout</h2>
           <p className="pv-error">{error}</p>
         </div>
+        <HelpButton pageName="Program View" position="bottom-right" />
       </div>
     );
   }
-
-  // Debug info
-  useEffect(() => {
-    console.log('[DEBUG RENDER] ProgramViewer rendering');
-    console.log('[DEBUG RENDER] selectedProgram:', selectedProgram);
-    console.log('[DEBUG RENDER] coachNote value:', coachNote);
-  });
 
   return (
     <div className="pv-container">
       <div className="pv-body">
         <h2 style={{ fontSize: '24px', color: '#008ed3', marginBottom: '16px', fontWeight: '700' }}>Today's Workout</h2>
         {athleteName && <p style={{ color: '#666', fontSize: '15px', marginBottom: '20px' }}>Welcome, {athleteName}</p>}
-
-        {/* Debug: Show coach note value */}
-        {selectedProgram && (
-          <p style={{ color: 'red', fontSize: '12px' }}>DEBUG: selectedProgram='{selectedProgram}', coachNote='{coachNote}'</p>
-        )}
 
         {/* Two Panels: My Programs + Public Programs */}
         <div className="pv-panels">
@@ -446,7 +428,7 @@ export default function ProgramViewer() {
           <div className="pv-media-container">
             <div className="pv-media-header" onClick={() => setShowProgramMedia(!showProgramMedia)} style={{ cursor: 'pointer' }}>
               <span className="pv-media-title">
-                {getMediaType(programMediaUrl) === 'audio' ? '🎙️ Voice Note' : '🎬 Video'} - Coach Program Overview
+                {getMediaType(programMediaUrl) === 'audio' ? 'Voice Note' : 'Video'} - Coach Program Overview
               </span>
               <button className="pv-media-toggle-btn">
                 {showProgramMedia ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
@@ -553,6 +535,7 @@ export default function ProgramViewer() {
           </div>
         )}
       </div>
+      <HelpButton pageName="Program View" position="bottom-right" />
     </div>
   );
 }
