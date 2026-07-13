@@ -1,29 +1,13 @@
 import { useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
 import { useAuth } from './hooks/useAuth';
 import { Wrench, BookOpen, Dumbbell } from 'lucide-react';
 
 export default function CoachHub() {
   const navigate = useNavigate();
-  const [coachName, setCoachName] = useState('');
-  // Loading handled by useAuth hook
+  const { coachName } = useAuth();
 
-  useEffect(() => {
-    const loadName = async () => {
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          const result = await getAthleteByEmail(user.email);
-          if (result.status === 'Success' && result.role === 'coach') {
-            setCoachName(result.athleteName || user.user_metadata?.name || 'Coach');
-          }
-        }
-      } catch (err) {
-        console.error(err);
-      }
-      setLoading(false);
-    };
-    loadName();
-  }, []);
+
 
   const cards = [
     { title: 'Program Builder', desc: 'Create and edit training programs', icon: Wrench, path: '/program-builder', color: '#008ed3', bgImage: '/pb-card.png' },
