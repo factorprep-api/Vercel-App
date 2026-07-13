@@ -1,17 +1,25 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, lazy, Suspense } from 'react';
 import { supabase } from './supabase';
 import { getAthleteByEmail } from './api';
-import Login from './Login';
-import AthleteHub from './AthleteHub';
-import CoachHub from './CoachHub';
-import MyProgress from './MyProgress';
-import ProgramViewer from './pages/ProgramViewer';
-import ExerciseLibrary from './pages/ExerciseLibrary';
-import ProgramBuilder from './pages/ProgramBuilder';
-import ProgramLibrary from './pages/ProgramLibrary';
-import Shop from './pages/Shop';
 import AppShell from './components/AppShell';
+
+// Lazy load pages for code splitting
+const Login = lazy(() => import('./Login'));
+const AthleteHub = lazy(() => import('./AthleteHub'));
+const CoachHub = lazy(() => import('./CoachHub'));
+const MyProgress = lazy(() => import('./MyProgress'));
+const ProgramViewer = lazy(() => import('./pages/ProgramViewer'));
+const ExerciseLibrary = lazy(() => import('./pages/ExerciseLibrary'));
+const ProgramBuilder = lazy(() => import('./pages/ProgramBuilder'));
+const ProgramLibrary = lazy(() => import('./pages/ProgramLibrary'));
+const Shop = lazy(() => import('./pages/Shop'));
+
+const LoadingFallback = () => (
+  <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', fontFamily: '"Roboto Flex", sans-serif' }}>
+    <p>Loading...</p>
+  </div>
+);
 
 function ProtectedRoute({ session, role, allowedRoles, children }) {
   if (!session) return <Navigate to="/login" />;
@@ -105,44 +113,44 @@ export default function App() {
   return (
     <Router>
       <Routes>
-        <Route path="/login" element={!session ? <Login /> : <Navigate to="/" />} />
+        <Route path="/login" element={!session ? <Suspense fallback={<LoadingFallback />}><Login /></Suspense> : <Navigate to="/" />} />
         
         <Route path="/" element={
           session ? (
             <AppShell>
-              {role === 'coach' ? <CoachHub /> : <AthleteHub />}
+              {role === 'coach' ? <Suspense fallback={<LoadingFallback />}><CoachHub /></Suspense> : <Suspense fallback={<LoadingFallback />}><AthleteHub /></Suspense>}
             </AppShell>
           ) : <Navigate to="/login" />}
         />
 
         <Route path="/progress" element={
           <ProtectedRoute session={session} role={role} allowedRoles={['athlete']}>
-            <MyProgress />
+            <Suspense fallback={<LoadingFallback />}><MyProgress /></Suspense>
           </ProtectedRoute>
         } />
         <Route path="/program-viewer" element={
           <ProtectedRoute session={session} role={role} allowedRoles={['athlete']}>
-            <ProgramViewer />
+            <Suspense fallback={<LoadingFallback />}><ProgramViewer /></Suspense>
           </ProtectedRoute>
         } />
         <Route path="/shop" element={
           <ProtectedRoute session={session} role={role} allowedRoles={['athlete']}>
-            <Shop />
+            <Suspense fallback={<LoadingFallback />}><Shop /></Suspense>
           </ProtectedRoute>
         } />
         <Route path="/exercise-library" element={
           <ProtectedRoute session={session} role={role} allowedRoles={['athlete', 'coach']}>
-            <ExerciseLibrary />
+            <Suspense fallback={<LoadingFallback />}><ExerciseLibrary /></Suspense>
           </ProtectedRoute>
         } />
         <Route path="/program-builder" element={
           <ProtectedRoute session={session} role={role} allowedRoles={['coach']}>
-            <ProgramBuilder />
+            <Suspense fallback={<LoadingFallback />}><ProgramBuilder /></Suspense>
           </ProtectedRoute>
         } />
         <Route path="/program-library" element={
           <ProtectedRoute session={session} role={role} allowedRoles={['coach']}>
-            <ProgramLibrary />
+            <Suspense fallback={<LoadingFallback />}><ProgramLibrary /></Suspense>
           </ProtectedRoute>
         } />
       </Routes>
