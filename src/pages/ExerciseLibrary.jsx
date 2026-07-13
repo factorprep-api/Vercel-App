@@ -117,16 +117,6 @@ export default function ExerciseLibrary() {
     }
   }
 
-  async function loadRole() {
-    const cached = localStorage.getItem('fp_athlete_data');
-    if (cached) {
-      try {
-        const parsed = JSON.parse(cached);
-        if (parsed.role) setRole(parsed.role);
-      } catch {}
-    }
-  }
-
   async function loadCoachEmail() {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) { setCoachEmail(user.email); }
