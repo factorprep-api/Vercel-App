@@ -334,6 +334,11 @@ export default function ProgramViewer() {
         <h2 style={{ fontSize: '24px', color: '#008ed3', marginBottom: '16px', fontWeight: '700' }}>Today's Workout</h2>
         {athleteName && <p style={{ color: '#666', fontSize: '15px', marginBottom: '20px' }}>Welcome, {athleteName}</p>}
 
+        {/* Search box */}
+        <div className="pv-search-box">
+          <input type="text" placeholder="Search programs..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
+        </div>
+
         {/* Two Panels: My Programs + Public Programs */}
         <div className="pv-panels">
           <div className="pv-panel">
