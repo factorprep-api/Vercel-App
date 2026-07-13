@@ -22,7 +22,7 @@ function normalizeVideoUrl(rawUrl) {
 function buildGrouped(data) {
   const map = {};
   data.forEach(ex => {
-    const cat = ex.muscle.toUpperCase();
+    const cat = (ex.muscle || 'Uncategorized').toUpperCase();
     if (!map[cat]) map[cat] = [];
     map[cat].push(ex);
   });
@@ -84,7 +84,6 @@ export default function ExerciseLibrary() {
   const [editName, setEditName] = useState('');
   const [editVideo, setEditVideo] = useState('');
   const [deleting, setDeleting] = useState(null);
-  const [role, setRole] = useState(null);
   const [adding, setAdding] = useState(false);
 
 useEffect(() => {
@@ -220,7 +219,7 @@ useEffect(() => {
       const tokens = debouncedQuery.toLowerCase().split(/\s+/);
       const filtered = filteredForView.filter(ex => {
         const n = ex.name.toLowerCase();
-        const m = ex.muscle.toLowerCase();
+        const m = (ex.muscle || '').toLowerCase();
         return tokens.every(t => n.includes(t) || m.includes(t));
       });
       return buildGrouped(filtered);
@@ -274,13 +273,7 @@ if (!coachEmail) {
   );
 }
 
-// NOW the normal return statement continues:
-return (
-  <div className="exlib-container">
-    ...rest of your JSX...
-  </div>
-);
-  
+// NOW the normal return statement continues:  
   return (
     <div className="exlib-container">
       <div className="exlib-body">
