@@ -10,7 +10,6 @@ import ProgramViewer from './pages/ProgramViewer';
 import ExerciseLibrary from './pages/ExerciseLibrary';
 import ProgramBuilder from './pages/ProgramBuilder';
 import ProgramLibrary from './pages/ProgramLibrary';
-import PublicPrograms from './pages/PublicPrograms';
 import Shop from './pages/Shop';
 import AppShell from './components/AppShell';
 

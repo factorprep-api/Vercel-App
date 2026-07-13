@@ -83,10 +83,12 @@ export default function ExerciseLibrary() {
   const [editName, setEditName] = useState('');
   const [editVideo, setEditVideo] = useState('');
   const [deleting, setDeleting] = useState(null);
+  const [role, setRole] = useState(null);
   const [adding, setAdding] = useState(false);
 
   useEffect(() => {
     loadCoachEmail();
+    loadRole();
     const t = setTimeout(() => setDebouncedQuery(searchQuery), 300);
     return () => clearTimeout(t);
   }, [searchQuery]);
@@ -103,6 +105,16 @@ export default function ExerciseLibrary() {
       }
     })();
   }, []);
+
+  async function loadRole() {
+    const cached = localStorage.getItem('fp_athlete_data');
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        if (parsed.role) setRole(parsed.role);
+      } catch {}
+    }
+  }
 
   async function loadCoachEmail() {
     const { data: { user } } = await supabase.auth.getUser();
@@ -215,7 +227,7 @@ export default function ExerciseLibrary() {
 
   const viewFilters = [
     { id: 'all', label: 'All Exercises' },
-    { id: 'my', label: 'My Exercises' }
+    ...(role === 'coach' ? [{ id: 'my', label: 'My Exercises' }] : [])
   ];
 
   return (
@@ -223,9 +235,11 @@ export default function ExerciseLibrary() {
       <div className="exlib-body">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
           <h2 style={{ fontSize: '24px', color: '#008ed3', fontWeight: '700', margin: 0 }}>Exercise Library</h2>
-          <button className="exlib-add-btn" onClick={() => setAdding(true)}>
-            <Plus size={16} /> Add Exercise
-          </button>
+          {role === 'coach' && (
+            <button className="exlib-add-btn" onClick={() => setAdding(true)}>
+              <Plus size={16} /> Add Exercise
+            </button>
+          )}
         </div>
 
         <div className="exlib-view-filters">
