@@ -52,15 +52,13 @@
 
 /* Modals */
 .exlib-modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 1000; }
-.exlib-modal-content { background: white; border-radius: 12px; padding: 24px; width: 90%; max-width: 800px; max-height: 90vh; overflow-y: auto; position: relative; }
+.exlib-modal-content { background: white; border-radius: 12px; padding: 24px; width: 90%; max-width: 800px; max-height: 90vh; overflow-y: auto; position: relative; z-index: 100; }
   position: relative;
   z-index: 100;
-.exlib-modal-content { position: relative; z-index: 100; }
   position: relative;
   z-index: 100;
 
-.exlib-close-btn { position: absolute; top: 16px; right: 16px; background: none; border: none; cursor: pointer; color: #888; display: flex; }
-.exlib-modal-content { position: relative; z-index: 100; }
+.exlib-close-btn { position: absolute; top: 16px; right: 16px; background: rgba(255,255,255,0.9); border: none; cursor: pointer; color: #888; display: flex; z-index: 200; border-radius: 50%; padding: 4px; }
   position: relative;
   z-index: 100;
 
