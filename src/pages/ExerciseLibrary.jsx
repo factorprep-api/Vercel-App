@@ -77,9 +77,13 @@ export default function ExerciseLibrary() {
 
 // Mount effect - load auth data once
 useEffect(() => {
-  loadCoachEmail();
   loadRole();
 }, []);
+
+// Load coach email only after role is determined
+useEffect(() => {
+  if (role === 'coach') loadCoachEmail();
+}, [role]);
 
 // Debounce search effect - separate from mounting
 useEffect(() => {
