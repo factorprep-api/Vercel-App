@@ -261,11 +261,11 @@ if (!role) {
   );
 }
 
-if (!coachEmail) {
+if (!role) {
   return (
     <div className="exlib-container">
       <div className="exlib-body">
-        <p className="exlib-placeholder">You must be logged in to view exercises.</p>
+        <p className="exlib-placeholder">Loading your role...</p>
       </div>
     </div>
   );
