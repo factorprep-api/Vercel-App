@@ -13,7 +13,7 @@
 .exlib-view-filter.active { background: #008ed3; color: white; border-color: #008ed3; }
 
 /* Category Section */
-.exlib-category-title { font-size: 16px; font-weight: 700; color: #555; margin: 20px 0 12px 0; text-transform: uppercase; }
+.exlib-category-title { font-size: 16px; font-weight: 700; color: #008ed3; margin: 20px 0 12px 0; text-transform: uppercase; }
 
 /* Video Grid */
 .exlib-video-row { display: flex; flex-wrap: wrap; gap: 12px; }
