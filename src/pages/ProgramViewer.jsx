@@ -77,6 +77,7 @@ function findAthleteRowByEmail(athletesData, email) {
 export default function ProgramViewer() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [dataLoaded, setDataLoaded] = useState(false);
   const [athletesData, setAthletesData] = useState([]);
   const [programData, setProgramData] = useState([]);
   const [libraryData, setLibraryData] = useState([]);
@@ -91,19 +92,57 @@ export default function ProgramViewer() {
   const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
-    loadData();
+    loadData(true); // Load from cache first for instant UI
   }, []);
 
-  async function loadData() {
+  async function loadData(useCache = false) {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { setError('Not authenticated'); setLoading(false); return; }
+      
+      // Try cache first for instant load
+      const cached = localStorage.getItem('fp_program_data');
+      if (useCache && cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          setAthletesData(parsed.athletes);
+          setProgramData(parsed.programs);
+          setLibraryData(parsed.library);
+          setDataLoaded(true);
+          setLoading(false);
+          // Get athlete name from cache too
+          const athleteCached = localStorage.getItem('fp_athlete_data');
+          if (athleteCached) {
+            try {
+              const parsed = JSON.parse(athleteCached);
+              if (parsed.name) setAthleteName(parsed.name);
+              if (parsed.rowIndex !== undefined) setAthleteRowIndex(parsed.rowIndex);
+            } catch {}
+          }
+          // Refresh in background
+          refreshData();
+          return;
+        } catch {}
+      }
+      
+      // Fetch fresh data
       const allData = await fetchAllData();
       if (allData.error) { setError(allData.error); setLoading(false); return; }
       setAthletesData(allData.athletes);
       setProgramData(allData.programs);
       setLibraryData(allData.library);
       
+      // Cache for next load
+      localStorage.setItem('fp_program_data', JSON.stringify({
+        athletes: allData.athletes,
+        programs: allData.programs,
+        library: allData.library,
+        cachedAt: new Date().toISOString()
+      }));
+      setDataLoaded(true);
+      setLoading(false);
+
+      // Determine athlete name and row index
       const athleteResult = await getAthleteByEmail(user.email);
       let rowIndex = null;
       if (athleteResult.status === 'Success' && athleteResult.rowIndex) {
@@ -115,17 +154,31 @@ export default function ProgramViewer() {
       let name = '';
       if (rowIndex !== null && allData.athletes[rowIndex]) {
         name = String(allData.athletes[rowIndex][0] || '').trim();
-      } else if (athleteResult.status === 'Success') {
-        name = athleteResult.athleteName || athleteResult.name || user.user_metadata?.name || user.email.split('@')[0];
       } else {
-        name = user.user_metadata?.name || user.email.split('@')[0];
+        name = athleteResult.athleteName || athleteResult.name || user.user_metadata?.name || user.email.split('@')[0];
       }
       setAthleteName(name);
-      setLoading(false);
     } catch (err) {
       setError('Failed to load data. Please refresh.');
       setLoading(false);
     }
+  }
+
+  async function refreshData() {
+    try {
+      const allData = await fetchAllData();
+      if (!allData.error) {
+        setAthletesData(allData.athletes);
+        setProgramData(allData.programs);
+        setLibraryData(allData.library);
+        localStorage.setItem('fp_program_data', JSON.stringify({
+          athletes: allData.athletes,
+          programs: allData.programs,
+          library: allData.library,
+          cachedAt: new Date().toISOString()
+        }));
+      }
+    } catch {}
   }
 
   const assignedPrograms = useMemo(() => {
