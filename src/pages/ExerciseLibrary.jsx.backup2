@@ -102,24 +102,16 @@ useEffect(() => {
           setLoading(false);
           // Refresh in background
           try {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 8000);
-            const lib = await fetchExerciseLibrary({ signal: controller.signal });
-            clearTimeout(timeoutId);
+            const lib = await fetchExerciseLibrary();
             setFullLibrary(lib);
             localStorage.setItem('fp_exercise_library', JSON.stringify(lib));
-          } catch (err) {
-            console.warn("Background refresh failed:", err.message);
-          }
+          } catch {}
           return;
         } catch {}
       }
       // No cache - fetch fresh
       try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 8000);
-        const lib = await fetchExerciseLibrary({ signal: controller.signal });
-        clearTimeout(timeoutId);
+        const lib = await fetchExerciseLibrary();
         setFullLibrary(lib);
         localStorage.setItem('fp_exercise_library', JSON.stringify(lib));
       } catch {

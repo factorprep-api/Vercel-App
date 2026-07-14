@@ -59,9 +59,9 @@ export const saveSession = async (payload) => {
   }
 };
 
-export async function fetchExerciseLibrary(options = {}) {
+export async function fetchExerciseLibrary() {
   const API_URL = "https://script.google.com/macros/s/AKfycbzIBfOpFxgmTYWlFDuKPVSx30tXJRlyWhhvZVBqkAO_nKeF1GfGTFVvTolLr-CBpoHl8A/exec";
-  const response = await fetch(`${API_URL}?action=getFullData`, options);
+  const response = await fetch(`${API_URL}?action=getFullData`);
   const json = await response.json();
   const lib = [];
   for (let i = 1; i < json.library.length; i++) {
