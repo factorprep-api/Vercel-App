@@ -462,7 +462,8 @@ export default function ProgramViewer() {
             {showProgramMedia && (
               <div className="pv-media-player-wrap">
                 {getYouTubeId(programMediaUrl) ? (
-                  <iframe src={'https://www.youtube.com/embed/' + getYouTubeId(programMediaUrl) + '?rel=0'} allowFullScreen title="Coach Program Media" className="pv-media-iframe" />
+            <iframe src={'https://www.youtube.com/embed/' + getYouTubeId(programMediaUrl) + '?autoplay=1&rel=0'} allowFullScreen title="Coach Program Media" className="pv-media-iframe" />   
+            <iframe src={'https://www.youtube.com/embed/' + getYouTubeId(programMediaUrl) + '?rel=0'} allowFullScreen title="Coach Program Media" className="pv-media-iframe" />
                 ) : getMediaType(programMediaUrl) === 'audio' ? (
                   <audio src={programMediaUrl} controls preload="metadata" className="pv-media-audio" />
                 ) : (
@@ -500,10 +501,10 @@ export default function ProgramViewer() {
                     {hasVideo && expandedVideos.has(group.id) && (
                       <div className="pv-video-container">
                         {group.ytId ? (
-                          <iframe src={`https://www.youtube.com/embed/${group.ytId}?rel=0`} allowFullScreen title={group.name} />
-                        ) : (
-                          <video controls playsInline preload="none" controlsList="nodownload">
-                            <source src={group.videoUrl} type="video/mp4" />
+                    <iframe src={`https://www.youtube.com/embed/${group.ytId}?autoplay=1&rel=0`} allowFullScreen title={group.name} />    
+                       ) : (
+                      <video autoPlay controls playsInline preload="none" controlsList="nodownload">                    
+                        <source src={group.videoUrl} type="video/mp4" />
                           </video>
                         )}
                       </div>
