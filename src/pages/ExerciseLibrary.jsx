@@ -75,9 +75,14 @@ export default function ExerciseLibrary() {
   const [deleting, setDeleting] = useState(null);
   const [adding, setAdding] = useState(false);
 
+// Mount effect - load auth data once
 useEffect(() => {
   loadCoachEmail();
-  loadRole();  // ← Keep this ONE call
+  loadRole();
+}, []);
+
+// Debounce search effect - separate from mounting
+useEffect(() => {
   const t = setTimeout(() => setDebouncedQuery(searchQuery), 300);
   return () => clearTimeout(t);
 }, [searchQuery]);
