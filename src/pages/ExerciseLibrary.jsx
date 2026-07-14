@@ -93,9 +93,27 @@ useEffect(() => {
 
   useEffect(() => {
     (async () => {
+      // Try cache first
+      const cached = localStorage.getItem('fp_exercise_library');
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          setFullLibrary(parsed);
+          setLoading(false);
+          // Refresh in background
+          try {
+            const lib = await fetchExerciseLibrary();
+            setFullLibrary(lib);
+            localStorage.setItem('fp_exercise_library', JSON.stringify(lib));
+          } catch {}
+          return;
+        } catch {}
+      }
+      // No cache - fetch fresh
       try {
         const lib = await fetchExerciseLibrary();
         setFullLibrary(lib);
+        localStorage.setItem('fp_exercise_library', JSON.stringify(lib));
       } catch {
         setError(true);
       } finally {
@@ -105,12 +123,43 @@ useEffect(() => {
   }, []);
 
   async function loadRole() {
+    // Try cache first
     const cached = localStorage.getItem('fp_athlete_data');
     if (cached) {
       try {
         const parsed = JSON.parse(cached);
-        if (parsed.role) setRole(parsed.role);
+        if (parsed.role) {
+          setRole(parsed.role);
+          // Still refresh in background if not a coach
+          if (parsed.role !== 'coach') {
+            fetchRoleFromSupabase();
+          }
+          return;
+        }
       } catch {}
+    }
+    // No cache - fetch from Supabase + sheets
+    await fetchRoleFromSupabase();
+  }
+
+  async function fetchRoleFromSupabase() {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const result = await getAthleteByEmail(user.email);
+      if (result.status === 'Success') {
+        setRole(result.role || 'athlete');
+        localStorage.setItem('fp_athlete_data', JSON.stringify({
+          name: result.athleteName || user.email.split('@')[0],
+          email: user.email,
+          role: result.role || 'athlete'
+        }));
+      } else {
+        setRole('athlete');
+      }
+    } catch (e) {
+      // If Supabase fails, default to athlete
+      setRole('athlete');
     }
   }
 
@@ -149,6 +198,7 @@ useEffect(() => {
     try {
       const lib = await fetchExerciseLibrary();
       setFullLibrary(lib);
+      localStorage.setItem('fp_exercise_library', JSON.stringify(lib));
     } catch {
       // ignore reload errors
     }
