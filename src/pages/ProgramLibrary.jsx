@@ -28,11 +28,32 @@ export default function ProgramLibrary() {
 
   async function loadData() {
     try {
+      // Cache-first: check localStorage for instant load
+      const cached = localStorage.getItem('fp_library_data');
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          setProgramData(parsed.programs || []);
+          setAthletesData(parsed.athletes || []);
+          setLoading(false);
+        } catch {}
+      }
+      
+      // Fetch fresh data in background
       const allData = await fetchAllData();
       if (allData.error) { setError(allData.error); setLoading(false); return; }
       setProgramData(allData.programs);
       setAthletesData(allData.athletes);
       setLoading(false);
+      
+      // Update cache with fresh data
+      if (allData.programs && allData.athletes) {
+        localStorage.setItem('fp_library_data', JSON.stringify({
+          programs: allData.programs,
+          athletes: allData.athletes,
+          timestamp: Date.now()
+        }));
+      }
     } catch (err) {
       setError('Failed to load programs. Please refresh.');
       setLoading(false);
