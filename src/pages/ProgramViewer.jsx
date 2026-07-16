@@ -90,11 +90,11 @@ export default function ProgramViewer() {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [showProgramMedia, setShowProgramMedia] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const { userEmail } = useAuth();
+  const { userEmail, isLoading: authLoading } = useAuth();
 
   useEffect(() => {
-    loadData(true); // Load from cache first for instant UI
-  }, []);
+    if (userEmail) loadData(true);
+  }, [userEmail]);
 
   async function loadData(useCache = false) {
     try {
