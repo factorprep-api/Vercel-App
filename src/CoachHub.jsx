@@ -5,8 +5,6 @@ import { Wrench, BookOpen, Dumbbell } from 'lucide-react';
 export default function CoachHub() {
   const navigate = useNavigate();
   const { athleteName, isLoading: authLoading } = useAuth();
-  console.log('[CoachHub] athleteName=', athleteName, 'authLoading=', authLoading);
-
   if (authLoading) return (
     <div style={{ fontFamily: '"Roboto Flex", sans-serif', display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', backgroundColor: '#f8fafc' }}>
       <p>Loading...</p>
