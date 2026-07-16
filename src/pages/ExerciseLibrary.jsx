@@ -226,8 +226,7 @@ useEffect(() => {
   const closeModal = () => setModalVideo(null);
 
   const viewFilters = [
-    { id: 'all', label: 'All Exercises' },
-    ...(role === 'coach' ? [{ id: 'my', label: 'My Exercises' }] : [])
+    ...(role === 'coach' ? [{ id: 'all', label: 'All Exercises' }, { id: 'my', label: 'My Exercises' }] : [])
   ];
 
 // Add these THREE guard clauses BEFORE the return statement:
