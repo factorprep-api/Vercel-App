@@ -22,9 +22,6 @@ export default function ProgramLibrary() {
   const [privacyFilter, setPrivacyFilter] = useState('all');
   const [bulkAssigning, setBulkAssigning] = useState(false);
 
-  if (authLoading) return <div>Loading...</div>;
-  if (!coachEmail) return <div>Please log in...</div>;
-
   useEffect(() => {
     loadData();
   }, [coachEmail]);
@@ -139,6 +136,9 @@ export default function ProgramLibrary() {
 
     return result;
   }, [programs, privacyFilter, coachEmail, searchQuery]);
+
+  if (authLoading) return <div>Loading...</div>;
+  if (!coachEmail) return <div>Please log in...</div>;
 
   function toggleExpand(name) {
     setExpandedProgram(expandedProgram === name ? null : name);
