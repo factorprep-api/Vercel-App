@@ -65,14 +65,15 @@ export default function ExerciseLibrary() {
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [modalVideo, setModalVideo] = useState(null);
-  const { role, userEmail: coachEmail, isLoading: authLoading } = useAuth();
   const [viewFilter, setViewFilter] = useState('all');
   const [toast, setToast] = useState(null);
   const [editing, setEditing] = useState(null);
   const [editName, setEditName] = useState('');
   const [editVideo, setEditVideo] = useState('');
   const [deleting, setDeleting] = useState(null);
+  const { role, userEmail: coachEmail, isLoading: authLoading } = useAuth();
   const [adding, setAdding] = useState(false);
+
 
 // Debounce search effect - separate from mounting
 useEffect(() => {
@@ -118,10 +119,6 @@ useEffect(() => {
       }
     })();
   }, []);
-
-
-
-}
 
   function isCoachOwned(exercise) {
     if (!exercise.ownerEmail || !coachEmail) return false;
@@ -245,7 +242,7 @@ if (loading) {
   );
 }
 
-if (authLoading || !role) {
+if (authLoading || !role)  {
   return (
     <div className="exlib-container">
       <div className="exlib-body">
