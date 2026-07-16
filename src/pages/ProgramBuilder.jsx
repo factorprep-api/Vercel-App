@@ -30,7 +30,7 @@ export default function ProgramBuilder() {
   const [saving, setSaving] = useState(false);
   const [draft, setDraft] = useState([]);
   const [form, setForm] = useState({ name: '', category: '', notes: '', phase: 'Work Block', exercise: '', sets: '', reps: '', intensity: '', tempo: '', rest: '', privacyLevel: 'PRIVATE' });
-  const { userEmail: coachEmail } = useAuth();
+  const { userEmail: coachEmail, isLoading: authLoading } = useAuth();
   const [loadProgramName, setLoadProgramName] = useState('');
   const [mediaUrl, setMediaUrl] = useState('');
   const [showMediaInput, setShowMediaInput] = useState(false);
@@ -42,12 +42,35 @@ export default function ProgramBuilder() {
 
   async function loadData() {
     try {
+      // Cache-first: check localStorage for instant load
+      const cached = localStorage.getItem('fp_builder_data');
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          setAthletes(parsed.athletes || []);
+          setPrograms(parsed.programs || []);
+          setLibrary(parsed.library || []);
+          setLoading(false);
+        } catch {}
+      }
+      
+      // Fetch fresh data in background
       const allData = await fetchAllData();
       if (allData.error) { setError(allData.error); setLoading(false); return; }
       setAthletes(allData.athletes || []);
       setPrograms(allData.programs || []);
       setLibrary(allData.library || []);
       setLoading(false);
+      
+      // Update cache with fresh data
+      if (allData.athletes && allData.programs && allData.library) {
+        localStorage.setItem('fp_builder_data', JSON.stringify({
+          athletes: allData.athletes,
+          programs: allData.programs,
+          library: allData.library,
+          timestamp: Date.now()
+        }));
+      }
     } catch (err) {
       setError('Failed to load data.'); setLoading(false);
     }
@@ -73,6 +96,9 @@ export default function ProgramBuilder() {
     }).map(r => String(r[0] || '').trim()).filter(Boolean);
     return [...new Set(names)].sort();
   }, [programs, coachEmail]);
+
+  if (authLoading) return <div>Loading...</div>;
+  if (!coachEmail) return <div>Please log in...</div>;
 
   function showToast(message, isError = false) {
     setToast({ message, isError });
