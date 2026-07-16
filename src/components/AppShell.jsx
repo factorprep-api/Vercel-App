@@ -20,28 +20,28 @@ export default function AppShell({ children }) {
       <header style={{
         background: '#008ed3',
         color: 'white',
-        padding: '6px 8px',
+        padding: '4px 6px',
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
         boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <img 
             src="/logo.png" 
             alt="FactorPrep" 
-            style={{ height: '20px', width: 'auto' }}
+            style={{ height: '18px', width: 'auto' }}
           />
-          <h1 style={{ margin: 0, fontSize: '14px', fontWeight: '700', letterSpacing: '0.5px' }}>Exercise Program</h1>
+          <h1 style={{ margin: 0, fontSize: '13px', fontWeight: '700', letterSpacing: '0.5px' }}>FactorPrep</h1>
         </div>
         <button onClick={handleLogout} style={{
           background: 'transparent',
           border: '2px solid white',
           color: 'white',
-          padding: '4px 10px',
+          padding: '3px 8px',
           borderRadius: '4px',
           cursor: 'pointer',
-          fontSize: '11px',
+          fontSize: '10px',
           fontWeight: 'bold',
           letterSpacing: '0.5px',
           transition: 'background 0.2s'
@@ -50,7 +50,7 @@ export default function AppShell({ children }) {
         </button>
       </header>
 
-      <main style={{ flex: 1, padding: '6px 10px', background: '#f5f5f5' }}>
+      <main style={{ flex: 1, padding: '4px 8px', background: '#f5f5f5' }}>
         {children}
       </main>
 
@@ -58,8 +58,8 @@ export default function AppShell({ children }) {
         background: '#333',
         color: 'white',
         textAlign: 'center',
-        padding: '6px',
-        fontSize: '10px'
+        padding: '4px',
+        fontSize: '9px'
       }}>
         © 2026 Exercise Program
       </footer>
