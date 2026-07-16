@@ -1,0 +1,104 @@
+.exlib-container { font-family: 'Roboto Flex', sans-serif; padding: 20px; min-height: 100vh; background: #f8fafc; }
+.exlib-body { max-width: 1400px; margin: 0 auto; }
+
+/* Search Bar */
+.exlib-search-wrapper { position: relative; margin-bottom: 20px; }
+.exlib-search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #999; }
+.exlib-search-box { width: 100%; padding: 10px 12px 10px 40px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; }
+
+/* View Filters */
+.exlib-view-filters { display: flex; gap: 8px; margin-bottom: 16px; }
+.exlib-view-filter { padding: 8px 16px; background: #f5f5f5; border: 1px solid #ddd; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; color: #555; transition: all 0.15s; }
+.exlib-view-filter:hover:not(.active) { background: #e9ecef; }
+.exlib-view-filter.active { background: #008ed3; color: white; border-color: #008ed3; }
+
+/* Category Section */
+.exlib-category-title { font-size: 16px; font-weight: 700; color: #008ed3; margin: 20px 0 12px 0; text-transform: uppercase; }
+
+/* Video Grid */
+.exlib-video-row { display: flex; flex-wrap: wrap; gap: 12px; }
+.exlib-video-card { flex: 0 0 calc(20% - 12px); min-width: 160px; border: 1px solid #ddd; border-radius: 8px; overflow: hidden; cursor: pointer; transition: box-shadow 0.15s; position: relative; }
+.exlib-video-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+
+/* Thumbnail */
+.exlib-thumbnail { position: relative; padding-top: 56.25%; background: #000; }
+.exlib-vid-thumb { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; }
+.exlib-vid-thumb-video { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; }
+.exlib-play-icon { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; opacity: 0.8; }
+
+/* Card Info */
+.exlib-card-info { padding: 10px; background: white; }
+.exlib-v-title { font-size: 13px; font-weight: 600; color: #333; margin: 0; word-break: break-word; }
+
+/* Owner Actions */
+.exlib-owner-actions { position: absolute; top: 6px; right: 6px; display: flex; gap: 4px; z-index: 5; }
+.exlib-edit-btn, .exlib-delete-btn { width: 28px; height: 28px; border-radius: 6px; border: none; display: flex; align-items: center; justify-content: center; cursor: pointer; opacity: 0.85; transition: opacity 0.15s; }
+.exlib-edit-btn { background: #008ed3; color: white; }
+.exlib-edit-btn:hover { opacity: 1; }
+.exlib-delete-btn { background: #dc3545; color: white; }
+.exlib-delete-btn:hover { opacity: 1; }
+.exlib-delete-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Coach Badge */
+.exlib-coach-badge { display: inline-block; margin-left: 6px; padding: 2px 6px; background: #e8f5e9; color: #2e7d32; border-radius: 4px; font-size: 11px; font-weight: 600; }
+
+/* Pagination */
+.exlib-pagination { display: flex; justify-content: center; align-items: center; gap: 8px; margin: 24px 0; }
+.exlib-page-btn { padding: 8px 14px; background: white; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; font-size: 14px; }
+.exlib-page-btn:hover:not(:disabled) { background: #f5f5f5; }
+.exlib-page-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.exlib-page-btn.active { background: #008ed3; color: white; border-color: #008ed3; }
+.exlib-page-dots { padding: 0 8px; color: #888; }
+
+/* Modals */
+.exlib-modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+.exlib-modal-content { background: white; border-radius: 12px; padding: 24px; width: 90%; max-width: 800px; max-height: 90vh; overflow-y: auto; position: relative; z-index: 100; }
+  position: relative;
+  z-index: 100;
+  position: relative;
+  z-index: 100;
+
+.exlib-close-btn { position: absolute; top: 16px; right: 16px; background: rgba(255,255,255,0.9); border: none; cursor: pointer; color: #888; display: flex; z-index: 200; border-radius: 50%; padding: 4px; }
+  position: relative;
+  z-index: 100;
+
+.exlib-close-btn:hover { color: #333; }
+.exlib-player-container { position: relative; padding-top: 56.25%; background: black; border-radius: 8px; overflow: hidden; }
+.exlib-player-container iframe, .exlib-player-container video { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+
+/* Edit Modal */
+.exlib-edit-modal { background: white; border-radius: 12px; padding: 24px; width: 90%; max-width: 420px; position: relative; box-shadow: 0 8px 32px rgba(0,0,0,0.2); }
+.exlib-edit-title { font-size: 18px; color: #008ed3; margin-bottom: 16px; font-weight: 700; }
+.exlib-edit-field { margin-bottom: 14px; }
+.exlib-edit-label { display: block; font-size: 13px; font-weight: 600; color: #555; margin-bottom: 4px; }
+.exlib-edit-input { width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; }
+.exlib-edit-save-btn { width: 100%; padding: 12px; background: #008ed3; color: white; border: none; border-radius: 6px; font-size: 15px; font-weight: 600; cursor: pointer; margin-top: 6px; }
+.exlib-edit-save-btn:hover { background: #0077b5; }
+
+/* Add Exercise Modal */
+.exlib-add-modal { background: white; border-radius: 12px; padding: 24px; width: 90%; max-width: 420px; position: relative; box-shadow: 0 8px 32px rgba(0,0,0,0.2); }
+.exlib-add-title { font-size: 18px; color: #2e7d32; margin-bottom: 16px; font-weight: 700; }
+.exlib-add-field { margin-bottom: 14px; }
+.exlib-add-label { display: block; font-size: 13px; font-weight: 600; color: #555; margin-bottom: 4px; }
+.exlib-add-input { width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; }
+.exlib-add-save-btn { width: 100%; padding: 12px; background: #2e7d32; color: white; border: none; border-radius: 6px; font-size: 15px; font-weight: 600; cursor: pointer; margin-top: 6px; }
+.exlib-add-save-btn:hover { background: #1b5e20; }
+.exlib-add-save-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Add Button */
+.exlib-add-btn { display: flex; align-items: center; gap: 6px; padding: 10px 16px; background: #2e7d32; color: white; border: none; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; transition: background 0.15s; }
+.exlib-add-btn:hover { background: #1b5e20; }
+
+/* Toast */
+.exlib-toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #333; color: white; padding: 12px 20px; border-radius: 8px; display: flex; align-items: center; gap: 8px; font-size: 14px; z-index: 9999; }
+.exlib-toast.error { background: #dc3545; }
+
+/* Placeholder/Error */
+.exlib-placeholder, .exlib-error-text { text-align: center; color: #888; padding: 40px; }
+.exlib-error-text { color: #dc3545; }
+
+/* Responsive */
+@media (max-width: 1200px) { .exlib-video-card { flex: 0 0 calc(25% - 12px); } }
+@media (max-width: 992px) { .exlib-video-card { flex: 0 0 calc(33.33% - 12px); } }
+@media (max-width: 768px) { .exlib-video-card { flex: 0 0 calc(50% - 12px); } }
+@media (max-width: 480px) { .exlib-video-card { flex: 0 0 100%; } }

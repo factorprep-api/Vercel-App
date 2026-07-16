@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Play, Search, X, Pencil, Trash2, Plus } from 'lucide-react';
 import { getYouTubeId, normalizeVideoUrl } from '../utils/helpers';
-import { useAuth } from '../hooks/useAuth';
+import { supabase } from '../supabase';
 import { fetchExerciseLibrary, deleteExerciseFromLibrary, updateExerciseInLibrary, addExerciseToLibrary } from '../api.js';
 import './exercise-library.css';
 import HelpButton from '../components/HelpButton';
@@ -65,7 +65,8 @@ export default function ExerciseLibrary() {
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [modalVideo, setModalVideo] = useState(null);
-  const { role, userEmail: coachEmail, isLoading: authLoading } = useAuth();
+  const [coachEmail, setCoachEmail] = useState('');
+  const [role, setRole] = useState(null);
   const [viewFilter, setViewFilter] = useState('all');
   const [toast, setToast] = useState(null);
   const [editing, setEditing] = useState(null);
@@ -73,6 +74,16 @@ export default function ExerciseLibrary() {
   const [editVideo, setEditVideo] = useState('');
   const [deleting, setDeleting] = useState(null);
   const [adding, setAdding] = useState(false);
+
+// Mount effect - load auth data once
+useEffect(() => {
+  loadRole();
+}, []);
+
+// Load coach email only after role is determined
+useEffect(() => {
+  if (role === 'coach') loadCoachEmail();
+}, [role]);
 
 // Debounce search effect - separate from mounting
 useEffect(() => {
@@ -119,8 +130,61 @@ useEffect(() => {
     })();
   }, []);
 
+  async function loadRole() {
+    // Try cache first
+    const cached = localStorage.getItem('fp_athlete_data');
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        if (parsed.role) {
+          setRole(parsed.role);
+          // Still refresh in background if not a coach
+          if (parsed.role !== 'coach') {
+            fetchRoleFromSupabase();
+          }
+          return;
+        }
+      } catch {}
+    }
+    // No cache - fetch from Supabase + sheets
+    await fetchRoleFromSupabase();
+  }
 
+  async function fetchRoleFromSupabase() {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const result = await getAthleteByEmail(user.email);
+      if (result.status === 'Success') {
+        setRole(result.role || 'athlete');
+        localStorage.setItem('fp_athlete_data', JSON.stringify({
+          name: result.athleteName || user.email.split('@')[0],
+          email: user.email,
+          role: result.role || 'athlete'
+        }));
+      } else {
+        setRole('athlete');
+      }
+    } catch (e) {
+      // If Supabase fails, default to athlete
+      setRole('athlete');
+    }
+  }
 
+  async function loadCoachEmail() {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (user) { 
+    setCoachEmail(user.email);
+    
+    // Also load the user's role
+    const cached = localStorage.getItem('fp_athlete_data');
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        if (parsed.role) setRole(parsed.role);
+      } catch {}
+    }
+  }
 }
 
   function isCoachOwned(exercise) {
@@ -245,7 +309,7 @@ if (loading) {
   );
 }
 
-if (authLoading || !role) {
+if (!role) {
   return (
     <div className="exlib-container">
       <div className="exlib-body">
@@ -255,7 +319,7 @@ if (authLoading || !role) {
   );
 }
 
-if (authLoading || !role) {
+if (!role) {
   return (
     <div className="exlib-container">
       <div className="exlib-body">
