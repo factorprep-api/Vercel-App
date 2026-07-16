@@ -19,7 +19,7 @@ export default function MyProgress() {
   }, [userEmail]);
 
   async function loadData() {
-    const cached = localStorage.getItem('fp_athlete_data');
+    const cached = localStorage.getItem('fp_progress_data');
     if (cached) {
       try {
         const parsed = JSON.parse(cached);
@@ -86,7 +86,7 @@ export default function MyProgress() {
 
       setHistory(formattedHistory);
 
-      localStorage.setItem('fp_athlete_data', JSON.stringify({
+      localStorage.setItem('fp_progress_data', JSON.stringify({
         email: userEmail,
         athleteName: name,
         maxes: parsedMaxes,
