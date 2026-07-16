@@ -1,16 +1,31 @@
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from './hooks/useAuth';
+import { useState, useEffect } from 'react';
+import { supabase } from './supabase';
+import { getAthleteByEmail } from './api';
 import { ClipboardList, TrendingUp, Dumbbell } from 'lucide-react';
 
 export default function AthleteHub() {
   const navigate = useNavigate();
-  const { athleteName, isLoading: authLoading } = useAuth();
+  const [athleteName, setAthleteName] = useState('');
+  const [loading, setLoading] = useState(true);
 
-  if (authLoading) return (
-    <div style={{ fontFamily: '"Roboto Flex", sans-serif', display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', backgroundColor: '#f8fafc' }}>
-      <p>Loading...</p>
-    </div>
-  );
+  useEffect(() => {
+    const loadName = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const result = await getAthleteByEmail(user.email);
+          if (result.status === 'Success') {
+            setAthleteName(result.athleteName || user.user_metadata?.name || 'Athlete');
+          }
+        }
+      } catch (err) {
+        console.error(err);
+      }
+      setLoading(false);
+    };
+    loadName();
+  }, []);
 
   const cards = [
     { title: 'My Programs', desc: 'View assigned workouts', icon: ClipboardList, path: '/program-viewer', color: '#008ed3', bgImage: '/av-card.png' },
