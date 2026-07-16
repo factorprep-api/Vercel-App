@@ -20,19 +20,19 @@ export default function AppShell({ children }) {
       <header style={{
         background: '#008ed3',
         color: 'white',
-        padding: '12px 24px',
+        padding: '10px 16px',
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
         boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
           <img 
             src="/logo.png" 
             alt="FactorPrep" 
-            style={{ height: '32px', width: 'auto' }}
+            style={{ height: '28px', width: 'auto' }}
           />
-          <h1 style={{ margin: 0, fontSize: '20px', fontWeight: '700', letterSpacing: '0.5px' }}>Exercise Program</h1>
+          <h1 style={{ margin: 0, fontSize: '18px', fontWeight: '700', letterSpacing: '0.5px' }}>Exercise Program</h1>
         </div>
         <button onClick={handleLogout} style={{
           background: 'transparent',
@@ -50,7 +50,7 @@ export default function AppShell({ children }) {
         </button>
       </header>
 
-      <main style={{ flex: 1, padding: '20px', background: '#f5f5f5' }}>
+      <main style={{ flex: 1, padding: '12px 16px', background: '#f5f5f5' }}>
         {children}
       </main>
 
