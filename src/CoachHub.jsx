@@ -5,6 +5,7 @@ import { Wrench, BookOpen, Dumbbell } from 'lucide-react';
 export default function CoachHub() {
   const navigate = useNavigate();
   const { athleteName, isLoading: authLoading } = useAuth();
+  console.log('[CoachHub] athleteName=', athleteName, 'authLoading=', authLoading);
 
   if (authLoading) return (
     <div style={{ fontFamily: '"Roboto Flex", sans-serif', display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', backgroundColor: '#f8fafc' }}>
@@ -24,7 +25,7 @@ export default function CoachHub() {
     <div style={{ fontFamily: '"Roboto Flex", sans-serif', padding: '20px', backgroundColor: '#f8fafc', minHeight: '100vh' }}>
       <div style={{ marginBottom: '30px', textAlign: 'center' }}>
         <h1 style={{ fontSize: '28px', color: '#333', marginBottom: '4px' }}>Coach Hub</h1>
-        {athleteName && <p style={{ color: '#666', fontSize: '15px' }}>Welcome, {athleteName}</p>}
+        <p style={{ color: '#666', fontSize: '15px' }}>Welcome, {athleteName || 'Coach'}</p>
       </div>
 
       <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap', justifyContent: 'center' }}>
