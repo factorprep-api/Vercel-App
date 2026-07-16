@@ -6,7 +6,6 @@ import './program-library.css';
 import HelpButton from '../components/HelpButton';
 
 export default function ProgramLibrary() {
-  if (authLoading) return <div>Loading...</div>;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [programData, setProgramData] = useState([]);
@@ -22,6 +21,9 @@ export default function ProgramLibrary() {
   const { userEmail: coachEmail, isLoading: authLoading } = useAuth();
   const [privacyFilter, setPrivacyFilter] = useState('all');
   const [bulkAssigning, setBulkAssigning] = useState(false);
+
+  if (authLoading) return <div>Loading...</div>;
+  if (!userEmail) return <div>Please log in...</div>;
 
   useEffect(() => {
     loadData();
