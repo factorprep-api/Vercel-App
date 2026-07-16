@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Dumbbell, Clock } from 'lucide-react';
-import { useAuth } from './hooks/useAuth';
+import { supabase } from './supabase';
 import { fetchAllData, fetchLogbookByAthlete, getAthleteByEmail } from './api';
 import './my-progress.css';
 
@@ -12,11 +12,10 @@ export default function MyProgress() {
   const [athleteName, setAthleteName] = useState('');
   const [activeTab, setActiveTab] = useState('maxes');
   const [exerciseFilter, setExerciseFilter] = useState('All');
-  const { userEmail, isLoading: authLoading } = useAuth();
 
   useEffect(() => {
-    if (userEmail) loadData();
-  }, [userEmail]);
+    loadData();
+  }, []);
 
   async function loadData() {
     const cached = localStorage.getItem('fp_athlete_data');
@@ -33,18 +32,19 @@ export default function MyProgress() {
     }
 
     try {
-      if (!userEmail) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
         setError('Not authenticated');
         setLoading(false);
         return;
       }
 
-      const athleteResult = await getAthleteByEmail(userEmail);
+      const athleteResult = await getAthleteByEmail(user.email);
       let name = '';
       if (athleteResult.status === 'Success') {
-        name = athleteResult.athleteName || athleteResult.name || athleteResult.coachName || userEmail.split('@')[0];
+        name = athleteResult.athleteName || athleteResult.name || athleteResult.coachName || user.user_metadata?.name || user.email.split('@')[0];
       } else {
-        name = userEmail.split('@')[0];
+        name = user.user_metadata?.name || user.email.split('@')[0];
       }
       setAthleteName(name);
 
@@ -87,7 +87,7 @@ export default function MyProgress() {
       setHistory(formattedHistory);
 
       localStorage.setItem('fp_athlete_data', JSON.stringify({
-        email: userEmail,
+        email: user.email,
         athleteName: name,
         maxes: parsedMaxes,
         history: formattedHistory,
