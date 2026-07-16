@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Play, ChevronDown, ChevronUp, Video, Save, CheckCircle, MessageSquare, UserPlus, Globe } from 'lucide-react';
 import { getYouTubeId } from '../utils/helpers';
-import { useAuth } from '../hooks/useAuth';
+import { supabase } from '../supabase';
 import { fetchAllData, getAthleteByEmail, saveSession, getMediaType } from '../api';
 import HelpButton from '../components/HelpButton';
 import './program-viewer.css';
@@ -90,7 +90,6 @@ export default function ProgramViewer() {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [showProgramMedia, setShowProgramMedia] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const { userEmail } = useAuth();
 
   useEffect(() => {
     loadData(true); // Load from cache first for instant UI
@@ -98,7 +97,8 @@ export default function ProgramViewer() {
 
   async function loadData(useCache = false) {
     try {
-      if (!userEmail) { setError('Not authenticated'); setLoading(false); return; }
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { setError('Not authenticated'); setLoading(false); return; }
       
       // Try cache first for instant load
       const cached = localStorage.getItem('fp_program_data');
@@ -143,19 +143,19 @@ export default function ProgramViewer() {
       setLoading(false);
 
       // Determine athlete name and row index
-      const athleteResult = await getAthleteByEmail(userEmail);
+      const athleteResult = await getAthleteByEmail(user.email);
       let rowIndex = null;
       if (athleteResult.status === 'Success' && athleteResult.rowIndex) {
         rowIndex = parseInt(athleteResult.rowIndex);
       } else {
-        rowIndex = findAthleteRowByEmail(allData.athletes, userEmail);
+        rowIndex = findAthleteRowByEmail(allData.athletes, user.email);
       }
       setAthleteRowIndex(rowIndex);
       let name = '';
       if (rowIndex !== null && allData.athletes[rowIndex]) {
         name = String(allData.athletes[rowIndex][0] || '').trim();
       } else {
-        name = athleteResult.athleteName || athleteResult.name || userEmail.split('@')[0];
+        name = athleteResult.athleteName || athleteResult.name || user.user_metadata?.name || user.email.split('@')[0];
       }
       setAthleteName(name);
     } catch (err) {
