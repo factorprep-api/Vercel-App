@@ -19,13 +19,11 @@ export default function ProgramLibrary() {
   const [toast, setToast] = useState(null);
   const [deleting, setDeleting] = useState(null);
   const { userEmail: coachEmail, isLoading: authLoading } = useAuth();
-  console.log('[ProgramLibrary] DEBUG: authLoading=', authLoading, 'coachEmail=', coachEmail);
   const [privacyFilter, setPrivacyFilter] = useState('all');
   const [bulkAssigning, setBulkAssigning] = useState(false);
 
-  console.log('[ProgramLibrary] RENDER CHECK: authLoading=', authLoading);
   if (authLoading) return <div>Loading...</div>;
-  if (!userEmail) return <div>Please log in...</div>;
+  if (!coachEmail) return <div>Please log in...</div>;
 
   useEffect(() => {
     loadData();
