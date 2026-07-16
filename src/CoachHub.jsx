@@ -20,7 +20,7 @@ export default function CoachHub() {
   ];
 
   return (
-    <div style={{ fontFamily: '"Roboto Flex", sans-serif', padding: '20px', backgroundColor: '#f8fafc', minHeight: '100vh' }}>
+    <div style={{ fontFamily: '"Roboto Flex", sans-serif', padding: '8px', backgroundColor: '#f8fafc' }}>
       <div style={{ marginBottom: '30px', textAlign: 'center' }}>
         <h1 style={{ fontSize: '28px', color: '#333', marginBottom: '4px' }}>Coach Hub</h1>
         <p style={{ color: '#666', fontSize: '15px' }}>Welcome, {athleteName || 'Coach'}</p>
@@ -38,7 +38,7 @@ export default function CoachHub() {
               background: card.bgImage ? `url(${card.bgImage}) center top / cover` : 'white',
               border: '1px solid #ddd',
               borderRadius: '12px',
-              padding: '24px',
+              padding: '12px',
               cursor: 'pointer',
               boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
               transition: 'transform 0.15s, box-shadow 0.15s',

@@ -19,7 +19,7 @@ export default function AthleteHub() {
   ];
 
   return (
-    <div style={{ fontFamily: '"Roboto Flex", sans-serif', padding: '20px', backgroundColor: '#f8fafc', minHeight: '100vh' }}>
+    <div style={{ fontFamily: '"Roboto Flex", sans-serif', padding: '8px', backgroundColor: '#f8fafc' }}>
       <div style={{ marginBottom: '30px', textAlign: 'center' }}>
         <h1 style={{ fontSize: '28px', color: '#333', marginBottom: '4px' }}>Athlete Hub</h1>
         {athleteName && <p style={{ color: '#666', fontSize: '15px' }}>Welcome, {athleteName}</p>}
@@ -61,7 +61,7 @@ export default function AthleteHub() {
                 </div>
               </>
             ) : (
-              <div style={{ padding: '24px' }}>
+              <div style={{ padding: '12px' }}>
                 <div style={{
                   width: '50px', height: '50px', borderRadius: '50%', background: card.color,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
