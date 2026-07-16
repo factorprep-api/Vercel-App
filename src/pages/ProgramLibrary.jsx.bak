@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Search, Trash2, UserPlus, CheckCircle, X, Layers, Dumbbell, FolderClosed, Lock, Globe, Eye, HelpCircle } from 'lucide-react';
-import { useAuth } from '../hooks/useAuth';
+import { supabase } from '../supabase';
 import { fetchAllData, deleteProgram, updateAssignment, assignProgramBulk } from '../api';
 import './program-library.css';
 import HelpButton from '../components/HelpButton';
@@ -18,13 +18,19 @@ export default function ProgramLibrary() {
   const [athleteSearch, setAthleteSearch] = useState('');
   const [toast, setToast] = useState(null);
   const [deleting, setDeleting] = useState(null);
-  const { userEmail: coachEmail } = useAuth();
+  const [coachEmail, setCoachEmail] = useState('');
   const [privacyFilter, setPrivacyFilter] = useState('all');
   const [bulkAssigning, setBulkAssigning] = useState(false);
 
   useEffect(() => {
+    loadCoachEmail();
     loadData();
-  }, [coachEmail]);
+  }, []);
+
+  async function loadCoachEmail() {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) { setCoachEmail(user.email); }
+  }
 
   async function loadData() {
     try {
