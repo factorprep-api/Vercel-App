@@ -69,3 +69,21 @@ body {
     margin-bottom: 0 !important;
   }
 }
+/* Mobile-only hub spacing adjustments - AGGRESSIVE */
+@media (max-width: 768px) {
+  .hub-title-wrapper {
+    padding-top: 4px !important;
+    margin-top: 0 !important;
+  }
+  .hub-welcome {
+    margin-top: 2px !important;
+    margin-bottom: 0 !important;
+  }
+}
+
+/* Desktop: increase card spacing */
+@media (min-width: 769px) {
+  .hub-cards {
+    gap: 24px !important;
+  }
+}
