@@ -50,7 +50,7 @@ export default function AppShell({ children }) {
         </button>
       </header>
 
-      <main style={{ flex: 1, padding: '4px 8px', background: '#f5f5f5' }}>
+      <main style={{ flex: 1, padding: 0, background: '#f5f5f5' }}>
         {children}
       </main>
 
