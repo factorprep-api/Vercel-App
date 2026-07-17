@@ -21,12 +21,12 @@ export default function CoachHub() {
 
   return (
     <div style={{ fontFamily: '"Roboto Flex", sans-serif', padding: '4px', backgroundColor: '#f8fafc' }}>
-      <div style={{ textAlign: 'center', paddingTop: '16px' }}>
+      <div className="hub-title-wrapper" style={{ textAlign: 'center', paddingTop: '16px' }}>
         <h1 style={{ fontSize: '28px', color: '#333', marginBottom: '4px' }}>Coach Hub</h1>
-        <p style={{ color: '#666', fontSize: '15px' }}>Welcome, {athleteName || 'Coach'}</p>
+        <p className="hub-welcome" style={{ color: '#666', fontSize: '15px' }}>Welcome, {athleteName || 'Coach'}</p>
       </div>
 
-      <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', justifyContent: 'center' }}>
+      <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', justifyContent: 'center' }}>
         {cards.map((card, i) => (
           <div
             key={i}
