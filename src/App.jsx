@@ -14,6 +14,7 @@ const ExerciseLibrary = lazy(() => import('./pages/ExerciseLibrary'));
 const ProgramBuilder = lazy(() => import('./pages/ProgramBuilder'));
 const ProgramLibrary = lazy(() => import('./pages/ProgramLibrary'));
 const Shop = lazy(() => import('./pages/Shop'));
+const Whiteboard = lazy(() => import('./pages/Whiteboard'));
 
 const LoadingFallback = () => (
   <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', fontFamily: '"Roboto Flex", sans-serif' }}>
@@ -151,6 +152,11 @@ export default function App() {
         <Route path="/program-library" element={
           <ProtectedRoute session={session} role={role} allowedRoles={['coach']}>
             <Suspense fallback={<LoadingFallback />}><ProgramLibrary /></Suspense>
+          </ProtectedRoute>
+        } />
+        <Route path="/whiteboard" element={
+          <ProtectedRoute session={session} role={role} allowedRoles={['coach']}>
+            <Suspense fallback={<LoadingFallback />}><Whiteboard /></Suspense>
           </ProtectedRoute>
         } />
       </Routes>
