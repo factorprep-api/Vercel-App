@@ -20,8 +20,8 @@ export default function AthleteHub() {
 
   return (
     <div style={{ fontFamily: '"Roboto Flex", sans-serif', padding: '4px', backgroundColor: '#f8fafc' }}>
-      <div className="hub-title-wrapper" style={{ textAlign: 'center', paddingTop: '16px' }}>
-        <h1 style={{ fontSize: '28px', color: '#333', marginBottom: '4px' }}>Athlete Hub</h1>
+      <div className="hub-title-wrapper" style={{ textAlign: 'center', paddingTop: '4px' }}>
+        <h1 className="hub-title-mobile" style={{ fontSize: '22px', color: '#333', marginBottom: '4px', margin: '0', marginTop: '0' }}>Athlete Hub</h1>
         {athleteName && <p className="hub-welcome" style={{ color: '#666', fontSize: '15px' }}>Welcome, {athleteName}</p>}
       </div>
 

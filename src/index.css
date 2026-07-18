@@ -87,3 +87,24 @@ body {
     gap: 24px !important;
   }
 }
+
+/* Mobile h1 sizing - reset browser defaults */
+@media (max-width: 768px) {
+  .hub-title-mobile {
+    font-size: 22px !important;
+    margin: 0 !important;
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+  }
+  .hub-title-desktop {
+    font-size: 28px !important;
+  }
+}
+
+/* Ensure no default margins anywhere above title */
+@media (max-width: 768px) {
+  main > div:first-child {
+    margin-top: 0 !important;
+    padding-top: 0 !important;
+  }
+}
