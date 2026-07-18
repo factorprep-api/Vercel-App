@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from './hooks/useAuth';
-import { Wrench, BookOpen, Dumbbell } from 'lucide-react';
+import { Wrench, BookOpen, Dumbbell, Pencil } from 'lucide-react';
 
 export default function CoachHub() {
   const navigate = useNavigate();
@@ -11,18 +11,17 @@ export default function CoachHub() {
     </div>
   );
 
-
-
   const cards = [
     { title: 'Program Builder', desc: 'Create and edit training programs', icon: Wrench, path: '/program-builder', color: '#008ed3', bgImage: '/pb-card.png' },
     { title: 'Program Library', desc: 'View and manage all saved programs', icon: BookOpen, path: '/program-library', color: '#2e7d32', bgImage: '/pl-card.png' },
-    { title: 'Exercise Library', desc: 'Search all exercise videos', icon: Dumbbell, path: '/exercise-library', color: '#d3ca17', bgImage: '/el-card.png' }
+    { title: 'Exercise Library', desc: 'Search all exercise videos', icon: Dumbbell, path: '/exercise-library', color: '#d3ca17', bgImage: '/el-card.png' },
+    { title: 'Drill Designer', desc: 'Draw and save training drills', icon: Pencil, path: '/whiteboard', color: '#6d28d9', bgImage: '/Whiteboard Card.png' }
   ];
 
   return (
     <div style={{ fontFamily: '"Roboto Flex", sans-serif', padding: '4px', backgroundColor: '#f8fafc' }}>
       <div className="hub-title-wrapper" style={{ textAlign: 'center', paddingTop: '4px' }}>
-        <h1 style={{ fontSize: '28px', color: '#333', marginBottom: '4px' }}>Coach Hub</h1>
+        <h1 style={{ fontSize: '28px', color: '#333', marginBottom: '4px' }}>Coach Hub</h2>
         <p className="hub-welcome" style={{ color: '#666', fontSize: '15px' }}>Welcome, {athleteName || 'Coach'}</p>
       </div>
 
