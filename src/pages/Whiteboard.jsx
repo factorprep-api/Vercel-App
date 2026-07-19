@@ -11,11 +11,11 @@ const DESIGN = {
   lightBackground: '#f5f5f5',
 };
 
-const TOOLBAR_WIDTH = 220;
+const TOOLBAR_WIDTH = 240;
 const CANVAS_WIDTH = 1200;
 const CANVAS_HEIGHT = 700;
 
-const DRAWING_TOOLS = ['select', 'line', 'arrow', 'rect', 'circle', 'text', 'player'];
+const DRAWING_TOOLS = ['select', 'line', 'arrow', 'rect', 'circle', 'text', 'player', 'cone'];
 
 const FIELD_TEMPLATES = [
   { name: 'Blank Canvas', id: 'blank' },
@@ -23,84 +23,93 @@ const FIELD_TEMPLATES = [
   { name: 'Basketball Court', id: 'basketball' },
 ];
 
-const PLAYER_COLORS = [
+const TEAM_COLORS = [
   { name: 'Red', hex: '#dc2626' },
   { name: 'Blue', hex: '#2563eb' },
   { name: 'Yellow', hex: '#eab308' },
   { name: 'Green', hex: '#22c55e' },
+  { name: 'Black', hex: '#000000' },
 ];
 
 const DRILL_TYPES = ['Offensive Play', 'Defensive Setup', 'Warm-up', 'Skill Drill', 'Conditioning', 'Game Situation'];
 
+// Triangle player marker shape
+function PlayerMarker(props) {
+  return (
+    <Group x={props.x} y={props.y}>
+      {/* Triangle pointing up */}
+      <Line 
+        points={[0, -20, -12, 15, 12, 15, 0, -20]} 
+        closed 
+        fill={props.color} 
+        stroke="#fff" 
+        strokeWidth={2}
+      />
+      {/* Number/text inside */}
+      {props.text && (
+        <Text text={props.text} fontSize={14} fontWeight="bold" fill="#fff" x={-8} y={-4} />
+      )}
+    </Group>
+  );
+}
+
+// Cone marker shape
+function ConeMarker(props) {
+  return (
+    <Group x={props.x} y={props.y}>
+      {/* Cone base */}
+      <Circle radius={18} fill="#fbbf24" stroke="#000" strokeWidth={2} />
+      {/* Inner cone color */}
+      <Circle radius={12} fill={props.coneColor || '#fbbf24'} opacity={0.9} />
+      {/* White stripe */}
+      <Circle radius={8} fill="#fff" />
+    </Group>
+  );
+}
+
 function getEmptyShape(type, config = {}) {
-  switch (type) {
-    case 'line':
-    case 'arrow':
-      return { 
-        id: `${Date.now()}-${Math.random()}`, 
-        type, 
-        points: config.points || [], 
-        stroke: config.stroke || '#000', 
-        strokeWidth: config.strokeWidth || 3,
-        lineCap: 'round',
-        ...(type === 'arrow' && { pointerLength: 12, pointerWidth: 12 }) 
-      };
-    case 'rect':
-      return { 
-        id: `${Date.now()}-${Math.random()}`, 
-        type, 
-        x: config.x || 0, 
-        y: config.y || 0, 
-        width: config.width || 50, 
-        height: config.height || 50, 
-        fill: config.fill || '#000', 
-        opacity: config.opacity ?? 0.3, 
-        stroke: config.stroke || '#000', 
-        strokeWidth: 2 
-      };
-    case 'circle':
-      return { 
-        id: `${Date.now()}-${Math.random()}`, 
-        type, 
-        x: config.x || 0, 
-        y: config.y || 0, 
-        radius: config.radius || 25, 
-        fill: config.fill || '#000', 
-        opacity: config.opacity ?? 0.3, 
-        stroke: config.stroke || '#000', 
-        strokeWidth: 2 
-      };
-    case 'text':
-      return { 
-        id: `${Date.now()}-${Math.random()}`, 
-        type, 
-        x: config.x || 0, 
-        y: config.y || 0, 
-        text: config.text || '', 
-        fontSize: config.fontSize || 18, 
-        fontFamily: '"Roboto Flex", sans-serif', 
-        fill: config.fill || '#000',
-        fontStyle: 'bold'
-      };
-    case 'player':
-      return { 
-        id: `${Date.now()}-${Math.random()}`, 
-        type, 
-        x: config.x || 0, 
-        y: config.y || 0, 
-        teamColor: config.teamColor || PLAYER_COLORS[0].hex, 
-        number: config.number || '' 
-      };
-    default:
-      return null;
+  const base = {
+    id: `${Date.now()}-${Math.random()}`,
+    type,
+    x: config.x || 0,
+    y: config.y || 0,
+    color: config.color || '#000',
+    teamColor: config.teamColor || TEAM_COLORS[0].hex,
+    coneColor: config.coneColor || '#fbbf24',
+    text: config.text || '',
+    strokeWidth: config.strokeWidth || 4,
+    stroke: config.stroke || '#000',
+    fill: config.fill || '#000',
+    points: config.points || [],
+    ...(type === 'arrow' && { pointerLength: 12, pointerWidth: 12 }),
+  };
+  
+  if (type === 'line' || type === 'arrow') {
+    base.lineCap = 'round';
   }
+  if (type === 'rect' || type === 'circle') {
+    base.opacity = config.opacity ?? 0.3;
+  }
+  if (type === 'circle') {
+    base.radius = config.radius || 25;
+  }
+  if (type === 'text') {
+    base.fontSize = config.fontSize || 18;
+    base.fontFamily = '"Roboto Flex", sans-serif';
+    base.fontStyle = 'bold';
+  }
+  if (type === 'player') {
+    base.number = config.number || '';
+  }
+  
+  return base;
 }
 
 function FootballFieldTemplate() {
   return (
     <Layer listening={false}>
       {/* Green field */}
-      <Rect x={0} y={0} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} fill="#4a7c23" />
+      <Rect x={0} y={0} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} fill="#4a7c23" shadowBlur={0} />
       {/* Boundary lines */}
       <Rect x={10} y={10} width={CANVAS_WIDTH - 20} height={CANVAS_HEIGHT - 20} stroke="white" strokeWidth={3} fill="none" />
       {/* Center line */}
@@ -147,7 +156,13 @@ export default function Whiteboard() {
   const [error, setError] = useState(null);
   const stageRef = useRef(null);
   const [tool, setTool] = useState('select');
-  const [selectedToolConfig, setSelectedToolConfig] = useState({ stroke: '#000', strokeWidth: 4, fill: '#000', teamColor: PLAYER_COLORS[0].hex });
+  const [selectedToolConfig, setSelectedToolConfig] = useState({ 
+    stroke: '#000', 
+    strokeWidth: 4, 
+    fill: '#000', 
+    teamColor: TEAM_COLORS[0].hex, 
+    coneColor: '#fbbf24' 
+  });
   const [currentTemplate, setCurrentTemplate] = useState(FIELD_TEMPLATES[0].id);
   const [shapes, setShapes] = useState([]);
   const [history, setHistory] = useState([]);
@@ -189,8 +204,10 @@ export default function Whiteboard() {
     } else if (tool === 'player') {
       newShape = getEmptyShape('player', { ...pos, teamColor: selectedToolConfig.teamColor });
       setShapes([...shapes, newShape]);
+    } else if (tool === 'cone') {
+      newShape = getEmptyShape('cone', { ...pos, coneColor: selectedToolConfig.coneColor });
+      setShapes([...shapes, newShape]);
     } else {
-      // Start drawing
       setIsDrawing(true);
       newShape = getEmptyShape(tool, { ...pos, stroke: selectedToolConfig.stroke, strokeWidth: selectedToolConfig.strokeWidth, fill: selectedToolConfig.fill });
       if (tool === 'rect' || tool === 'circle') { newShape.width = 0; newShape.height = 0; newShape.radius = 0; }
@@ -272,12 +289,8 @@ export default function Whiteboard() {
       case 'rect': return <Rect key={shape.id} {...shape} />;
       case 'circle': return <Circle key={shape.id} {...shape} />;
       case 'text': return <Text key={shape.id} {...shape} />;
-      case 'player': return (
-        <Group key={shape.id} x={shape.x} y={shape.y}>
-          <Circle radius={20} fill={shape.teamColor} stroke="#fff" strokeWidth={3} />
-          {shape.number && <Text text={shape.number} fontSize={16} fontWeight="bold" fill="#fff" x={-8} y={-8} />}
-        </Group>
-      );
+      case 'player': return <PlayerMarker key={shape.id} x={shape.x} y={shape.y} color={shape.teamColor} text={shape.number} />;
+      case 'cone': return <ConeMarker key={shape.id} x={shape.x} y={shape.y} coneColor={shape.coneColor} />;
       default: return null;
     }
   });
@@ -343,16 +356,17 @@ export default function Whiteboard() {
                   backgroundColor: tool === t ? DESIGN.primaryBlue : '#fff', 
                   color: tool === t ? '#fff' : DESIGN.darkText, 
                   cursor: 'pointer', 
-                  fontSize: '11px', 
+                  fontSize: '10px', 
                   textTransform: 'uppercase', 
-                  fontWeight: '600' 
+                  fontWeight: '600',
+                  minHeight: '32px'
                 }}
               >
-                {t === 'player' ? 'Player' : t.charAt(0).toUpperCase() + t.slice(1)}
+                {t === 'player' ? 'Player ↘' : t === 'cone' ? 'Cone ↘' : t.charAt(0).toUpperCase() + t.slice(1)}
               </button>
             ))}
           </div>
-          <p style={{ fontSize: '10px', color: '#888', marginTop: '5px' }}>Click tool, drag on canvas, release to finish drawing</p>
+          <p style={{ fontSize: '10px', color: '#888', marginTop: '5px' }}>Drag to draw. Release to finish.</p>
         </div>
 
         {/* Color Picker */}
@@ -379,9 +393,9 @@ export default function Whiteboard() {
 
         {/* Team Color */}
         <div style={{ marginBottom: '20px' }}>
-          <label style={{ fontSize: '13px', fontWeight: '700', color: DESIGN.darkText, display: 'block', marginBottom: '8px' }}>TEAM COLOR (Players)</label>
+          <label style={{ fontSize: '13px', fontWeight: '700', color: DESIGN.darkText, display: 'block', marginBottom: '8px' }}>PLAYER COLOR</label>
           <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
-            {PLAYER_COLORS.map((tc) => (
+            {TEAM_COLORS.map((tc) => (
               <button 
                 key={tc.name} 
                 onClick={() => setSelectedToolConfig({ ...selectedToolConfig, teamColor: tc.hex })} 
@@ -400,6 +414,28 @@ export default function Whiteboard() {
               >
                 {tc.name[0]}
               </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Cone Color */}
+        <div style={{ marginBottom: '20px' }}>
+          <label style={{ fontSize: '13px', fontWeight: '700', color: DESIGN.darkText, display: 'block', marginBottom: '8px' }}>CONE COLOR</label>
+          <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
+            {['#fbbf24', '#ef4444', '#22c55e', '#3b82f6', '#a855f7'].map((color) => (
+              <button 
+                key={color} 
+                onClick={() => setSelectedToolConfig({ ...selectedToolConfig, coneColor: color })} 
+                style={{ 
+                  width: '32px', 
+                  height: '32px', 
+                  border: selectedToolConfig.coneColor === color ? `2px solid ${DESIGN.primaryBlue}` : '1px solid #ddd', 
+                  borderRadius: '4px', 
+                  backgroundColor: color, 
+                  cursor: 'pointer' 
+                }} 
+                title={color}
+              />
             ))}
           </div>
         </div>
