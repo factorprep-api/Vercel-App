@@ -100,7 +100,6 @@ export default function ProgramViewer() {
     try {
       if (!userEmail) { setError('Not authenticated'); setLoading(false); return; }
       
-      // Try cache first for instant load
       const cached = localStorage.getItem('fp_program_data');
       if (useCache && cached) {
         try {
@@ -110,7 +109,6 @@ export default function ProgramViewer() {
           setLibraryData(parsed.library);
           setDataLoaded(true);
           setLoading(false);
-          // Get athlete name from cache too
           const athleteCached = localStorage.getItem('fp_athlete_data');
           if (athleteCached) {
             try {
@@ -119,20 +117,17 @@ export default function ProgramViewer() {
               if (parsed.rowIndex !== undefined) setAthleteRowIndex(parsed.rowIndex);
             } catch {}
           }
-          // Refresh in background
           refreshData();
           return;
         } catch {}
       }
       
-      // Fetch fresh data
       const allData = await fetchAllData();
       if (allData.error) { setError(allData.error); setLoading(false); return; }
       setAthletesData(allData.athletes);
       setProgramData(allData.programs);
       setLibraryData(allData.library);
       
-      // Cache for next load
       localStorage.setItem('fp_program_data', JSON.stringify({
         athletes: allData.athletes,
         programs: allData.programs,
@@ -142,7 +137,6 @@ export default function ProgramViewer() {
       setDataLoaded(true);
       setLoading(false);
 
-      // Determine athlete name and row index
       const athleteResult = await getAthleteByEmail(userEmail);
       let rowIndex = null;
       if (athleteResult.status === 'Success' && athleteResult.rowIndex) {
@@ -383,12 +377,10 @@ export default function ProgramViewer() {
         <h2 style={{ fontSize: '24px', color: '#008ed3', marginBottom: '16px', fontWeight: '700' }}>Today's Workout</h2>
         {athleteName && <p style={{ color: '#666', fontSize: '15px', marginBottom: '20px' }}>Welcome, {athleteName}</p>}
 
-        {/* Search box */}
         <div className="pv-search-box">
           <input type="text" placeholder="Search programs..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
         </div>
 
-        {/* Two Panels: My Programs + Public Programs */}
         <div className="pv-panels">
           <div className="pv-panel">
             <div className="pv-panel-header">
@@ -441,25 +433,18 @@ export default function ProgramViewer() {
           </div>
         </div>
 
-        {coachNote && (
+        {(coachNote || programMediaUrl) && (
           <div className="pv-coach-note" style={{ marginBottom: '20px' }}>
-            <h4><MessageSquare size={14} /> Coach's Notes</h4>
-            <p>{coachNote}</p>
-          </div>
-        )}
-
-        {programMediaUrl && (
-          <div className="pv-media-container">
-            <div className="pv-media-header" onClick={() => setShowProgramMedia(!showProgramMedia)} style={{ cursor: 'pointer' }}>
-              <span className="pv-media-title">
-                {getMediaType(programMediaUrl) === 'audio' ? '🎙️ Voice Note' : '🎬 Video'} - Coach Program Overview
-              </span>
-              <button className="pv-media-toggle-btn">
-                {showProgramMedia ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                {showProgramMedia ? 'Hide' : 'Play'}
-              </button>
+            <div className="pv-coach-note-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h4><MessageSquare size={14} /> Coach's Notes</h4>
+              {programMediaUrl && (
+                <button className="pv-media-inline-btn" onClick={() => setShowProgramMedia(!showProgramMedia)}>
+                  {getMediaType(programMediaUrl) === 'audio' ? '🎙️' : '🎬'} {showProgramMedia ? 'Hide' : 'Play'}
+                </button>
+              )}
             </div>
-            {showProgramMedia && (
+            {coachNote && <p>{coachNote}</p>}
+            {programMediaUrl && showProgramMedia && (
               <div className="pv-media-player-wrap">
                 {getYouTubeId(programMediaUrl) ? (
                   <iframe src={'https://www.youtube.com/embed/' + getYouTubeId(programMediaUrl) + '?autoplay=1&rel=0'} allowFullScreen title="Coach Program Media" className="pv-media-iframe" />

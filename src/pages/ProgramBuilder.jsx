@@ -188,72 +188,23 @@ export default function ProgramBuilder() {
               </div>
             </div>
             <div className="pb-field-group">
-              <label className="pb-label">Coach's Notes (Optional):</label>
-              <textarea className="pb-textarea" value={form.notes} onChange={e => setForm({...form, notes: e.target.value})} placeholder="e.g. Focus on tempo today." />
-            </div>
-
-            <div className="pb-media-section">
-              <div className="pb-media-header">
-                <h4>Coach Media (Voice / Video)</h4>
+              <div className="pb-label-row">
+                <label className="pb-label">Coach's Notes (Optional):</label>
                 <button
                   type="button"
-                  className="pb-media-btn"
+                  className={`pb-media-inline-btn${mediaUrl ? ' has-media' : ''}`}
                   onClick={() => {
                     setMediaInputDraft(mediaUrl);
-                    setShowMediaInput(!showMediaInput);
+                    setShowMediaInput(true);
                   }}
                 >
-                  {mediaUrl ? 'Edit Media Link' : 'Add Media Link'}
+                  {mediaUrl ? '✓ Media' : '+ Media'}
                 </button>
               </div>
-
-              {showMediaInput && (
-                <div className="pb-media-input-row">
-                  <input
-                    type="url"
-                    className="pb-media-input"
-                    placeholder="Paste video or audio file URL (e.g., https://...mp4)"
-                    value={mediaInputDraft}
-                    onChange={(e) => setMediaInputDraft(e.target.value)}
-                  />
-                  <div className="pb-media-input-actions">
-                    <button
-                      type="button"
-                      className="pb-media-save-btn"
-                      onClick={() => {
-                        setMediaUrl(mediaInputDraft.trim());
-                        setShowMediaInput(false);
-                      }}
-                    >
-                      Set Link
-                    </button>
-                    {mediaUrl && (
-                      <button
-                        type="button"
-                        className="pb-media-remove-btn"
-                        onClick={() => {
-                          setMediaUrl('');
-                          setMediaInputDraft('');
-                          setShowMediaInput(false);
-                        }}
-                      >
-                        Remove
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      className="pb-media-cancel-btn"
-                      onClick={() => setShowMediaInput(false)}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {mediaUrl && !showMediaInput && (
+              <textarea className="pb-textarea" value={form.notes} onChange={e => setForm({...form, notes: e.target.value})} placeholder="e.g. Focus on tempo today." />
+              {mediaUrl && (
                 <div className="pb-media-preview">
-                  <span className="pb-media-label">DRAFT PREVIEW:</span>
+                  <span className="pb-media-label">MEDIA LINKED:</span>
                   <MediaPlayer url={mediaUrl} compact />
                 </div>
               )}
@@ -342,6 +293,52 @@ export default function ProgramBuilder() {
       )}
       {loading && <p className="pb-placeholder">Loading...</p>}
       {error && <p className="pb-placeholder" style={{ color: '#dc3545' }}>{error}</p>}
+      {showMediaInput && (
+        <div className="pb-media-modal-overlay" onClick={() => setShowMediaInput(false)}>
+          <div className="pb-media-modal" onClick={e => e.stopPropagation()}>
+            <h4>{mediaUrl ? 'Edit Media Link' : 'Add Media Link'}</h4>
+            <input
+              type="url"
+              className="pb-media-input"
+              placeholder="Paste video or audio file URL (e.g., https://...mp4)"
+              value={mediaInputDraft}
+              onChange={(e) => setMediaInputDraft(e.target.value)}
+            />
+            <div className="pb-media-input-actions">
+              <button
+                type="button"
+                className="pb-media-save-btn"
+                onClick={() => {
+                  setMediaUrl(mediaInputDraft.trim());
+                  setShowMediaInput(false);
+                }}
+              >
+                Set Link
+              </button>
+              {mediaUrl && (
+                <button
+                  type="button"
+                  className="pb-media-remove-btn"
+                  onClick={() => {
+                    setMediaUrl('');
+                    setMediaInputDraft('');
+                    setShowMediaInput(false);
+                  }}
+                >
+                  Remove
+                </button>
+              )}
+              <button
+                type="button"
+                className="pb-media-cancel-btn"
+                onClick={() => setShowMediaInput(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <HelpButton pageName="Program Builder" position="bottom-right" />
       {toast && (
         <div className={`pb-toast ${toast.isError ? 'error' : ''}`}>

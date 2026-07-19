@@ -229,3 +229,51 @@
 .pv-search-box input::placeholder {
   color: #aaa;
 }
+
+/* ===== Coach Notes Media Inline Button ===== */
+.pv-coach-note-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.pv-media-inline-btn {
+  font-size: 12px;
+  padding: 4px 10px;
+  border: 1px solid #008ed3;
+  background: transparent;
+  color: #008ed3;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.pv-media-inline-btn:hover {
+  background: #008ed3;
+  color: white;
+}
+
+/* ===== Coach Notes Media Inline Button ===== */
+.pv-coach-note-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.pv-media-inline-btn {
+  font-size: 12px;
+  padding: 4px 10px;
+  border: 1px solid #008ed3;
+  background: transparent;
+  color: #008ed3;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.pv-media-inline-btn:hover {
+  background: #008ed3;
+  color: white;
+}
