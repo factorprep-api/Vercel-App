@@ -368,8 +368,8 @@ export default function Whiteboard() {
 
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: DESIGN.lightBackground, overflow: 'auto' }}>
         <div style={{ boxShadow: '0 2px 10px rgba(0,0,0,0.1)', backgroundColor: templateObj.bgColor }}>
-          <Stage ref={stageRef} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onTouchStart={handleMouseDown} onTouchMove={handleMouseMove} onTouchEnd={handleMouseUp} style={{ cursor: tool === 'select' ? 'default' : 'crosshair' }}>
-            {getFieldLines()}
+          <Stage ref={stageRef} background={FIELD_TEMPLATES.find(t => t.id === currentTemplate)?.bgColor || "#ffffff"} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onTouchStart={handleMouseDown} onTouchMove={handleMouseMove} onTouchEnd={handleMouseUp} style={{ cursor: tool === 'select' ? 'default' : 'crosshair' }}>
+            
             <Layer>{renderShapes()}</Layer>
           </Stage>
         </div>
