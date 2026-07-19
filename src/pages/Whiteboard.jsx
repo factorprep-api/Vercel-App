@@ -18,9 +18,9 @@ const CANVAS_HEIGHT = 700;
 const DRAWING_TOOLS = ['select', 'line', 'arrow', 'rect', 'circle', 'text', 'player', 'cone'];
 
 const FIELD_TEMPLATES = [
-  { name: 'Blank Canvas', id: 'blank', bgColor: '#ffffff' },
-  { name: 'Football/Soccer Field', id: 'football', bgColor: '#4a7c23' },
-  { name: 'Basketball Court', id: 'basketball', bgColor: '#d4a574' },
+  { name: 'Blank Canvas', id: 'blank', bgColor: '#ffffff', lineColor: '#999' },
+  { name: 'Football/Soccer Field', id: 'football', bgColor: '#4a7c23', lineColor: '#ffffff' },
+  { name: 'Basketball Court', id: 'basketball', bgColor: '#d4a574', lineColor: '#333333' },
 ];
 
 const TEAM_COLORS = [
@@ -35,12 +35,25 @@ const CONE_COLORS = ['#fbbf24', '#ef4444', '#22c55e', '#3b82f6', '#a855f7'];
 
 const DRILL_TYPES = ['Offensive Play', 'Defensive Setup', 'Warm-up', 'Skill Drill', 'Conditioning', 'Game Situation'];
 
-// Player marker - triangle with number
+// Player marker - triangle with centered number
 function PlayerMarker(props) {
   return (
     <Group x={props.x} y={props.y}>
       <Line points={[0, -22, -14, 16, 14, 16, 0, -22]} closed fill={props.color} stroke="#fff" strokeWidth={2} />
-      {props.text && <Text text={props.text} fontSize={14} fontWeight="bold" fill="#fff" x={-8} y={-2} />}
+      {props.text && (
+        <Text 
+          text={props.text} 
+          fontSize={14} 
+          fontStyle="bold"
+          fill="#fff" 
+          align="center"
+          verticalAlign="middle"
+          width={30}
+          height={30}
+          x={-15}
+          y={-10}
+        />
+      )}
     </Group>
   );
 }
@@ -59,6 +72,7 @@ function ConeMarker(props) {
 function FootballFieldLines() {
   return (
     <Layer listening={false}>
+      <Rect x={0} y={0} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} fill="#4a7c23" />
       <Rect x={10} y={10} width={CANVAS_WIDTH - 20} height={CANVAS_HEIGHT - 20} stroke="white" strokeWidth={3} fill="none" />
       <Line points={[CANVAS_WIDTH / 2, 10, CANVAS_WIDTH / 2, CANVAS_HEIGHT - 10]} stroke="white" strokeWidth={3} />
       <Circle x={CANVAS_WIDTH / 2} y={CANVAS_HEIGHT / 2} radius={CANVAS_HEIGHT * 0.15} stroke="white" strokeWidth={3} fill="none" />
@@ -73,6 +87,7 @@ function FootballFieldLines() {
 function BasketballCourtLines() {
   return (
     <Layer listening={false}>
+      <Rect x={0} y={0} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} fill="#d4a574" />
       <Rect x={10} y={10} width={CANVAS_WIDTH - 20} height={CANVAS_HEIGHT - 20} stroke="#333" strokeWidth={3} fill="none" />
       <Line points={[CANVAS_WIDTH / 2, 10, CANVAS_WIDTH / 2, CANVAS_HEIGHT - 10]} stroke="#333" strokeWidth={3} />
       <Circle x={CANVAS_WIDTH / 2} y={CANVAS_HEIGHT / 2} radius={45} stroke="#333" strokeWidth={3} fill="none" />
@@ -85,7 +100,12 @@ function BasketballCourtLines() {
 }
 
 function BlankCanvasBorder() {
-  return (<Layer listening={false}><Rect x={0} y={0} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} stroke="#ddd" strokeWidth={2} fill="none" /></Layer>);
+  return (
+    <Layer listening={false}>
+      <Rect x={0} y={0} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} fill="#ffffff" />
+      <Rect x={0} y={0} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} stroke="#ddd" strokeWidth={2} fill="none" />
+    </Layer>
+  );
 }
 
 let shapeIdCounter = 0;
@@ -96,13 +116,11 @@ export default function Whiteboard() {
   const [error, setError] = useState(null);
   const stageRef = useRef(null);
   
-  // Refs for tracking state in callbacks
   const shapesRef = useRef([]);
   const historyRef = useRef([[]]);
   const historyIndexRef = useRef(0);
   const isDrawingRef = useRef(false);
   
-  // UI State
   const [tool, setTool] = useState('select');
   const [strokeColor, setStrokeColor] = useState('#000');
   const [strokeWidth, setStrokeWidth] = useState(4);
@@ -113,14 +131,12 @@ export default function Whiteboard() {
   const [, forceRender] = useState({});
   const rerender = useCallback(() => forceRender({}), []);
   
-  // Save modal state
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [exerciseTitle, setExerciseTitle] = useState('');
   const [exerciseNotes, setExerciseNotes] = useState('');
   const [drillType, setDrillType] = useState('Offensive Play');
   const [saving, setSaving] = useState(false);
 
-  // Get current template object
   const templateObj = FIELD_TEMPLATES.find(t => t.id === currentTemplate) || FIELD_TEMPLATES[0];
 
   if (authLoading) return <div style={{ fontFamily: '"Roboto Flex", sans-serif', padding: '4px', backgroundColor: DESIGN.cardBackground }}>Loading...</div>;
@@ -282,15 +298,12 @@ export default function Whiteboard() {
     <div style={{ fontFamily: '"Roboto Flex", sans-serif', display: 'flex', height: '100vh', backgroundColor: DESIGN.cardBackground }}>
       {/* TOOLBAR */}
       <div style={{ width: TOOLBAR_WIDTH, backgroundColor: '#fff', borderRight: `1px solid ${DESIGN.bodyGray}`, display: 'flex', flexDirection: 'column', boxSizing: 'border-box', flexShrink: 0 }}>
-        
-        {/* Scrollable toolbar content */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '15px' }}>
           <div style={{ textAlign: 'center', marginBottom: '20px' }}>
             <h2 style={{ margin: '0 0 5px 0', fontSize: '18px', fontWeight: '700', color: DESIGN.darkText }}>Drill Designer</h2>
             <p style={{ margin: 0, fontSize: '12px', color: DESIGN.bodyGray }}>Create training drills</p>
           </div>
 
-          {/* Template Selector */}
           <div style={{ marginBottom: '20px' }}>
             <label style={{ fontSize: '13px', fontWeight: '700', color: DESIGN.darkText, display: 'block', marginBottom: '8px' }}>FIELD TEMPLATE</label>
             <select value={currentTemplate} onChange={(e) => handleTemplateChange(e.target.value)} style={{ width: '100%', padding: '8px', border: `1px solid ${DESIGN.bodyGray}`, borderRadius: '4px', fontFamily: '"Roboto Flex", sans-serif', fontSize: '13px' }}>
@@ -298,7 +311,6 @@ export default function Whiteboard() {
             </select>
           </div>
 
-          {/* Drawing Tools */}
           <div style={{ marginBottom: '20px' }}>
             <label style={{ fontSize: '13px', fontWeight: '700', color: DESIGN.darkText, display: 'block', marginBottom: '8px' }}>TOOLS</label>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '5px' }}>
@@ -311,7 +323,6 @@ export default function Whiteboard() {
             <p style={{ fontSize: '10px', color: '#888', marginTop: '5px' }}>Drag to draw. Release to finish.</p>
           </div>
 
-          {/* Color Picker */}
           <div style={{ marginBottom: '20px' }}>
             <label style={{ fontSize: '13px', fontWeight: '700', color: DESIGN.darkText, display: 'block', marginBottom: '8px' }}>COLOR</label>
             <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
@@ -321,13 +332,11 @@ export default function Whiteboard() {
             </div>
           </div>
 
-          {/* Stroke Width */}
           <div style={{ marginBottom: '20px' }}>
             <label style={{ fontSize: '13px', fontWeight: '700', color: DESIGN.darkText, display: 'block', marginBottom: '8px' }}>THICKNESS: {strokeWidth}px</label>
             <input type="range" min="1" max="10" value={strokeWidth} onChange={(e) => setStrokeWidth(parseInt(e.target.value))} style={{ width: '100%' }} />
           </div>
 
-          {/* Player Color */}
           <div style={{ marginBottom: '20px' }}>
             <label style={{ fontSize: '13px', fontWeight: '700', color: DESIGN.darkText, display: 'block', marginBottom: '8px' }}>PLAYER COLOR</label>
             <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
@@ -339,14 +348,12 @@ export default function Whiteboard() {
             </div>
           </div>
 
-          {/* Player Number */}
           <div style={{ marginBottom: '20px' }}>
             <label style={{ fontSize: '13px', fontWeight: '700', color: DESIGN.darkText, display: 'block', marginBottom: '8px' }}>PLAYER NUMBER</label>
             <input type="text" value={playerNumber} onChange={(e) => setPlayerNumber(e.target.value.slice(0, 3))} placeholder="e.g. 1, 10, ST" maxLength={3} style={{ width: '100%', padding: '8px', border: `1px solid ${DESIGN.bodyGray}`, borderRadius: '4px', fontFamily: '"Roboto Flex", sans-serif', fontSize: '14px', boxSizing: 'border-box' }} />
             <p style={{ fontSize: '10px', color: '#888', marginTop: '4px' }}>Shown inside the player marker</p>
           </div>
 
-          {/* Cone Color */}
           <div style={{ marginBottom: '20px' }}>
             <label style={{ fontSize: '13px', fontWeight: '700', color: DESIGN.darkText, display: 'block', marginBottom: '8px' }}>CONE COLOR</label>
             <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
@@ -357,14 +364,13 @@ export default function Whiteboard() {
           </div>
         </div>
 
-        {/* Sticky bottom buttons */}
         <div style={{ borderTop: `1px solid #eee`, padding: '12px 15px', display: 'flex', flexDirection: 'column', gap: '8px', flexShrink: 0 }}>
           <div style={{ display: 'flex', gap: '8px' }}>
             <button onClick={handleUndo} disabled={!canUndo} style={{ flex: 1, padding: '10px', border: 'none', borderRadius: '4px', backgroundColor: !canUndo ? '#ccc' : DESIGN.primaryBlue, color: '#fff', cursor: !canUndo ? 'not-allowed' : 'pointer', fontWeight: '600', fontSize: '13px' }}>
-              ↶ Undo
+              Undo
             </button>
             <button onClick={handleRedo} disabled={!canRedo} style={{ flex: 1, padding: '10px', border: 'none', borderRadius: '4px', backgroundColor: !canRedo ? '#ccc' : DESIGN.primaryBlue, color: '#fff', cursor: !canRedo ? 'not-allowed' : 'pointer', fontWeight: '600', fontSize: '13px' }}>
-              ↷ Redo
+              Redo
             </button>
           </div>
           <button onClick={handleClear} style={{ padding: '10px', border: `1px solid ${DESIGN.bodyGray}`, borderRadius: '4px', backgroundColor: '#fff', color: '#dc2626', cursor: 'pointer', fontWeight: '600', fontSize: '13px' }}>
@@ -376,10 +382,10 @@ export default function Whiteboard() {
         </div>
       </div>
 
-      {/* CANVAS AREA - with CSS background color for the field */}
+      {/* CANVAS AREA */}
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: DESIGN.lightBackground, overflow: 'auto' }}>
         <div style={{ boxShadow: '0 2px 10px rgba(0,0,0,0.1)', backgroundColor: templateObj.bgColor, width: CANVAS_WIDTH, height: CANVAS_HEIGHT }}>
-          <Stage ref={stageRef} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onTouchStart={handleMouseDown} onTouchMove={handleMouseMove} onTouchEnd={handleMouseUp} style={{ cursor: tool === 'select' ? 'default' : 'crosshair' }}>
+          <Stage ref={stageRef} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onTouchStart={handleMouseDown} onTouchMove={handleMouseMove} onTouchEnd={handleMouseUp} style={{ cursor: tool === 'select' ? 'default' : 'crosshair', background: 'transparent' }}>
             {getFieldLines()}
             <Layer>{renderShapes()}</Layer>
           </Stage>
