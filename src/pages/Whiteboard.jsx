@@ -18,9 +18,9 @@ const CANVAS_HEIGHT = 700;
 const DRAWING_TOOLS = ['select', 'line', 'arrow', 'rect', 'circle', 'text', 'player', 'cone'];
 
 const FIELD_TEMPLATES = [
-  { name: 'Blank Canvas', id: 'blank', bgColor: '#ffffff', lineColor: '#999999' },
-  { name: 'Football/Soccer Field', id: 'football', bgColor: '#4a7c23', lineColor: '#ffffff' },
-  { name: 'Basketball Court', id: 'basketball', bgColor: '#d4a574', lineColor: '#333333' },
+  { name: 'Blank Canvas', id: 'blank', bgColor: '#ffffff' },
+  { name: 'Football/Soccer Field', id: 'football', bgColor: '#4a7c23' },
+  { name: 'Basketball Court', id: 'basketball', bgColor: '#d4a574' },
 ];
 
 const TEAM_COLORS = [
@@ -59,6 +59,7 @@ function ConeMarker(props) {
 function FootballFieldLines() {
   return (
     <Layer listening={false}>
+      <Rect x={0} y={0} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} fill="#4a7c23" />
       <Rect x={10} y={10} width={CANVAS_WIDTH - 20} height={CANVAS_HEIGHT - 20} stroke="white" strokeWidth={3} fill="none" />
       <Line points={[CANVAS_WIDTH / 2, 10, CANVAS_WIDTH / 2, CANVAS_HEIGHT - 10]} stroke="white" strokeWidth={3} />
       <Circle x={CANVAS_WIDTH / 2} y={CANVAS_HEIGHT / 2} radius={CANVAS_HEIGHT * 0.15} stroke="white" strokeWidth={3} fill="none" />
@@ -73,6 +74,7 @@ function FootballFieldLines() {
 function BasketballCourtLines() {
   return (
     <Layer listening={false}>
+      <Rect x={0} y={0} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} fill="#d4a574" />
       <Rect x={10} y={10} width={CANVAS_WIDTH - 20} height={CANVAS_HEIGHT - 20} stroke="#333" strokeWidth={3} fill="none" />
       <Line points={[CANVAS_WIDTH / 2, 10, CANVAS_WIDTH / 2, CANVAS_HEIGHT - 10]} stroke="#333" strokeWidth={3} />
       <Circle x={CANVAS_WIDTH / 2} y={CANVAS_HEIGHT / 2} radius={45} stroke="#333" strokeWidth={3} fill="none" />
@@ -85,7 +87,12 @@ function BasketballCourtLines() {
 }
 
 function BlankCanvasBorder() {
-  return (<Layer listening={false}><Rect x={0} y={0} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} stroke="#ddd" strokeWidth={2} fill="none" /></Layer>);
+  return (
+    <Layer listening={false}>
+      <Rect x={0} y={0} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} fill="#ffffff" />
+      <Rect x={0} y={0} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} stroke="#ddd" strokeWidth={2} fill="none" />
+    </Layer>
+  );
 }
 
 let shapeIdCounter = 0;
@@ -117,19 +124,16 @@ export default function Whiteboard() {
   const [drillType, setDrillType] = useState('Offensive Play');
   const [saving, setSaving] = useState(false);
 
-  const templateObj = FIELD_TEMPLATES.find(t => t.id === currentTemplate) || FIELD_TEMPLATES[0];
-
-  // KEY FIX: Set background color on the stage's container div (not the canvas itself)
-  // This is the officially recommended approach from Konva docs
   useEffect(() => {
-    if (stageRef.current) {
-      stageRef.current.container().style.backgroundColor = templateObj.bgColor;
+    if (stageRef.current && !authLoading && coachEmail && role === 'coach') {
+      const bgColor = FIELD_TEMPLATES.find(t => t.id === currentTemplate)?.bgColor || '#ffffff';
+      stageRef.current.container().style.backgroundColor = bgColor;
     }
-  }, [currentTemplate, templateObj.bgColor]);
+  }, [currentTemplate, authLoading, coachEmail, role]);
 
-  if (authLoading) return <div style={{ fontFamily: '"Roboto Flex", sans-serif', padding: '4px', backgroundColor: DESIGN.cardBackground }}>Loading...</div>;
-  if (!coachEmail) return <div style={{ fontFamily: '"Roboto Flex", sans-serif', padding: '4px', backgroundColor: DESIGN.cardBackground }}>Please log in to access the whiteboard.</div>;
-  if (role !== 'coach') return <div style={{ fontFamily: '"Roboto Flex", sans-serif', padding: '4px', backgroundColor: DESIGN.cardBackground }}>Coach access only.</div>;
+  if (authLoading) return <div style={{ fontFamily: '"Roboto Flex", sans-serif', padding: '20px', backgroundColor: DESIGN.cardBackground }}>Loading...</div>;
+  if (!coachEmail) return <div style={{ fontFamily: '"Roboto Flex", sans-serif', padding: '20px', backgroundColor: DESIGN.cardBackground }}>Please log in to access the whiteboard.</div>;
+  if (role !== 'coach') return <div style={{ fontFamily: '"Roboto Flex", sans-serif', padding: '20px', backgroundColor: DESIGN.cardBackground }}>Coach access only.</div>;
 
   const addToHistory = () => {
     const newHistory = historyRef.current.slice(0, historyIndexRef.current + 1);
@@ -281,10 +285,10 @@ export default function Whiteboard() {
 
   const canUndo = historyIndexRef.current > 0;
   const canRedo = historyIndexRef.current < historyRef.current.length - 1;
+  const templateObj = FIELD_TEMPLATES.find(t => t.id === currentTemplate) || FIELD_TEMPLATES[0];
 
   return (
     <div style={{ fontFamily: '"Roboto Flex", sans-serif', display: 'flex', height: '100vh', backgroundColor: DESIGN.cardBackground }}>
-      {/* TOOLBAR */}
       <div style={{ width: TOOLBAR_WIDTH, backgroundColor: '#fff', borderRight: `1px solid ${DESIGN.bodyGray}`, display: 'flex', flexDirection: 'column', boxSizing: 'border-box', flexShrink: 0 }}>
         <div style={{ flex: 1, overflowY: 'auto', padding: '15px' }}>
           <div style={{ textAlign: 'center', marginBottom: '20px' }}>
@@ -362,9 +366,8 @@ export default function Whiteboard() {
         </div>
       </div>
 
-      {/* CANVAS AREA */}
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: DESIGN.lightBackground, overflow: 'auto' }}>
-        <div style={{ boxShadow: '0 2px 10px rgba(0,0,0,0.1)' }}>
+        <div style={{ boxShadow: '0 2px 10px rgba(0,0,0,0.1)', backgroundColor: templateObj.bgColor }}>
           <Stage ref={stageRef} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onTouchStart={handleMouseDown} onTouchMove={handleMouseMove} onTouchEnd={handleMouseUp} style={{ cursor: tool === 'select' ? 'default' : 'crosshair' }}>
             {getFieldLines()}
             <Layer>{renderShapes()}</Layer>
@@ -372,7 +375,6 @@ export default function Whiteboard() {
         </div>
       </div>
 
-      {/* SAVE MODAL */}
       {showSaveModal && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
           <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '25px', minWidth: '400px', maxWidth: '90vw', maxHeight: '90vh', overflowY: 'auto' }}>
