@@ -208,28 +208,35 @@ export default function ProgramBuilder() {
                 <input className="pb-input" value={form.category} onChange={e => setForm({...form, category: e.target.value})} placeholder="e.g. Hypertrophy" />
               </div>
             </div>
-            <div className="pb-field-group">
-              <label className="pb-label">Coach's Notes (Optional):</label>
-              <textarea className="pb-textarea" value={form.notes} onChange={e => setForm({...form, notes: e.target.value})} placeholder="e.g. Focus on tempo today." />
-            </div>
-
-            <div className="pb-media-section">
-              <div className="pb-media-header">
-                <h4>Coach Media (Voice / Video)</h4>
+            <div className="pb-notes-media-row">
+              <div style={{ flex: 1 }}>
+                <label className="pb-label">Coach's Notes (Optional):</label>
+                <textarea className="pb-textarea" value={form.notes} onChange={e => setForm({...form, notes: e.target.value})} placeholder="e.g. Focus on tempo today." />
+              </div>
+              <div className="pb-notes-media-action">
                 <button
                   type="button"
-                  className="pb-media-btn"
+                  className={mediaUrl ? 'pb-media-btn pb-media-btn-active' : 'pb-media-btn pb-media-btn-inactive'}
                   onClick={() => {
                     setMediaInputDraft(mediaUrl);
                     setShowMediaInput(!showMediaInput);
                   }}
+                  title={mediaUrl ? 'Media added - click to edit or remove' : 'Add coach media (voice/video)'}
                 >
-                  {mediaUrl ? 'Edit Media Link' : 'Add Media Link'}
+                  {mediaUrl ? (
+                    <>
+                      <CheckCircle size={14} style={{ marginRight: '6px' }} />
+                      Add Coach Media
+                    </>
+                  ) : 'Add Coach Media'}
                 </button>
               </div>
+            </div>
 
-              {showMediaInput && (
-                <div className="pb-media-input-row">
+            {showMediaInput && (
+              <div className="pb-media-popup-overlay">
+                <div className="pb-media-popup">
+                  <h4>Add coach notes as media (voice/video)</h4>
                   <input
                     type="url"
                     className="pb-media-input"
@@ -237,7 +244,7 @@ export default function ProgramBuilder() {
                     value={mediaInputDraft}
                     onChange={(e) => setMediaInputDraft(e.target.value)}
                   />
-                  <div className="pb-media-input-actions">
+                  <div className="pb-media-popup-actions">
                     <button
                       type="button"
                       className="pb-media-save-btn"
@@ -270,7 +277,10 @@ export default function ProgramBuilder() {
                     </button>
                   </div>
                 </div>
-              )}
+              </div>
+            )}
+
+
 
               {mediaUrl && !showMediaInput && (
                 <div className="pb-media-preview">
