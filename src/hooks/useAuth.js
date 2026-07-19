@@ -2,10 +2,6 @@ import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../supabase';
 import { getAthleteByEmail } from '../api';
 
-/**
- * Custom hook to centralize authentication and role detection
- * Returns: { isAuthenticated, isLoading, role, athleteData, userEmail, athleteName }
- */
 export function useAuth() {
   const [session, setSession] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -13,7 +9,6 @@ export function useAuth() {
   const [athleteData, setAthleteData] = useState(null);
   const [athleteName, setAthleteName] = useState('');
 
-  // Fetch role from sheets and cache in localStorage
   async function fetchRoleFromSheets(email) {
     try {
       const result = await getAthleteByEmail(email);
@@ -32,7 +27,6 @@ export function useAuth() {
         setAthleteName(result.athleteName || email.split('@')[0]);
         return result;
       } else {
-        // Default to athlete if not found
         const cached = { name: email.split('@')[0], email, role: 'athlete', rowIndex: null, headers: [], rowData: [] };
         localStorage.setItem('fp_athlete_data', JSON.stringify(cached));
         setRole('athlete');
@@ -50,7 +44,6 @@ export function useAuth() {
   }
 
   useEffect(() => {
-    // Restore from localStorage cache
     const cached = localStorage.getItem('fp_athlete_data');
     if (cached) {
       try {
@@ -67,14 +60,12 @@ export function useAuth() {
       setRole(null);
       setAthleteName('');
       setAthleteData(null);
-      setIsLoading(false);
       return;
     }
 
     const determineRole = async () => {
       setIsLoading(true);
-      
-      // Try cache first if email matches
+
       const cached = localStorage.getItem('fp_athlete_data');
       if (cached) {
         try {
@@ -84,14 +75,12 @@ export function useAuth() {
             setAthleteName(parsed.name || session.user.email.split('@')[0]);
             setAthleteData(parsed);
             setIsLoading(false);
-            // Refresh in background
             fetchRoleFromSheets(session.user.email);
             return;
           }
         } catch {}
       }
 
-      // No valid cache - fetch from sheets
       await fetchRoleFromSheets(session.user.email);
       setIsLoading(false);
     };
@@ -99,10 +88,12 @@ export function useAuth() {
     determineRole();
   }, [session]);
 
-  // Subscribe to auth changes
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
+      if (!session) {
+        setIsLoading(false);
+      }
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -119,7 +110,6 @@ export function useAuth() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Computed values
   const isAuthenticated = useMemo(() => !!session, [session]);
   const userEmail = useMemo(() => session?.user?.email || null, [session]);
 
