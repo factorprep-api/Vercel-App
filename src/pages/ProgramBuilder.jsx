@@ -26,7 +26,6 @@ export default function ProgramBuilder() {
   const [athletes, setAthletes] = useState([]);
   const [programs, setPrograms] = useState([]);
   const [library, setLibrary] = useState([]);
-  const [activeTab, setActiveTab] = useState('builder');
   const [toast, setToast] = useState(null);
   const [saving, setSaving] = useState(false);
   const [draft, setDraft] = useState([]);
@@ -37,10 +36,26 @@ export default function ProgramBuilder() {
   const [mediaInputDraft, setMediaInputDraft] = useState('');
   const draftRef = useRef(null);
 
-  useEffect(() => { if (coachEmail) loadData(); }, [coachEmail]);
+  useEffect(() => { loadData(); }, []);
   useEffect(() => { if (draftRef.current) draftRef.current.scrollTop = draftRef.current.scrollHeight; }, [draft]);
 
   async function loadData() {
+    // Cache-first for instant load
+    const cached = localStorage.getItem('fp_builder_data');
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        setAthletes(parsed.athletes || []);
+        setPrograms(parsed.programs || []);
+        setLibrary(parsed.library || []);
+        setLoading(false);
+        // Refresh in background
+        refreshData();
+        return;
+      } catch {}
+    }
+
+    // No cache — fetch fresh
     try {
       const allData = await fetchAllData();
       if (allData.error) { setError(allData.error); setLoading(false); return; }
@@ -48,9 +63,33 @@ export default function ProgramBuilder() {
       setPrograms(allData.programs || []);
       setLibrary(allData.library || []);
       setLoading(false);
+      // Cache for next load
+      localStorage.setItem('fp_builder_data', JSON.stringify({
+        athletes: allData.athletes,
+        programs: allData.programs,
+        library: allData.library,
+        cachedAt: new Date().toISOString()
+      }));
     } catch (err) {
       setError('Failed to load data.'); setLoading(false);
     }
+  }
+
+  async function refreshData() {
+    try {
+      const allData = await fetchAllData();
+      if (!allData.error) {
+        setAthletes(allData.athletes || []);
+        setPrograms(allData.programs || []);
+        setLibrary(allData.library || []);
+        localStorage.setItem('fp_builder_data', JSON.stringify({
+          athletes: allData.athletes,
+          programs: allData.programs,
+          library: allData.library,
+          cachedAt: new Date().toISOString()
+        }));
+      }
+    } catch {}
   }
 
   const exerciseList = useMemo(() => {
@@ -114,7 +153,7 @@ export default function ProgramBuilder() {
         setForm(f => ({ ...f, name: '', notes: '', privacyLevel: 'PRIVATE' }));
         setLoadProgramName('');
         setMediaUrl('');
-        await loadData();
+        await refreshData();
       } else { showToast('Save failed: ' + (res.message || 'Unknown error'), true); }
     } catch (err) { showToast('Network error', true); }
     setSaving(false);
