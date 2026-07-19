@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { Plus, Save, ArrowUp, ArrowDown, Trash2, Hammer, CheckCircle, X, Library as LibIcon } from 'lucide-react';
-import { supabase } from '../supabase';
+import { useAuth } from '../hooks/useAuth';
 import { fetchAllData, saveFullProgram, getMediaType } from '../api';
 import './program-builder.css';
 import HelpButton from '../components/HelpButton';
@@ -20,6 +20,7 @@ function MediaPlayer({ url, compact = false }) {
 }
 
 export default function ProgramBuilder() {
+  const { userEmail: coachEmail, isLoading: authLoading } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [athletes, setAthletes] = useState([]);
@@ -30,20 +31,14 @@ export default function ProgramBuilder() {
   const [saving, setSaving] = useState(false);
   const [draft, setDraft] = useState([]);
   const [form, setForm] = useState({ name: '', category: '', notes: '', phase: 'Work Block', exercise: '', sets: '', reps: '', intensity: '', tempo: '', rest: '', privacyLevel: 'PRIVATE' });
-  const [coachEmail, setCoachEmail] = useState('');
   const [loadProgramName, setLoadProgramName] = useState('');
   const [mediaUrl, setMediaUrl] = useState('');
   const [showMediaInput, setShowMediaInput] = useState(false);
   const [mediaInputDraft, setMediaInputDraft] = useState('');
   const draftRef = useRef(null);
 
-  useEffect(() => { loadCoachEmail(); loadData(); }, []);
+  useEffect(() => { if (coachEmail) loadData(); }, [coachEmail]);
   useEffect(() => { if (draftRef.current) draftRef.current.scrollTop = draftRef.current.scrollHeight; }, [draft]);
-
-  async function loadCoachEmail() {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) { setCoachEmail(user.email); }
-  }
 
   async function loadData() {
     try {
@@ -157,6 +152,9 @@ export default function ProgramBuilder() {
   }
 
   const phaseColors = { 'Warm Up': '#fd7e14', 'Work Block': '#008ed3', 'Cool Down': '#0dcaf0' };
+
+  if (authLoading) return <div className="pb-placeholder">Loading...</div>;
+  if (!coachEmail) return <div className="pb-placeholder">Please log in.</div>;
 
   return (
     <div className="pb-wrapper">
