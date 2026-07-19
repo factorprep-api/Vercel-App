@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { Plus, Save, ArrowUp, ArrowDown, Trash2, Hammer, CheckCircle, X, Library as LibIcon } from 'lucide-react';
-import { useAuth } from '../hooks/useAuth';
+import { supabase } from '../supabase';
 import { fetchAllData, saveFullProgram, getMediaType } from '../api';
 import './program-builder.css';
 import HelpButton from '../components/HelpButton';
@@ -30,47 +30,29 @@ export default function ProgramBuilder() {
   const [saving, setSaving] = useState(false);
   const [draft, setDraft] = useState([]);
   const [form, setForm] = useState({ name: '', category: '', notes: '', phase: 'Work Block', exercise: '', sets: '', reps: '', intensity: '', tempo: '', rest: '', privacyLevel: 'PRIVATE' });
-  const { userEmail: coachEmail, isLoading: authLoading } = useAuth();
+  const [coachEmail, setCoachEmail] = useState('');
   const [loadProgramName, setLoadProgramName] = useState('');
   const [mediaUrl, setMediaUrl] = useState('');
   const [showMediaInput, setShowMediaInput] = useState(false);
   const [mediaInputDraft, setMediaInputDraft] = useState('');
   const draftRef = useRef(null);
 
-  useEffect(() => { loadData(); }, [coachEmail]);
+  useEffect(() => { loadCoachEmail(); loadData(); }, []);
   useEffect(() => { if (draftRef.current) draftRef.current.scrollTop = draftRef.current.scrollHeight; }, [draft]);
+
+  async function loadCoachEmail() {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) { setCoachEmail(user.email); }
+  }
 
   async function loadData() {
     try {
-      // Cache-first: check localStorage for instant load
-      const cached = localStorage.getItem('fp_builder_data');
-      if (cached) {
-        try {
-          const parsed = JSON.parse(cached);
-          setAthletes(parsed.athletes || []);
-          setPrograms(parsed.programs || []);
-          setLibrary(parsed.library || []);
-          setLoading(false);
-        } catch {}
-      }
-      
-      // Fetch fresh data in background
       const allData = await fetchAllData();
       if (allData.error) { setError(allData.error); setLoading(false); return; }
       setAthletes(allData.athletes || []);
       setPrograms(allData.programs || []);
       setLibrary(allData.library || []);
       setLoading(false);
-      
-      // Update cache with fresh data
-      if (allData.athletes && allData.programs && allData.library) {
-        localStorage.setItem('fp_builder_data', JSON.stringify({
-          athletes: allData.athletes,
-          programs: allData.programs,
-          library: allData.library,
-          timestamp: Date.now()
-        }));
-      }
     } catch (err) {
       setError('Failed to load data.'); setLoading(false);
     }
@@ -96,9 +78,6 @@ export default function ProgramBuilder() {
     }).map(r => String(r[0] || '').trim()).filter(Boolean);
     return [...new Set(names)].sort();
   }, [programs, coachEmail]);
-
-  if (authLoading) return <div>Loading...</div>;
-  if (!coachEmail) return <div>Please log in...</div>;
 
   function showToast(message, isError = false) {
     setToast({ message, isError });
@@ -208,35 +187,28 @@ export default function ProgramBuilder() {
                 <input className="pb-input" value={form.category} onChange={e => setForm({...form, category: e.target.value})} placeholder="e.g. Hypertrophy" />
               </div>
             </div>
-            <div className="pb-notes-media-row">
-              <div style={{ flex: 1 }}>
-                <label className="pb-label">Coach's Notes (Optional):</label>
-                <textarea className="pb-textarea" value={form.notes} onChange={e => setForm({...form, notes: e.target.value})} placeholder="e.g. Focus on tempo today." />
-              </div>
-              <div className="pb-notes-media-action">
+            <div className="pb-field-group">
+              <label className="pb-label">Coach's Notes (Optional):</label>
+              <textarea className="pb-textarea" value={form.notes} onChange={e => setForm({...form, notes: e.target.value})} placeholder="e.g. Focus on tempo today." />
+            </div>
+
+            <div className="pb-media-section">
+              <div className="pb-media-header">
+                <h4>Coach Media (Voice / Video)</h4>
                 <button
                   type="button"
-                  className={mediaUrl ? 'pb-media-btn pb-media-btn-active' : 'pb-media-btn pb-media-btn-inactive'}
+                  className="pb-media-btn"
                   onClick={() => {
                     setMediaInputDraft(mediaUrl);
                     setShowMediaInput(!showMediaInput);
                   }}
-                  title={mediaUrl ? 'Media added - click to edit or remove' : 'Add coach media (voice/video)'}
                 >
-                  {mediaUrl ? (
-                    <>
-                      <CheckCircle size={14} style={{ marginRight: '6px' }} />
-                      Add Coach Media
-                    </>
-                  ) : 'Add Coach Media'}
+                  {mediaUrl ? 'Edit Media Link' : 'Add Media Link'}
                 </button>
               </div>
-            </div>
 
-            {showMediaInput && (
-              <div className="pb-media-popup-overlay">
-                <div className="pb-media-popup">
-                  <h4>Add coach notes as media (voice/video)</h4>
+              {showMediaInput && (
+                <div className="pb-media-input-row">
                   <input
                     type="url"
                     className="pb-media-input"
@@ -244,7 +216,7 @@ export default function ProgramBuilder() {
                     value={mediaInputDraft}
                     onChange={(e) => setMediaInputDraft(e.target.value)}
                   />
-                  <div className="pb-media-popup-actions">
+                  <div className="pb-media-input-actions">
                     <button
                       type="button"
                       className="pb-media-save-btn"
@@ -277,10 +249,7 @@ export default function ProgramBuilder() {
                     </button>
                   </div>
                 </div>
-              </div>
-            )}
-
-
+              )}
 
               {mediaUrl && !showMediaInput && (
                 <div className="pb-media-preview">
