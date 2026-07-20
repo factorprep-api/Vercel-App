@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
+
 import { useAuth } from '../hooks/useAuth';
 import { Stage, Layer, Line, Rect, Circle, Arrow, Text, Group } from 'react-konva';
 import { addExerciseToLibrary } from '../api.js';
@@ -24,6 +25,7 @@ function ConeMarker(props) {
 function FootballFieldLines() {
   return (
     <Layer listening={false}>
+      <Rect x={0} y={0} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} fill="#4a7c23" />
       <Rect x={10} y={10} width={CANVAS_WIDTH - 20} height={CANVAS_HEIGHT - 20} stroke="white" strokeWidth={3} fill="none" />
       <Line points={[CANVAS_WIDTH / 2, 10, CANVAS_WIDTH / 2, CANVAS_HEIGHT - 10]} stroke="white" strokeWidth={3} />
       <Circle x={CANVAS_WIDTH / 2} y={CANVAS_HEIGHT / 2} radius={CANVAS_HEIGHT * 0.15} stroke="white" strokeWidth={3} fill="none" />
@@ -36,6 +38,7 @@ function FootballFieldLines() {
 function BasketballCourtLines() {
   return (
     <Layer listening={false}>
+      <Rect x={0} y={0} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} fill="#d4a574" />
       <Rect x={10} y={10} width={CANVAS_WIDTH - 20} height={CANVAS_HEIGHT - 20} stroke="#333" strokeWidth={3} fill="none" />
       <Line points={[CANVAS_WIDTH / 2, 10, CANVAS_WIDTH / 2, CANVAS_HEIGHT - 10]} stroke="#333" strokeWidth={3} />
       <Circle x={CANVAS_WIDTH / 2} y={CANVAS_HEIGHT / 2} radius={45} stroke="#333" strokeWidth={3} fill="none" />
@@ -46,7 +49,7 @@ function BasketballCourtLines() {
 }
 
 function BlankCanvasBorder() {
-  return (<Layer listening={false}><Rect x={0} y={0} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} stroke="#ddd" strokeWidth={2} fill="none" /></Layer>);
+  return (<Layer listening={false}><Rect x={0} y={0} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} fill="#ffffff" /><Rect x={0} y={0} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} stroke="#ddd" strokeWidth={2} fill="none" /></Layer>);
 }
 
 let shapeIdCounter = 0;
@@ -56,6 +59,13 @@ export default function Whiteboard() {
   const { userEmail: coachEmail, isLoading: authLoading, role } = useAuth();
   const [error, setError] = useState(null);
   const stageRef = useRef(null);
+
+  useEffect(() => {
+    if (stageRef.current) {
+      const bgColor = FIELD_TEMPLATES.find(t => t.id === currentTemplate)?.bgColor || '#ffffff';
+      stageRef.current.container().style.backgroundColor = bgColor;
+    }
+  }, [currentTemplate]);
 
   const shapesRef = useRef([]);
   const historyRef = useRef([[]]);
@@ -181,7 +191,7 @@ export default function Whiteboard() {
           <button onClick={() => setShowSaveModal(true)} style={{ padding: '12px', border: 'none', borderRadius: '4px', backgroundColor: DESIGN.primaryBlue, color: '#fff', cursor: 'pointer', fontWeight: '700', fontSize: '14px' }}>Save to Library</button>
         </div>
       </div>
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: DESIGN.lightBackground, overflow: 'auto' }}><div style={{ boxShadow: '0 2px 10px rgba(0,0,0,0.1)' }}><Stage ref={stageRef} background={templateObj.bgColor} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onTouchStart={handleMouseDown} onTouchMove={handleMouseMove} onTouchEnd={handleMouseUp} style={{ cursor: tool === 'select' ? 'default' : 'crosshair' }}>{getFieldLines()}<Layer>{renderShapes()}</Layer></Stage></div></div>
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: DESIGN.lightBackground, overflow: 'auto' }}><div style={{ boxShadow: '0 2px 10px rgba(0,0,0,0.1)' }}><Stage ref={stageRef} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onTouchStart={handleMouseDown} onTouchMove={handleMouseMove} onTouchEnd={handleMouseUp} style={{ cursor: tool === 'select' ? 'default' : 'crosshair' }}>{getFieldLines()}<Layer>{renderShapes()}</Layer></Stage></div></div>
       {showSaveModal && (<div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}><div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '25px', minWidth: '400px', maxWidth: '90vw', maxHeight: '90vh', overflowY: 'auto' }}><h3 style={{ margin: '0 0 20px 0', color: DESIGN.darkText }}>Save Drill</h3>{error && (<div style={{ padding: '10px', backgroundColor: '#fee', borderRadius: '4px', marginBottom: '15px', color: '#c00' }}>{error}</div>)}/>
 <div style={{ marginBottom: '15px' }}><label style={{ display: 'block', marginBottom: '5px', fontWeight: '600', color: DESIGN.darkText }}>Drill Name *</label><input type="text" value={exerciseTitle} onChange={(e) => setExerciseTitle(e.target.value)} placeholder="e.g., Zone Defense Formation" style={{ width: '100%', padding: '10px', border: `1px solid ${DESIGN.bodyGray}`, borderRadius: '4px', fontFamily: '"Roboto Flex", sans-serif', fontSize: '14px', boxSizing: 'border-box' }} autoFocus /></div>
 <div style={{ marginBottom: '15px' }}><label style={{ display: 'block', marginBottom: '5px', fontWeight: '600', color: DESIGN.darkText }}>Drill Type</label><select value={drillType} onChange={(e) => setDrillType(e.target.value)} style={{ width: '100%', padding: '10px', border: `1px solid ${DESIGN.bodyGray}`, borderRadius: '4px', fontFamily: '"Roboto Flex", sans-serif', fontSize: '14px', boxSizing: 'border-box' }}>{DRILL_TYPES.map((dt) => (<option key={dt} value={dt}>{dt}</option>))}</select></div>
