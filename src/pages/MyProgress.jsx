@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Dumbbell, Clock } from 'lucide-react';
-import { useAuth } from './hooks/useAuth';
-import { fetchAllData, fetchLogbookByAthlete, getAthleteByEmail } from './api';
+import { useAuth } from '../hooks/useAuth';
+import { fetchAllData, fetchLogbookByAthlete, getAthleteByEmail } from '../api';
 import './my-progress.css';
 
 export default function MyProgress() {

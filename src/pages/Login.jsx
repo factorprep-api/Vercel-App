@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { supabase } from './supabase';
-import { createAthlete } from './api';
+import { supabase } from '../supabase';
+import { createAthlete } from '../api';
 
 export default function Login() {
   const [isSignUp, setIsSignUp] = useState(false);

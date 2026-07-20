@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from './hooks/useAuth';
+import { useAuth } from '../hooks/useAuth';
 import { ClipboardList, TrendingUp, Dumbbell } from 'lucide-react';
 
 export default function AthleteHub() {
