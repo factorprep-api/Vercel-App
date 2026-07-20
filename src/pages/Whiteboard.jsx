@@ -60,6 +60,13 @@ export default function Whiteboard() {
   const [error, setError] = useState(null);
   const stageRef = useRef(null);
 
+  useEffect(() => {
+    if (stageRef.current?.container()) {
+      const bgColor = FIELD_TEMPLATES.find(t => t.id === currentTemplate)?.bgColor || '#ffffff';
+      stageRef.current.container().style.backgroundColor = bgColor;
+    }
+  }, [currentTemplate]);
+
   const shapesRef = useRef([]);
   const historyRef = useRef([[]]);
   const historyIndexRef = useRef(0);
