@@ -26,11 +26,11 @@ function FootballFieldLines() {
   return (
     <Layer listening={false}>
       <Rect x={0} y={0} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} fill="#4a7c23" />
-      <Rect x={10} y={10} width={CANVAS_WIDTH - 20} height={CANVAS_HEIGHT - 20} stroke="white" strokeWidth={3} fill="none" />
+      <Rect x={10} y={10} width={CANVAS_WIDTH - 20} height={CANVAS_HEIGHT - 20} stroke="white" strokeWidth={3}/> 
       <Line points={[CANVAS_WIDTH / 2, 10, CANVAS_WIDTH / 2, CANVAS_HEIGHT - 10]} stroke="white" strokeWidth={3} />
-      <Circle x={CANVAS_WIDTH / 2} y={CANVAS_HEIGHT / 2} radius={CANVAS_HEIGHT * 0.15} stroke="white" strokeWidth={3} fill="none" />
-      <Rect x={10} y={CANVAS_HEIGHT / 2 - CANVAS_HEIGHT * 0.15} width={CANVAS_WIDTH * 0.12} height={CANVAS_HEIGHT * 0.3} stroke="white" strokeWidth={2} fill="none" />
-      <Rect x={CANVAS_WIDTH - 10 - CANVAS_WIDTH * 0.12} y={CANVAS_HEIGHT / 2 - CANVAS_HEIGHT * 0.15} width={CANVAS_WIDTH * 0.12} height={CANVAS_HEIGHT * 0.3} stroke="white" strokeWidth={2} fill="none" />
+      <Circle x={CANVAS_WIDTH / 2} y={CANVAS_HEIGHT / 2} radius={CANVAS_HEIGHT * 0.15} stroke="white" strokeWidth={3}/> 
+      <Rect x={10} y={CANVAS_HEIGHT / 2 - CANVAS_HEIGHT * 0.15} width={CANVAS_WIDTH * 0.12} height={CANVAS_HEIGHT * 0.3} stroke="white" strokeWidth={2}/> 
+      <Rect x={CANVAS_WIDTH - 10 - CANVAS_WIDTH * 0.12} y={CANVAS_HEIGHT / 2 - CANVAS_HEIGHT * 0.15} width={CANVAS_WIDTH * 0.12} height={CANVAS_HEIGHT * 0.3} stroke="white" strokeWidth={2}/> 
     </Layer>
   );
 }
@@ -39,17 +39,17 @@ function BasketballCourtLines() {
   return (
     <Layer listening={false}>
       <Rect x={0} y={0} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} fill="#d4a574" />
-      <Rect x={10} y={10} width={CANVAS_WIDTH - 20} height={CANVAS_HEIGHT - 20} stroke="#333" strokeWidth={3} fill="none" />
+      <Rect x={10} y={10} width={CANVAS_WIDTH - 20} height={CANVAS_HEIGHT - 20} stroke="#333" strokeWidth={3}/> 
       <Line points={[CANVAS_WIDTH / 2, 10, CANVAS_WIDTH / 2, CANVAS_HEIGHT - 10]} stroke="#333" strokeWidth={3} />
-      <Circle x={CANVAS_WIDTH / 2} y={CANVAS_HEIGHT / 2} radius={45} stroke="#333" strokeWidth={3} fill="none" />
-      <Rect x={10} y={CANVAS_HEIGHT / 2 - 85} width={CANVAS_WIDTH * 0.15} height={170} stroke="#333" strokeWidth={2} fill="none" />
-      <Rect x={CANVAS_WIDTH - 10 - CANVAS_WIDTH * 0.15} y={CANVAS_HEIGHT / 2 - 85} width={CANVAS_WIDTH * 0.15} height={170} stroke="#333" strokeWidth={2} fill="none" />
+      <Circle x={CANVAS_WIDTH / 2} y={CANVAS_HEIGHT / 2} radius={45} stroke="#333" strokeWidth={3}/> 
+      <Rect x={10} y={CANVAS_HEIGHT / 2 - 85} width={CANVAS_WIDTH * 0.15} height={170} stroke="#333" strokeWidth={2}/> 
+      <Rect x={CANVAS_WIDTH - 10 - CANVAS_WIDTH * 0.15} y={CANVAS_HEIGHT / 2 - 85} width={CANVAS_WIDTH * 0.15} height={170} stroke="#333" strokeWidth={2}/> 
     </Layer>
   );
 }
 
 function BlankCanvasBorder() {
-  return (<Layer listening={false}><Rect x={0} y={0} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} fill="#ffffff" /><Rect x={0} y={0} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} stroke="#ddd" strokeWidth={2} fill="none" /></Layer>);
+  return (<Layer listening={false}><Rect x={0} y={0} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} fill="#ffffff" /><Rect x={0} y={0} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} stroke="#ddd" strokeWidth={2}/> </Layer>);
 }
 
 let shapeIdCounter = 0;
