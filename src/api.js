@@ -127,7 +127,7 @@ export const addExerciseToLibrary = async (exerciseData) => {
   try {
     const resp = await fetch(GOOGLE_SCRIPT_API_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify({ action: 'addExercise', data: exerciseData })
     });
     const json = await resp.json();
