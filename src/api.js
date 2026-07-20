@@ -125,9 +125,12 @@ export const assignProgramBulk = async (athleteRows, programAssignment, columnId
 
 export const addExerciseToLibrary = async (exerciseData) => {
   try {
-    let url = `${GOOGLE_SCRIPT_API_URL}?action=addExercise&data=${encodeURIComponent(JSON.stringify(exerciseData))}`;
-    let resp = await fetch(url);
-    let json = await resp.json();
+    const resp = await fetch(GOOGLE_SCRIPT_API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'addExercise', data: exerciseData })
+    });
+    const json = await resp.json();
     return json;
   } catch (err) {
     return { status: 'Error', message: err.message };
