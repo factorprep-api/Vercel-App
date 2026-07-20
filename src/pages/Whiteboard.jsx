@@ -266,7 +266,7 @@ function Whiteboard() {
 
       // 2. Setup Bunny Credentials (FILL THESE IN!)
       const BUNNY_STORAGE_ZONE = "app-master-videos"; 
-      const BUNNY_API_KEY = "869eef5f-a10d-4788-aa06-72902078502ebb245f54-d00e-44a2-8e15-0baa50eeb1e8";
+      const BUNNY_API_KEY = "1d4a1c8e-ef44-4a89-a0e2af748284-1e1f-4125";
       const BUNNY_PULL_ZONE = "https://factorprep-videos.b-cdn.net/"; 
       
       const fileName = `whiteboard-${Date.now()}.png`;
