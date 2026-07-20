@@ -4,10 +4,10 @@ import { useAuth } from './hooks/useAuth';
 import AppShell from './components/AppShell';
 
 // Lazy load pages for code splitting
-const Login = lazy(() => import('./Login'));
-const AthleteHub = lazy(() => import('./AthleteHub'));
-const CoachHub = lazy(() => import('./CoachHub'));
-const MyProgress = lazy(() => import('./MyProgress'));
+const Login = lazy(() => import('./pages/Login'));
+const AthleteHub = lazy(() => import('./pages/AthleteHub'));
+const CoachHub = lazy(() => import('./pages/CoachHub'));
+const MyProgress = lazy(() => import('./pages/MyProgress'));
 const ProgramViewer = lazy(() => import('./pages/ProgramViewer'));
 const ExerciseLibrary = lazy(() => import('./pages/ExerciseLibrary'));
 const ProgramBuilder = lazy(() => import('./pages/ProgramBuilder'));
