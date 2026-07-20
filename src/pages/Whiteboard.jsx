@@ -259,7 +259,7 @@ function Whiteboard() {
     setSaving(true);
     setError(null);
     try {
-      const uri = stageRef.current.toDataURL({ pixelRatio: 2 });
+      const uri = stageRef.current.toDataURL({ pixelRatio: 1, mimeType: 'image/jpeg', quality: 0.6 });
       const base64Data = uri.split(',')[1];
       await addExerciseToLibrary({ name: exerciseTitle, video: base64Data, muscle: currentTemplate, baseLift: drillType, multiplier: 1, ownerEmail: coachEmail, txtNotes: exerciseNotes });
       setShowSaveModal(false);
