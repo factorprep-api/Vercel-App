@@ -194,12 +194,22 @@ useEffect(() => {
     return [...cats].sort();
   }, [fullLibrary]);
 
-  const filteredForView = useMemo(() => {
+    const filteredForView = useMemo(() => {
+    // 1. Base filter: Only show global drills OR drills owned by THIS coach
+    const allowedLibrary = fullLibrary.filter(ex => {
+      if (!ex.ownerEmail) return true; // Global Master Library (no owner)
+      if (!coachEmail) return false; // Not logged in = hide private drills
+      return ex.ownerEmail.toLowerCase() === coachEmail.toLowerCase();
+    });
+
+    // 2. Further filter if they clicked the "My Exercises" tab
     if (viewFilter === 'my') {
-      return fullLibrary.filter(ex => isCoachOwned(ex));
+      return allowedLibrary.filter(ex => isCoachOwned(ex));
     }
-    return fullLibrary;
+    
+    return allowedLibrary;
   }, [fullLibrary, viewFilter, coachEmail]);
+
 
   const groupedLibrary = useMemo(() => buildGrouped(filteredForView), [filteredForView]);
 
