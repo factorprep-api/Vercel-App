@@ -298,7 +298,7 @@ function Whiteboard() {
 
       setShowSaveModal(false);
       setExerciseTitle('');
-      setExerciseNotes('');
+      setExerciseNotes(''); localStorage.removeItem('fp_exercise_library');
       alert('Drill saved securely to your private library!');
     } catch (err) { 
       console.error('Save error:', err); 
