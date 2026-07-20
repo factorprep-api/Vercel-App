@@ -254,26 +254,61 @@ function Whiteboard() {
     rerender(); 
   };
 
-  const handleSave = async () => {
+   const handleSave = async () => {
     if (!exerciseTitle.trim()) { alert('Please enter a drill name'); return; }
     setSaving(true);
     setError(null);
     try {
-      const uri = stageRef.current.toDataURL({ pixelRatio: 1, mimeType: 'image/jpeg', quality: 0.6 });
-      const base64Data = uri.split(',')[1];
-      await addExerciseToLibrary({ name: exerciseTitle, video: base64Data, muscle: currentTemplate, baseLift: drillType, multiplier: 1, ownerEmail: coachEmail, txtNotes: exerciseNotes });
+      // 1. Get high quality canvas image and convert to Blob
+      const base64Data = stageRef.current.toDataURL({ pixelRatio: 2 });
+      const base64Response = await fetch(base64Data);
+      const imageBlob = await base64Response.blob();
+
+      // 2. Setup Bunny Credentials (FILL THESE IN!)
+      const BUNNY_STORAGE_ZONE = "app-master-videos"; 
+      const BUNNY_API_KEY = "869eef5f-a10d-4788-aa06-72902078502ebb245f54-d00e-44a2-8e15-0baa50eeb1e8";
+      const BUNNY_PULL_ZONE = "https://factorprep-videos.b-cdn.net/"; 
+      
+      const fileName = `whiteboard-${Date.now()}.png`;
+      const uploadUrl = `https://storage.bunnycdn.com/${BUNNY_STORAGE_ZONE}/whiteboards/${fileName}`;
+
+      // 3. Upload to Bunny.net
+      const bunnyResponse = await fetch(uploadUrl, {
+        method: 'PUT',
+        headers: {
+          'AccessKey': BUNNY_API_KEY,
+          'Content-Type': 'image/png',
+        },
+        body: imageBlob
+      });
+
+      if (!bunnyResponse.ok) throw new Error('Failed to upload image to Bunny.net');
+      const finalImageUrl = `${BUNNY_PULL_ZONE}/whiteboards/${fileName}`;
+
+      // 4. Save to Google Sheets cleanly
+      await addExerciseToLibrary({ 
+        name: exerciseTitle, 
+        video: finalImageUrl, 
+        muscle: currentTemplate, 
+        baseLift: drillType, 
+        multiplier: 1, 
+        ownerEmail: coachEmail, 
+        txtNotes: exerciseNotes 
+      });
+
       setShowSaveModal(false);
       setExerciseTitle('');
       setExerciseNotes('');
-      alert('Drill saved to exercise library successfully!');
+      alert('Drill saved securely to your private library!');
     } catch (err) { 
       console.error('Save error:', err); 
-      setError(err.message || 'Failed to save drill.'); 
-      alert(`Error: ${err.message || 'Failed to save drill.'}`); 
+      setError(err.message); 
+      alert(`Error: ${err.message}`); 
     } finally { 
       setSaving(false); 
     }
   };
+
 
   const renderShapes = () => shapesRef.current.map((shape) => {
     switch (shape.type) { 
