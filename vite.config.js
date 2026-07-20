@@ -7,6 +7,9 @@ export default defineConfig({
     include: ['konva', 'react-konva']
   },
   build: {
+    esbuild: {
+      keepNames: true
+    },
     rollupOptions: {
       output: {
         globals: {

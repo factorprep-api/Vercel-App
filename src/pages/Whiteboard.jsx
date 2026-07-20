@@ -60,13 +60,6 @@ export default function Whiteboard() {
   const [error, setError] = useState(null);
   const stageRef = useRef(null);
 
-  useEffect(() => {
-    if (stageRef.current) {
-      const bgColor = FIELD_TEMPLATES.find(t => t.id === currentTemplate)?.bgColor || '#ffffff';
-      stageRef.current.container().style.backgroundColor = bgColor;
-    }
-  }, [currentTemplate]);
-
   const shapesRef = useRef([]);
   const historyRef = useRef([[]]);
   const historyIndexRef = useRef(0);
@@ -191,7 +184,7 @@ export default function Whiteboard() {
           <button onClick={() => setShowSaveModal(true)} style={{ padding: '12px', border: 'none', borderRadius: '4px', backgroundColor: DESIGN.primaryBlue, color: '#fff', cursor: 'pointer', fontWeight: '700', fontSize: '14px' }}>Save to Library</button>
         </div>
       </div>
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: DESIGN.lightBackground, overflow: 'auto' }}><div style={{ boxShadow: '0 2px 10px rgba(0,0,0,0.1)' }}><Stage ref={stageRef} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onTouchStart={handleMouseDown} onTouchMove={handleMouseMove} onTouchEnd={handleMouseUp} style={{ cursor: tool === 'select' ? 'default' : 'crosshair' }}>{getFieldLines()}<Layer>{renderShapes()}</Layer></Stage></div></div>
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: DESIGN.lightBackground, overflow: 'auto' }}><div style={{ boxShadow: '0 2px 10px rgba(0,0,0,0.1)', backgroundColor: templateObj.bgColor }}><Stage ref={stageRef} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onTouchStart={handleMouseDown} onTouchMove={handleMouseMove} onTouchEnd={handleMouseUp} style={{ cursor: tool === 'select' ? 'default' : 'crosshair' }}>{getFieldLines()}<Layer>{renderShapes()}</Layer></Stage></div></div>
       {showSaveModal && (<div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}><div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '25px', minWidth: '400px', maxWidth: '90vw', maxHeight: '90vh', overflowY: 'auto' }}><h3 style={{ margin: '0 0 20px 0', color: DESIGN.darkText }}>Save Drill</h3>{error && (<div style={{ padding: '10px', backgroundColor: '#fee', borderRadius: '4px', marginBottom: '15px', color: '#c00' }}>{error}</div>)}/>
 <div style={{ marginBottom: '15px' }}><label style={{ display: 'block', marginBottom: '5px', fontWeight: '600', color: DESIGN.darkText }}>Drill Name *</label><input type="text" value={exerciseTitle} onChange={(e) => setExerciseTitle(e.target.value)} placeholder="e.g., Zone Defense Formation" style={{ width: '100%', padding: '10px', border: `1px solid ${DESIGN.bodyGray}`, borderRadius: '4px', fontFamily: '"Roboto Flex", sans-serif', fontSize: '14px', boxSizing: 'border-box' }} autoFocus /></div>
 <div style={{ marginBottom: '15px' }}><label style={{ display: 'block', marginBottom: '5px', fontWeight: '600', color: DESIGN.darkText }}>Drill Type</label><select value={drillType} onChange={(e) => setDrillType(e.target.value)} style={{ width: '100%', padding: '10px', border: `1px solid ${DESIGN.bodyGray}`, borderRadius: '4px', fontFamily: '"Roboto Flex", sans-serif', fontSize: '14px', boxSizing: 'border-box' }}>{DRILL_TYPES.map((dt) => (<option key={dt} value={dt}>{dt}</option>))}</select></div>
