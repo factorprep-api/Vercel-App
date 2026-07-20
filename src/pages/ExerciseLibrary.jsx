@@ -315,18 +315,24 @@ if (authLoading || !role) {
           <div key={group.cat}>
             <h3 className="exlib-category-title">{group.cat}</h3>
             <div className="exlib-video-row">
-              {group.items.map((ex, idx) => {
+                           {group.items.map((ex, idx) => {
                 const ytId = getYouTubeId(ex.rawUrl);
                 const owned = isCoachOwned(ex);
+                const isImg = ex.rawUrl.toLowerCase().includes('.png') || ex.rawUrl.toLowerCase().includes('.jpg');
+                
                 return (
                   <div key={`${group.cat}-${idx}`} className="exlib-video-card" onClick={() => openModal(ex.rawUrl)} title={ex.name}>
-                    <div className="exlib-thumbnail">
+                    <div className="exlib-thumbnail" style={{ backgroundColor: isImg ? '#fff' : '' }}>
                       {ytId ? (
                         <img className="exlib-vid-thumb" src={`https://img.youtube.com/vi/${ytId}/hqdefault.jpg`} loading="lazy" alt={ex.name} />
+                      ) : isImg ? (
+                        <img className="exlib-vid-thumb" src={ex.rawUrl} loading="lazy" alt={ex.name} style={{ objectFit: 'contain' }} />
                       ) : (
                         <video className="exlib-vid-thumb-video" src={`${normalizeVideoUrl(ex.rawUrl)}#t=0.001`} preload="metadata" muted playsInline />
                       )}
-                      <Play className="exlib-play-icon" size={32} fill="currentColor" stroke="none" />
+                      
+                      {!isImg && <Play className="exlib-play-icon" size={32} fill="currentColor" stroke="none" />}
+
                       {owned && (
                         <div className="exlib-owner-actions" onClick={e => e.stopPropagation()}>
                           <button className="exlib-edit-btn" onClick={() => openEditModal(ex)} title="Edit">
@@ -372,13 +378,15 @@ if (authLoading || !role) {
         />
       )}
 
-      {modalVideo && (
+          {modalVideo && (
         <div className="exlib-modal-overlay" onClick={closeModal}>
-          <div className="exlib-modal-content" onClick={e => e.stopPropagation()}>
+          <div className="exlib-modal-content" onClick={e => e.stopPropagation()} style={{ background: (modalVideo.url.toLowerCase().includes('.png') || modalVideo.url.toLowerCase().includes('.jpg')) ? '#fff' : '' }}>
             <button className="exlib-close-btn" onClick={closeModal}><X size={28} /></button>
-            <div className="exlib-player-container">
+            <div className="exlib-player-container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
               {modalVideo.ytId ? (
                 <iframe src={`https://www.youtube.com/embed/${modalVideo.ytId}?autoplay=1&rel=0`} allowFullScreen title="Exercise Video" />
+              ) : (modalVideo.url.toLowerCase().includes('.png') || modalVideo.url.toLowerCase().includes('.jpg')) ? (
+                <img src={modalVideo.url} alt="Drill" style={{ maxWidth: '100%', maxHeight: '80vh', objectFit: 'contain' }} />
               ) : (
                 <video controls autoPlay playsInline controlsList="nodownload"><source src={normalizeVideoUrl(modalVideo.url)} type="video/mp4" /></video>
               )}
@@ -386,6 +394,7 @@ if (authLoading || !role) {
           </div>
         </div>
       )}
+
 
       {editing && (
         <div className="exlib-modal-overlay" onClick={() => setEditing(null)}>
