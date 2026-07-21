@@ -113,7 +113,6 @@ function Whiteboard() {
   const [playerNumber, setPlayerNumber] = useState('');
   const [currentTemplate, setCurrentTemplate] = useState(FIELD_TEMPLATES[0].id);
   
-  // Fixed the array destructuring here to prevent Vite build crashes
   const [renderTrigger, forceRender] = useState({});
   const rerender = useCallback(() => forceRender({}), []);
 
@@ -264,9 +263,9 @@ function Whiteboard() {
       const base64Response = await fetch(base64Data);
       const imageBlob = await base64Response.blob();
 
-      // 2. Setup Bunny Credentials (FILL THESE IN!)
+      // 2. Setup Bunny Credentials (SECURE)
       const BUNNY_STORAGE_ZONE = "app-master-videos"; 
-      const BUNNY_API_KEY = "1d4a1c8e-ef44-4a89-a0e2af748284-1e1f-4125";
+      const BUNNY_API_KEY = import.meta.env.VITE_BUNNY_API_KEY; // <--- This hides it from GitHub!
       const BUNNY_PULL_ZONE = "https://factorprep-videos.b-cdn.net/"; 
       
       const fileName = `whiteboard-${Date.now()}.png`;
@@ -283,7 +282,7 @@ function Whiteboard() {
       });
 
       if (!bunnyResponse.ok) throw new Error('Failed to upload image to Bunny.net');
-      const finalImageUrl = `${BUNNY_PULL_ZONE}/whiteboards/${fileName}`;
+      const finalImageUrl = `${BUNNY_PULL_ZONE}whiteboards/${fileName}`;
 
       // 4. Save to Google Sheets cleanly
       await addExerciseToLibrary({ 
@@ -298,7 +297,8 @@ function Whiteboard() {
 
       setShowSaveModal(false);
       setExerciseTitle('');
-      setExerciseNotes(''); localStorage.removeItem('fp_exercise_library');
+      setExerciseNotes(''); 
+      localStorage.removeItem('fp_exercise_library');
       alert('Drill saved securely to your private library!');
     } catch (err) { 
       console.error('Save error:', err); 
@@ -308,7 +308,6 @@ function Whiteboard() {
       setSaving(false); 
     }
   };
-
 
   const renderShapes = () => shapesRef.current.map((shape) => {
     switch (shape.type) { 
@@ -466,3 +465,4 @@ function Whiteboard() {
 }
 
 export default Whiteboard;
+
