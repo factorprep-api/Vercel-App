@@ -146,8 +146,8 @@ export default function ProgramBuilder() {
     setSaving(true);
     const rows = draft.map(i => [form.name, form.category, i.phase, i.exercise, i.sets, i.reps, i.intensity, i.tempo, i.rest, form.notes, form.privacyLevel, coachEmail, mediaUrl]);
     try {
-      const res = await saveFullProgram(rows);
-      if (res.status === 'Success') {
+      console.log('🔥 SAVE PAYLOAD SIZE:', JSON.stringify(rows).length, 'chars'); console.log('Data:', rows); const res = await saveFullProgram(rows);
+      console.log('⚙️ RESPONSE:', JSON.stringify(res)); if (res.status === 'Success') {
         showToast(`Program saved! (${res.rowCount} rows)`);
         setDraft([]);
         setForm(f => ({ ...f, name: '', notes: '', privacyLevel: 'PRIVATE' }));
