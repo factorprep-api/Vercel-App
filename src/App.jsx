@@ -14,6 +14,7 @@ const ProgramBuilder = lazy(() => import('./pages/ProgramBuilder'));
 const ProgramLibrary = lazy(() => import('./pages/ProgramLibrary'));
 const Shop = lazy(() => import('./pages/Shop'));
 const Whiteboard = lazy(() => import('./pages/Whiteboard'));
+const CoachResults = lazy(() => import('./pages/CoachResults'));
 
 const LoadingFallback = () => (
   <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', fontFamily: '"Roboto Flex", sans-serif' }}>
@@ -34,7 +35,6 @@ function ProtectedRoute({ allowedRoles, children }) {
 export default function App() {
   const { isAuthenticated, isLoading, role } = useAuth();
 
-  // Show loading spinner during auth check
   if (isLoading) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', fontFamily: '"Roboto Flex", sans-serif' }}>
@@ -107,6 +107,12 @@ export default function App() {
         <Route path="/whiteboard" element={
           <ProtectedRoute allowedRoles={['coach']}>
             <Suspense fallback={<LoadingFallback />}><Whiteboard /></Suspense>
+          </ProtectedRoute>
+        } />
+
+        <Route path="/coach-results" element={
+          <ProtectedRoute allowedRoles={['coach']}>
+            <Suspense fallback={<LoadingFallback />}><CoachResults /></Suspense>
           </ProtectedRoute>
         } />
       </Routes>
