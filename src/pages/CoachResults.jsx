@@ -511,7 +511,7 @@ export default function CoachResults() {
           <div style={styles.summaryGrid}>
             <div style={styles.summaryCard}>
               <span style={styles.summaryLabel}>Avg Sessions / Week</span>
-              <span style={styles.summaryValue}>{summary.avgPerWeek.toFixed(1)}</span>
+              <span style={styles.summaryValue}>{summary?.avgPerWeek != null ? summary.avgPerWeek.toFixed(1) : '—'}</span>
               <span style={styles.summarySub}>across {summary.weeksCovered} weeks</span>
             </div>
             <div style={styles.summaryCard}>
@@ -521,7 +521,7 @@ export default function CoachResults() {
             </div>
             <div style={styles.summaryCard}>
               <span style={styles.summaryLabel}>Volume at ≥85%</span>
-              <span style={styles.summaryValue}>{summary.pctAt85Plus.toFixed(0)}%</span>
+              <span style={styles.summaryValue}>{summary?.pctAt85Plus != null ? summary.pctAt85Plus.toFixed(0) : '—'}%</span>
               <span style={styles.summarySub}>{fmt(summary.volAt85Plus)} kg heavy work</span>
             </div>
             <div style={styles.summaryCard}>
@@ -547,7 +547,7 @@ export default function CoachResults() {
                 const pctOfTotal = summary.totalVolume > 0 ? (vol / summary.totalVolume) * 100 : 0;
                 return (
                   <div key={i} style={styles.barCol}>
-                    <div style={styles.barValueLabel}>{pctOfTotal.toFixed(0)}%</div>
+                    <div style={styles.barValueLabel}>{pctOfTotal != null ? pctOfTotal.toFixed(0) : '0'}%</div>
                     <div style={styles.barTrack}>
                       <div
                         style={{
@@ -637,9 +637,9 @@ export default function CoachResults() {
                         <tr key={i} style={styles.tr}>
                           <td style={styles.td}>{a.name}</td>
                           <td style={styles.td}>{a.sessions}</td>
-                          <td style={styles.td}>{a.avgPerWeek.toFixed(1)}</td>
+                          <td style={styles.td}>{a.avgPerWeek != null ? a.avgPerWeek.toFixed(1) : '—'}</td>
                           <td style={styles.td}>{fmt(a.totalVol)} kg</td>
-                          <td style={styles.td}>{a.pctAt85.toFixed(0)}%</td>
+                          <td style={styles.td}>{a.pctAt85 != null ? a.pctAt85.toFixed(0) : '—'}%</td>
                           <td style={styles.td}>
                             <div style={styles.miniBarTrack}>
                               <div
