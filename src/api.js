@@ -100,6 +100,7 @@ export const updateAssignment = async (athleteName, assignment) => {
   }
 };
 
+// REVERTED to GET format — matches Google Script's doGet handler
 export const saveFullProgram = async (programRows) => {
   try {
     let url = `${GOOGLE_SCRIPT_API_URL}?action=saveFullProgram&programData=${encodeURIComponent(JSON.stringify(programRows))}`;
