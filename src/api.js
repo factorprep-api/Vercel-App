@@ -60,8 +60,7 @@ export const saveSession = async (payload) => {
 };
 
 export async function fetchExerciseLibrary(options = {}) {
-  const API_URL = "https://script.google.com/macros/s/AKfycbzIBfOpFxgmTYWlFDuKPVSx30tXJRlyWhhvZVBqkAO_nKeF1GfGTFVvTolLr-CBpoHl8A/exec";
-  const response = await fetch(`${API_URL}?action=getFullData`, options);
+  const response = await fetch(`${GOOGLE_SCRIPT_API_URL}?action=getFullData`, options);
   const json = await response.json();
   const lib = [];
   for (let i = 1; i < json.library.length; i++) {
@@ -100,7 +99,6 @@ export const updateAssignment = async (athleteName, assignment) => {
   }
 };
 
-// REVERTED to GET format — matches Google Script's doGet handler
 export const saveFullProgram = async (programRows) => {
   try {
     let url = `${GOOGLE_SCRIPT_API_URL}?action=saveFullProgram&programData=${encodeURIComponent(JSON.stringify(programRows))}`;
@@ -124,7 +122,8 @@ export const assignProgramBulk = async (athleteRows, programAssignment, columnId
   }
 };
 
-export const saveExercise = async (exerciseData) => {
+// --- RENAMED TO MATCH REACT IMPORTS ---
+export const addExerciseToLibrary = async (exerciseData) => {
   try {
     let url = `${GOOGLE_SCRIPT_API_URL}?action=addExercise&data=${encodeURIComponent(JSON.stringify(exerciseData))}`;
     let resp = await fetch(url);
@@ -135,7 +134,7 @@ export const saveExercise = async (exerciseData) => {
   }
 };
 
-export const deleteExercise = async (exerciseName) => {
+export const deleteExerciseFromLibrary = async (exerciseName) => {
   try {
     let url = `${GOOGLE_SCRIPT_API_URL}?action=deleteExercise&exName=${encodeURIComponent(exerciseName)}`;
     let resp = await fetch(url);
@@ -146,7 +145,7 @@ export const deleteExercise = async (exerciseName) => {
   }
 };
 
-export const updateExercise = async (exerciseData) => {
+export const updateExerciseInLibrary = async (exerciseData) => {
   try {
     let url = `${GOOGLE_SCRIPT_API_URL}?action=updateExercise&data=${encodeURIComponent(JSON.stringify(exerciseData))}`;
     let resp = await fetch(url);
@@ -157,13 +156,57 @@ export const updateExercise = async (exerciseData) => {
   }
 };
 
-export const getHelpVideos = async () => {
+export const fetchHelpVideos = async () => {
   try {
     let url = `${GOOGLE_SCRIPT_API_URL}?action=getHelpVideos`;
     let resp = await fetch(url);
     let json = await resp.json();
-    return json;
+    return json.data || {};
   } catch (err) {
-    return { videos: [], error: err.message };
+    return {};
   }
 };
+
+// ========== RESTORED MEDIA FUNCTIONS ==========
+
+export function getMediaType(url) {
+  if (!url) return null;
+  try {
+    const ext = url.split('.').pop().split('?')[0].toLowerCase();
+    const videoExts = ['mp4', 'webm', 'mov', 'avi', 'mkv', 'm4v'];
+    const audioExts = ['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac'];
+    if (videoExts.includes(ext)) return 'video';
+    if (audioExts.includes(ext)) return 'audio';
+    return 'video';
+  } catch {
+    return 'video';
+  }
+}
+
+export function parseProgramsFromRaw(rawPrograms, coachEmail) {
+  const programs = [];
+  if (!rawPrograms || rawPrograms.length <= 1) return programs;
+
+  for (let i = 1; i < rawPrograms.length; i++) {
+    const row = rawPrograms[i];
+    
+    const name = String(row[0] || '').trim();
+    const privacyLevel = (row.length > 10 && String(row[10]).trim()) ? String(row[10]).trim() : 'PRIVATE';
+    const ownerEmail = (row.length > 11 && String(row[11]).trim()) ? String(row[11]).trim() : '';
+    const mediaUrl = (row.length > 12 && String(row[12]).trim()) ? String(row[12]).trim() : '';
+
+    if (!name) continue;
+
+    programs.push({
+      name,
+      privacyLevel,
+      ownerEmail,
+      mediaUrl,
+      mediaType: mediaUrl ? getMediaType(mediaUrl) : null,
+      isOwnedByCoach: ownerEmail.toLowerCase() === (coachEmail || '').toLowerCase(),
+      rawData: row
+    });
+  }
+  return programs;
+}
+
