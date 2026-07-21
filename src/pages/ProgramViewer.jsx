@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Play, ChevronDown, ChevronUp, Video, Save, CheckCircle, MessageSquare, UserPlus, Globe } from 'lucide-react';
+import { Play, ChevronDown, ChevronUp, Video, Image as ImageIcon, Save, CheckCircle, MessageSquare, UserPlus, Globe } from 'lucide-react';
 import { getYouTubeId } from '../utils/helpers';
 import { useAuth } from '../hooks/useAuth';
 import { fetchAllData, getAthleteByEmail, saveSession, getMediaType } from '../api';
@@ -7,35 +7,29 @@ import HelpButton from '../components/HelpButton';
 import './program-viewer.css';
 
 function normalizeString(str) {
-  return String(str)
-    .toLowerCase()
-    .replace(/\./g, ' ')
-    .replace(/[^\w\s]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
+  return String(str).toLowerCase().replace(/\./g, ' ').replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim();
 }
 
-function extractVideoUrl(rawVid) {
+// FIX 1: Safely extract media URLs without corrupting .png or .jpg image endpoints
+function extractMediaUrl(rawVid) {
   if (!rawVid) return '';
-  let match = String(rawVid).match(/https:\/\/[^"'\s<>]+/i);
-  if (match) {
-    let cleanUrl = match[0];
-    if (cleanUrl.includes('b-cdn.net') && !cleanUrl.toLowerCase().endsWith('.mp4')) cleanUrl += '.mp4';
-    return cleanUrl;
-  }
+  let match = String(rawVid).match(/https:\/\/[^"'\s<>]+/i) || String(rawVid).match(/http:\/\/[^"'\s<>]+/i);
+  let cleanUrl = match ? match[0] : String(rawVid).trim();
+  
   if (String(rawVid).includes('youtube') || String(rawVid).includes('youtu.be')) return String(rawVid);
-  match = String(rawVid).match(/http:\/\/[^"'\s<>]+/i);
-  if (match) {
-    let cleanUrl = match[0];
-    if (cleanUrl.includes('b-cdn.net') && !cleanUrl.toLowerCase().endsWith('.mp4')) cleanUrl += '.mp4';
-    return cleanUrl;
-  }
+  
   if (String(rawVid).match(/^www\./) || String(rawVid).match(/\.com|\.net|\.be/)) {
-    let url = 'https://' + String(rawVid).trim();
-    if (url.includes('b-cdn.net') && !url.toLowerCase().endsWith('.mp4')) url += '.mp4';
-    return url;
+    if (!cleanUrl.startsWith('http')) cleanUrl = 'https://' + cleanUrl;
   }
-  return '';
+
+  // Only append .mp4 if it's a Bunny CDN link that DOES NOT already have a valid media extension
+  const lower = cleanUrl.toLowerCase();
+  const hasValidExt = lower.match(/\.(mp4|png|jpe?g|gif|webp|mp3|wav|m4a|webm|mov)$/i);
+  if (cleanUrl.includes('b-cdn.net') && !hasValidExt) {
+    cleanUrl += '.mp4';
+  }
+  
+  return cleanUrl;
 }
 
 function calculateTargetLoad(athletesData, athleteRowIndex, baseLift, multiplier, exerciseName, reps, intensity) {
@@ -92,9 +86,7 @@ export default function ProgramViewer() {
   const [searchQuery, setSearchQuery] = useState('');
   const { userEmail, isLoading: authLoading } = useAuth();
 
-  useEffect(() => {
-    if (userEmail) loadData(true);
-  }, [userEmail]);
+  useEffect(() => { if (userEmail) loadData(true); }, [userEmail]);
 
   async function loadData(useCache = false) {
     try {
@@ -112,9 +104,9 @@ export default function ProgramViewer() {
           const athleteCached = localStorage.getItem('fp_athlete_data');
           if (athleteCached) {
             try {
-              const parsed = JSON.parse(athleteCached);
-              if (parsed.name) setAthleteName(parsed.name);
-              if (parsed.rowIndex !== undefined) setAthleteRowIndex(parsed.rowIndex);
+              const pAthlete = JSON.parse(athleteCached);
+              if (pAthlete.name) setAthleteName(pAthlete.name);
+              if (pAthlete.rowIndex !== undefined) setAthleteRowIndex(pAthlete.rowIndex);
             } catch {}
           }
           refreshData();
@@ -166,10 +158,7 @@ export default function ProgramViewer() {
         setProgramData(allData.programs);
         setLibraryData(allData.library);
         localStorage.setItem('fp_program_data', JSON.stringify({
-          athletes: allData.athletes,
-          programs: allData.programs,
-          library: allData.library,
-          cachedAt: new Date().toISOString()
+          athletes: allData.athletes, programs: allData.programs, library: allData.library, cachedAt: new Date().toISOString()
         }));
       }
     } catch {}
@@ -197,9 +186,6 @@ export default function ProgramViewer() {
       if (!name) return;
       if (privacy === 'PUBLIC' && !map[name]) {
         map[name] = { name, exercises: new Set(), phases: new Set() };
-        const ex = String(row[3] || '').trim();
-        if (ex) map[name].exercises.add(ex);
-        map[name].phases.add(String(row[2] || 'Work Block').trim());
       }
       if (map[name]) {
         const ex = String(row[3] || '').trim();
@@ -232,6 +218,7 @@ export default function ProgramViewer() {
     if (!rows.length) return [];
     const groups = [];
     let currentGroup = null;
+    
     rows.forEach((row, index) => {
       const phase = String(row[2] || '').trim() || 'Work Block';
       const name = String(row[3] || '').trim() || 'Unknown Exercise';
@@ -253,9 +240,7 @@ export default function ProgramViewer() {
       const libRow = libraryData[k];
       if (!libRow) continue;
       const libName = normalizeString(libRow[0]);
-      if (libName && !libMap.has(libName)) {
-        libMap.set(libName, libRow);
-      }
+      if (libName && !libMap.has(libName)) { libMap.set(libName, libRow); }
     }
     
     groups.forEach(group => {
@@ -265,7 +250,7 @@ export default function ProgramViewer() {
         group.baseLift = libRow.length > 3 ? String(libRow[3] || '').trim() : '';
         group.multiplier = (libRow.length > 4 && String(libRow[4] || '').trim() !== '') ? parseFloat(libRow[4]) : 1.0;
         const rawVid = String(libRow[1] || '').trim();
-        group.videoUrl = extractVideoUrl(rawVid);
+        group.videoUrl = extractMediaUrl(rawVid); // Using our new safe extractor
         group.ytId = getYouTubeId(rawVid);
       }
     });
@@ -288,7 +273,7 @@ export default function ProgramViewer() {
     setShowProgramMedia(false);
   }
 
-  function toggleVideo(groupId) {
+  function toggleMedia(groupId) {
     setExpandedVideos(prev => {
       const next = new Set(prev);
       if (next.has(groupId)) next.delete(groupId); else next.add(groupId);
@@ -336,11 +321,7 @@ export default function ProgramViewer() {
     const payload = { athlete: athleteName, prog: loggedProgStr, sets: setsToLog, maxUpdates };
     try {
       const res = await saveSession(payload);
-      if (res.status === 'Success') {
-        setSaveSuccess(true);
-      } else {
-        alert('Save failed. Please try again.');
-      }
+      if (res.status === 'Success') { setSaveSuccess(true); } else { alert('Save failed. Please try again.'); }
     } catch (err) {
       alert('Network error. Please try again.');
     }
@@ -395,11 +376,7 @@ export default function ProgramViewer() {
             ) : (
               <div className="pv-program-buttons">
                 {assignedPrograms.filter(prog => prog.toLowerCase().includes(searchQuery.toLowerCase())).map(prog => (
-                  <button
-                    key={prog}
-                    className={`pv-program-btn ${selectedProgram === prog ? 'active' : ''}`}
-                    onClick={() => handleProgramChange(prog)}
-                  >
+                  <button key={prog} className={`pv-program-btn ${selectedProgram === prog ? 'active' : ''}`} onClick={() => handleProgramChange(prog)}>
                     <Play size={16} /> {prog}
                   </button>
                 ))}
@@ -420,11 +397,7 @@ export default function ProgramViewer() {
             ) : (
               <div className="pv-program-buttons">
                 {publicPrograms.filter(prog => prog.name.toLowerCase().includes(searchQuery.toLowerCase())).map(prog => (
-                  <button
-                    key={prog.name}
-                    className={`pv-program-btn ${selectedProgram === prog.name ? 'active' : ''}`}
-                    onClick={() => handleProgramChange(prog.name)}
-                  >
+                  <button key={prog.name} className={`pv-program-btn ${selectedProgram === prog.name ? 'active' : ''}`} onClick={() => handleProgramChange(prog.name)}>
                     <Play size={16} /> {prog.name}
                   </button>
                 ))}
@@ -433,6 +406,7 @@ export default function ProgramViewer() {
           </div>
         </div>
 
+        {/* FIX 2: Program Coach Media securely displays Images and Videos */}
         {(coachNote || programMediaUrl) && (
           <div className="pv-coach-note" style={{ marginBottom: '20px' }}>
             <div className="pv-coach-note-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -448,6 +422,8 @@ export default function ProgramViewer() {
               <div className="pv-media-player-wrap">
                 {getYouTubeId(programMediaUrl) ? (
                   <iframe src={'https://www.youtube.com/embed/' + getYouTubeId(programMediaUrl) + '?autoplay=1&rel=0'} allowFullScreen title="Coach Program Media" className="pv-media-iframe" />
+                ) : (programMediaUrl.toLowerCase().includes('.png') || programMediaUrl.toLowerCase().includes('.jpg')) ? (
+                  <img src={programMediaUrl} alt="Program Media" style={{ maxWidth: '100%', maxHeight: '400px', objectFit: 'contain', borderRadius: '8px' }} />
                 ) : getMediaType(programMediaUrl) === 'audio' ? (
                   <audio src={programMediaUrl} controls preload="metadata" className="pv-media-audio" />
                 ) : (
@@ -471,21 +447,27 @@ export default function ProgramViewer() {
             <div className="pv-phase-header">{section.title}</div>
             <div className="pv-phase-body">
               {section.items.map(group => {
-                const hasVideo = group.videoUrl || group.ytId;
+                const hasMedia = group.videoUrl || group.ytId;
+                const isImage = group.videoUrl && (group.videoUrl.toLowerCase().includes('.png') || group.videoUrl.toLowerCase().includes('.jpg'));
+                
                 return (
                   <div key={group.id}>
                     <div className="pv-exercise-header">
                       <h4 className="pv-exercise-name">{group.name}</h4>
-                      {hasVideo && (
-                        <button className="pv-video-toggle" onClick={() => toggleVideo(group.id)}>
-                          <Video size={12} /> Video
+                      {hasMedia && (
+                        <button className="pv-video-toggle" onClick={() => toggleMedia(group.id)}>
+                          {isImage ? <ImageIcon size={12} /> : <Video size={12} />} Media
                         </button>
                       )}
                     </div>
-                    {hasVideo && expandedVideos.has(group.id) && (
-                      <div className="pv-video-container">
+                    
+                    {/* FIX 3: Exercise Media Dropdown securely displays Whiteboard Images */}
+                    {hasMedia && expandedVideos.has(group.id) && (
+                      <div className="pv-video-container" style={{ padding: isImage ? '10px' : '0' }}>
                         {group.ytId ? (
                           <iframe src={`https://www.youtube.com/embed/${group.ytId}?autoplay=1&rel=0`} allowFullScreen title={group.name} />
+                        ) : isImage ? (
+                          <img src={group.videoUrl} alt={group.name} style={{ width: '100%', maxHeight: '40vh', objectFit: 'contain', borderRadius: '4px' }} />
                         ) : (
                           <video autoPlay controls playsInline preload="none" controlsList="nodownload">
                             <source src={group.videoUrl} type="video/mp4" />
@@ -493,6 +475,7 @@ export default function ProgramViewer() {
                         )}
                       </div>
                     )}
+                    
                     {group.details.map((set, idx) => {
                       const target = calculateTargetLoad(athletesData, athleteRowIndex, group.baseLift, group.multiplier, group.name, set.reps, set.intensity);
                       const targetNum = target.replace(' kg', '');
@@ -548,3 +531,4 @@ export default function ProgramViewer() {
     </div>
   );
 }
+
