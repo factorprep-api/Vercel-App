@@ -5,12 +5,17 @@ import { fetchAllData, saveFullProgram, getMediaType } from '../api';
 import './program-builder.css';
 import HelpButton from '../components/HelpButton';
 
+// FIX 2: Upgraded MediaPlayer to handle static images cleanly without breaking
 function MediaPlayer({ url, compact = false }) {
   if (!url) return null;
+  const isImg = url.toLowerCase().includes('.png') || url.toLowerCase().includes('.jpg') || url.toLowerCase().includes('.jpeg');
   const mediaType = getMediaType(url);
+  
   return (
     <div className={compact ? 'media-player-compact' : 'media-player'}>
-      {mediaType === 'video' ? (
+      {isImg ? (
+        <img src={url} alt="Program Media" style={{ maxWidth: '100%', maxHeight: '400px', objectFit: 'contain', borderRadius: '4px' }} />
+      ) : mediaType === 'video' ? (
         <video src={url} controls preload="metadata" className="media-video" />
       ) : (
         <audio src={url} controls preload="metadata" className="media-audio" />
@@ -92,11 +97,23 @@ export default function ProgramBuilder() {
     } catch {}
   }
 
+  // FIX 1: Make sure the autocomplete search box filters out other coaches' private plays!
   const exerciseList = useMemo(() => {
     if (!library.length) return [];
-    const names = library.slice(1).map(r => String(r[0] || '').trim()).filter(Boolean);
+    
+    const names = library.slice(1)
+      .filter(row => {
+        // Library rows: [0:Name, 1:Video, 2:Muscle, 3:Lift, 4:Mult, 5:OwnerEmail, 6:Notes]
+        const owner = String(row[5] || '').trim();
+        if (!owner) return true; // It's a standard/global exercise, allow it
+        if (!coachEmail) return false; // Not logged in, block private stuff
+        return owner.toLowerCase() === coachEmail.toLowerCase(); // Only allow if YOU own it
+      })
+      .map(r => String(r[0] || '').trim())
+      .filter(Boolean);
+      
     return [...new Set(names)].sort();
-  }, [library]);
+  }, [library, coachEmail]);
 
   const filteredExercises = useMemo(() => {
     if (!form.exercise.trim()) return exerciseList.slice(0, 50);
