@@ -289,8 +289,8 @@ function Whiteboard() {
       await addExerciseToLibrary({ 
         name: exerciseTitle, 
         video: finalImageUrl, 
-        muscle: currentTemplate, 
-        baseLift: drillType, 
+        muscle: drillType,
+        baseLift: currentTemplate, 
         multiplier: 1, 
         ownerEmail: coachEmail, 
         txtNotes: exerciseNotes 
