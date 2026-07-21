@@ -70,6 +70,7 @@ export default function ExerciseLibrary() {
   const [editing, setEditing] = useState(null);
   const [editName, setEditName] = useState('');
   const [editVideo, setEditVideo] = useState('');
+  const [editMuscle, setEditMuscle] = useState('');
   const [deleting, setDeleting] = useState(null);
   const { role, userEmail: coachEmail, isLoading: authLoading } = useAuth();
   const [adding, setAdding] = useState(false);
@@ -149,6 +150,7 @@ useEffect(() => {
     setEditing(exercise);
     setEditName(exercise.name);
     setEditVideo(exercise.rawUrl || '');
+    setEditMuscle(exercise.muscle || ''); // <--- Add this
   }
 
   async function handleEditSave() {
@@ -157,12 +159,13 @@ useEffect(() => {
       const res = await updateExerciseInLibrary({
         name: editName.trim(),
         video: editVideo.trim(),
+        muscle: editMuscle.trim(), // <--- Add this
         originalName: editing.name
       });
       if (res.status === 'Success') {
         showToast('Exercise updated!');
         setEditing(null);
-        await reloadLibrary();
+        await reloadLibrary(); // Will refresh automatically
       } else {
         showToast('Update failed', true);
       }
@@ -170,6 +173,7 @@ useEffect(() => {
       showToast('Network error', true);
     }
   }
+
 
   async function handleDelete(exercise) {
     if (!confirm(`Delete "${exercise.name}"? This cannot be undone.`)) return;
@@ -378,37 +382,50 @@ if (authLoading || !role) {
         />
       )}
 
-          {modalVideo && (
+      {modalVideo && (
         <div className="exlib-modal-overlay" onClick={closeModal}>
           <div className="exlib-modal-content" onClick={e => e.stopPropagation()} style={{ background: (modalVideo.url.toLowerCase().includes('.png') || modalVideo.url.toLowerCase().includes('.jpg')) ? '#fff' : '' }}>
             <button className="exlib-close-btn" onClick={closeModal}><X size={28} /></button>
-            <div className="exlib-player-container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
-              {modalVideo.ytId ? (
-                <iframe src={`https://www.youtube.com/embed/${modalVideo.ytId}?autoplay=1&rel=0`} allowFullScreen title="Exercise Video" />
-              ) : (modalVideo.url.toLowerCase().includes('.png') || modalVideo.url.toLowerCase().includes('.jpg')) ? (
+            
+            {/* Split Image vs Video entirely so they don't break each other's layout */}
+            {(modalVideo.url.toLowerCase().includes('.png') || modalVideo.url.toLowerCase().includes('.jpg')) ? (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', padding: '20px' }}>
                 <img src={modalVideo.url} alt="Drill" style={{ maxWidth: '100%', maxHeight: '80vh', objectFit: 'contain' }} />
-              ) : (
-                <video controls autoPlay playsInline controlsList="nodownload"><source src={normalizeVideoUrl(modalVideo.url)} type="video/mp4" /></video>
-              )}
-            </div>
+              </div>
+            ) : (
+              <div className="exlib-player-container">
+                {modalVideo.ytId ? (
+                  <iframe src={`https://www.youtube.com/embed/${modalVideo.ytId}?autoplay=1&rel=0`} allowFullScreen title="Exercise Video" />
+                ) : (
+                  <video controls autoPlay playsInline controlsList="nodownload"><source src={normalizeVideoUrl(modalVideo.url)} type="video/mp4" /></video>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
-
 
       {editing && (
         <div className="exlib-modal-overlay" onClick={() => setEditing(null)}>
           <div className="exlib-edit-modal" onClick={e => e.stopPropagation()}>
             <button className="exlib-close-btn" onClick={() => setEditing(null)}><X size={24} /></button>
             <h3 className="exlib-edit-title">Edit Exercise</h3>
+            
             <div className="exlib-edit-field">
               <label className="exlib-edit-label">Exercise Name:</label>
               <input className="exlib-edit-input" value={editName} onChange={e => setEditName(e.target.value)} />
             </div>
+            
             <div className="exlib-edit-field">
-              <label className="exlib-edit-label">Video URL:</label>
+              <label className="exlib-edit-label">Category / Muscle:</label>
+              <input className="exlib-edit-input" value={editMuscle} onChange={e => setEditMuscle(e.target.value)} />
+            </div>
+
+            <div className="exlib-edit-field">
+              <label className="exlib-edit-label">Video / Image URL:</label>
               <input className="exlib-edit-input" value={editVideo} onChange={e => setEditVideo(e.target.value)} />
             </div>
+
             <button className="exlib-edit-save-btn" onClick={handleEditSave}>Save Changes</button>
           </div>
         </div>
