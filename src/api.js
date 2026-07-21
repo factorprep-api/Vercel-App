@@ -123,21 +123,18 @@ export const assignProgramBulk = async (athleteRows, programAssignment, columnId
   }
 };
 
-export const addExerciseToLibrary = async (exerciseData) => {
+export const saveExercise = async (exerciseData) => {
   try {
-    const resp = await fetch(GOOGLE_SCRIPT_API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ action: 'addExercise', data: exerciseData })
-    });
-    const json = await resp.json();
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=addExercise&data=${encodeURIComponent(JSON.stringify(exerciseData))}`;
+    let resp = await fetch(url);
+    let json = await resp.json();
     return json;
   } catch (err) {
     return { status: 'Error', message: err.message };
   }
 };
 
-export const deleteExerciseFromLibrary = async (exerciseName) => {
+export const deleteExercise = async (exerciseName) => {
   try {
     let url = `${GOOGLE_SCRIPT_API_URL}?action=deleteExercise&exName=${encodeURIComponent(exerciseName)}`;
     let resp = await fetch(url);
@@ -148,7 +145,7 @@ export const deleteExerciseFromLibrary = async (exerciseName) => {
   }
 };
 
-export const updateExerciseInLibrary = async (exerciseData) => {
+export const updateExercise = async (exerciseData) => {
   try {
     let url = `${GOOGLE_SCRIPT_API_URL}?action=updateExercise&data=${encodeURIComponent(JSON.stringify(exerciseData))}`;
     let resp = await fetch(url);
@@ -159,70 +156,13 @@ export const updateExerciseInLibrary = async (exerciseData) => {
   }
 };
 
-export const fetchHelpVideos = async () => {
+export const getHelpVideos = async () => {
   try {
     let url = `${GOOGLE_SCRIPT_API_URL}?action=getHelpVideos`;
     let resp = await fetch(url);
     let json = await resp.json();
-    return json.data || {};
+    return json;
   } catch (err) {
-    return {};
+    return { videos: [], error: err.message };
   }
 };
-
-// ========== NEW MEDIA FUNCTIONS ==========
-
-/**
- * Detect media type from URL extension
- * @param {string} url - The media file URL
- * @returns {'video'|'audio'|null} - The detected media type or null
- */
-export function getMediaType(url) {
-  if (!url) return null;
-  try {
-    const ext = url.split('.').pop().split('?')[0].toLowerCase();
-    const videoExts = ['mp4', 'webm', 'mov', 'avi', 'mkv', 'm4v'];
-    const audioExts = ['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac'];
-    if (videoExts.includes(ext)) return 'video';
-    if (audioExts.includes(ext)) return 'audio';
-    // Default to video for unknown / streaming URLs (YouTube, Vimeo, etc.)
-    return 'video';
-  } catch {
-    return 'video';
-  }
-}
-
-/**
- * Parse programs from raw Google Sheets rows, extracting mediaUrl from Column M (index 12)
- * @param {Array} rawPrograms - Raw program rows from Google Sheets (including header)
- * @param {string} coachEmail - Current coach's email for ownership checks
- * @returns {Array} Parsed program objects with mediaUrl field
- */
-export function parseProgramsFromRaw(rawPrograms, coachEmail) {
-  const programs = [];
-  if (!rawPrograms || rawPrograms.length <= 1) return programs;
-
-  // Skip header row, process data rows
-  for (let i = 1; i < rawPrograms.length; i++) {
-    const row = rawPrograms[i];
-    
-    const name = String(row[0] || '').trim();
-    const privacyLevel = (row.length > 10 && String(row[10]).trim()) ? String(row[10]).trim() : 'PRIVATE';
-    const ownerEmail = (row.length > 11 && String(row[11]).trim()) ? String(row[11]).trim() : '';
-    const mediaUrl = (row.length > 12 && String(row[12]).trim()) ? String(row[12]).trim() : '';
-
-    if (!name) continue;
-
-    programs.push({
-      name,
-      privacyLevel,
-      ownerEmail,
-      mediaUrl,
-      mediaType: mediaUrl ? getMediaType(mediaUrl) : null,
-      isOwnedByCoach: ownerEmail.toLowerCase() === (coachEmail || '').toLowerCase(),
-      rawData: row  // Keep original row for editing/saving
-    });
-  }
-
-  return programs;
-}
