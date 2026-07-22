@@ -433,7 +433,7 @@ export default function ProgramViewer() {
         </div>
 
         {(coachNote || programMediaUrl) && (
-          <div className="pv-coach-note" style={{ marginBottom: '20px', borderTopColor: '#6d4aff' }}>
+          <div className="pv-coach-note" style={{ marginBottom: '20px' }}>
             <div className="pv-coach-note-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h4><MessageSquare size={14} /> Coach's Notes</h4>
               {programMediaUrl && (
@@ -442,7 +442,7 @@ export default function ProgramViewer() {
                 </button>
               )}
             </div>
-            {coachNote && <p style={{ color: '#6d4aff', fontStyle: 'italic', marginLeft: '4px' }}>{coachNote}</p>}
+            {coachNote && <p>{coachNote}</p>}
             {programMediaUrl && showProgramMedia && (
               <div className="pv-media-player-wrap">
                 {getYouTubeId(programMediaUrl) ? (

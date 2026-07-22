@@ -20,7 +20,7 @@
 .pv-selector-group select:focus { border-color: #008ed3; }
 .pv-selector-divider { border-top: 1px solid #eee; padding-top: 15px; }
 
-.pv-coach-note { background: #ffffff; border-left: 5px solid #d3ca17; padding: 15px 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.04); margin-bottom: 5px; }
+.pv-coach-note { background: #ffffff; border-left: 5px solid #6d4aff; padding: 15px 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.04); margin-bottom: 5px; }
 .pv-coach-note h4 { margin: 0 0 8px 0; color: #111; font-size: 13px; text-transform: uppercase; display: flex; align-items: center; gap: 6px; }
 .pv-coach-note p { margin: 0; color: #555; font-size: 15px; line-height: 1.5; white-space: pre-wrap; }
 
@@ -297,23 +297,6 @@
 }
 
 /* Coach's Notes styling */
-.pv-coach-note { 
-  margin-bottom: 20px; 
-  border-top: 3px solid #6d4aff; 
-  padding: 15px; 
-  background: #fafafa; 
-  border-radius: 6px;
-}
-
-.pv-coach-note h4 { 
-  color: #6d4aff; 
-  margin-bottom: 8px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.pv-coach-note p { 
   color: #6d4aff; 
   margin: 0;
   font-style: italic;
