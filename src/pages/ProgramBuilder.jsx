@@ -210,7 +210,7 @@ export default function ProgramBuilder() {
     showToast(`Loaded "${loadProgramName}" (${loadedDraft.length} movements). Edit and save — will overwrite if name matches.`);
   }
 
-  const phaseColors = { 'Warm Up': '#fd7e14', 'Work Block': '#008ed3', 'Cool Down': '#0dcaf0' };
+    const phaseColors = { 'Warm Up': '#fd7e14', 'Work Block': '#22c55e', 'Cool Down': '#ef4444' };
 
   if (authLoading) return <div className="pb-placeholder">Loading...</div>;
   if (!coachEmail) return <div className="pb-placeholder">Please log in.</div>;
