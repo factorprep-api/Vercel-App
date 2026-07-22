@@ -297,8 +297,13 @@ export default function ProgramViewer() {
   function toggleMedia(groupId) {
     setExpandedVideos(prev => {
       const next = new Set(prev);
-      if (next.has(groupId)) next.delete(groupId); else next.add(groupId);
-      return next;
+      if (next.has(groupId)) {
+        next.delete(groupId);
+      } else {
+        next.add(groupId);
+      }
+      // Create completely new Set instance
+      return new Set(next);
     });
   }
 
