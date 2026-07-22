@@ -30,8 +30,8 @@
 
 .pv-exercise-name { font-size: 18px; color: #111; letter-spacing: 0.5px; }
 .pv-exercise-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 5px; }
-.pv-video-toggle { font-size: 11px; font-weight: bold; color: #008ed3; cursor: pointer; border: 1px solid #008ed3; padding: 4px 10px; border-radius: 12px; text-transform: uppercase; background: rgba(0,142,211,0.05); display: flex; align-items: center; gap: 4px; transition: 0.2s; }
-.pv-video-toggle:hover { background: #008ed3; color: white; }
+.pv-video-toggle { font-size: 11px; font-weight: bold; color: green; cursor: pointer; border: 1px solid green; padding: 4px 10px; border-radius: 12px; text-transform: uppercase; background: rgba(0,142,211,0.05); display: flex; align-items: center; gap: 4px; transition: 0.2s; }
+.pv-video-toggle:hover { background: green; color: #fff; }
 .pv-video-container { margin-top: 15px; background: #000; border-radius: 6px; overflow: hidden; min-height: 300px; position: relative; }
 .pv-video-container video, .pv-video-container iframe { width: 100%; height: auto; display: block; z-index: 10; position: relative; }
 .pv-video-container img { max-width: 100%; max-height: 50vh; display: block; margin: 10px auto; border-radius: 4px; }
@@ -41,7 +41,7 @@
 .pv-set-label strong { color: #111; }
 .pv-set-meta { font-size: 12px; color: #888; margin-top: 4px; }
 .pv-target { font-size: 12px; color: #888; margin-top: 4px; text-transform: uppercase; }
-.pv-target-value { color: #008ed3; font-weight: bold; font-size: 14px; }
+.pv-target-value { color: #22c55e; font-weight: bold; font-size: 14px; }
 .pv-inputs { display: flex; gap: 8px; }
 .pv-input-group { display: flex; flex-direction: column; align-items: center; }
 .pv-input-label { font-size: 10px; font-weight: bold; color: #aaa; text-transform: uppercase; margin-bottom: 2px; }

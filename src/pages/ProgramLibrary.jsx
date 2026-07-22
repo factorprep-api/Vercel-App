@@ -233,10 +233,10 @@ export default function ProgramViewer() {
       'cool down': 'Cool Down', 'cooldown': 'Cool Down'
     };
     const sections = [
-      { title: 'Warm Up', items: [], color: '#d3ca17' },
-      { title: 'Work Block', items: [], color: '#008ed3' },
+      { title: 'Warm Up', items: [], color: '#fd7e14' },
+      { title: 'Work Block', items: [], color: '#22c55e' },
       { title: 'Other Content', items: [], color: '#888888' },
-      { title: 'Cool Down', items: [], color: '#dc3545' },
+      { title: 'Cool Down', items: [], color: '#ff6b6b' },
     ];
     workoutGroups.forEach(g => {
       const phaseKey = String(g.phase || '').toLowerCase().trim();
