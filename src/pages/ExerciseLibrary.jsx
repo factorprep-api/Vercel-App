@@ -384,10 +384,7 @@ if (authLoading || !role) {
 
       {modalVideo && (
         <div className="exlib-modal-overlay" onClick={closeModal}>
-          <div className="exlib-modal-content" onClick={e => e.stopPropagation()} style={modalVideo.url.toLowerCase().includes('.png') || modalVideo.url.toLowerCase().includes('.jpg') ? { background: '#fff', maxHeight: 'none', height: '95vh', overflow: 'visible' } : {}}>
-            <button className="exlib-close-btn" onClick={closeModal}><X size={28} /></button>
-            
-            {/* Split Image vs Video entirely so they don't break each other's layout */}
+          <div className="exlib-modal-content" onClick={e => e.stopPropagation()} style={{ background: '#fff', padding: '40px' }}>
          {(modalVideo.url.toLowerCase().includes('.png') || modalVideo.url.toLowerCase().includes('.jpg')) ? (
               <div className="exlib-image-viewer">
                 <img src={modalVideo.url} alt="Drill" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
