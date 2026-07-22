@@ -250,8 +250,7 @@ export default function ProgramLibrary() {
     }
   }
 
-  // FIX: Make sure the program expansion panel reads the phases cleanly
-  function renderProgramPreview(program) {
+   function renderProgramPreview(program) {
     const phases = {};
     const phaseMap = {
       'warm up': 'Warm Up', 'warmup': 'Warm Up',
@@ -265,16 +264,22 @@ export default function ProgramLibrary() {
       const name = String(row[3] || '').trim() || 'Unknown';
       if (!phases[phase]) phases[phase] = {};
       if (!phases[phase][name]) phases[phase][name] = [];
-      phases[phase][name].push({
-        sets: String(row[4] || '').trim() || '1',
-        reps: String(row[5] || '').trim() || '1',
-        intensity: String(row[6] || '').trim(),
-        tempo: String(row[7] || '').trim(),
-        rest: String(row[8] || '').trim()
-      });
+      
+      // FIX: Read the actual number of sets
+      const numSets = parseInt(String(row[4] || '').trim(), 10) || 1;
+      
+      // FIX: Multiply them out so the preview accurately counts them
+      for (let s = 0; s < numSets; s++) {
+        phases[phase][name].push({
+          sets: '1',
+          reps: String(row[5] || '').trim() || '1',
+          intensity: String(row[6] || '').trim(),
+          tempo: String(row[7] || '').trim(),
+          rest: String(row[8] || '').trim()
+        });
+      }
     });
 
-    // We include 'Other Content' here so anything mistyped is still visible to the coach
     const phaseOrder = ['Warm Up', 'Work Block', 'Other Content', 'Cool Down'];
     const sortedPhases = Object.keys(phases).sort((a, b) => {
       const ia = phaseOrder.indexOf(a);
@@ -306,6 +311,7 @@ export default function ProgramLibrary() {
       </div>
     ));
   }
+
 
   const privacyTabs = [
     { id: 'all', label: 'All Programs' },
