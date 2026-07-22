@@ -64,177 +64,52 @@
   z-index: 100;
 }
 
-/* Image modal overrides */
-.exlib-modal-content[style*="background: '#fff'"] {
-  max-height: 96vh !important;
-  overflow: visible !important;
-}
 
-.el-image-modal-img {
-  max-width: 95%;
-  max-height: 90vh;
-  object-fit: contain;
-  border-radius: 8px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
-}
+/* === Exercise Library Image Modal === */
 
-.el-image-modal-close {
-  position: absolute;
-  top: 20px;
-  right: 20px;
-  background: rgba(255, 255, 255, 0.2);
-  color: white;
-  border: none;
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  font-size: 24px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background 0.2s;
-}
-
-.el-image-modal-close:hover {
-  background: rgba(255, 255, 255, 0.4);
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-/* Exercise Library Image Viewer */
-.exlib-image-viewer {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  width: 100%;
-  height: 80vh;
-  max-width: 100%;
-  overflow: hidden;
-}
-
-.exlib-image-viewer img {
-  max-width: 100%;
-  max-height: 100%;
-  width: auto;
-  height: auto;
-  object-fit: contain;
-  border-radius: 8px;
-  display: block;
-}
-
-.exlib-image-viewer img {
-  max-width: 100%;
-  max-height: 100%;
-  width: auto;
-  height: auto;
-  object-fit: contain;
-  border-radius: 8px;
-  display: block;
-}
-
-.exlib-image-viewer img {
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
-  border-radius: 8px;
-}
-
-.exlib-image-viewer img {
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
-  border-radius: 8px;
-}
-
-/* Mobile: Fullscreen */
-@media (max-width: 768px) {
-.exlib-image-viewer {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  width: 100%;
-  height: 80vh;
-  max-width: 100%;
-  overflow: hidden;
-}
-
-.exlib-image-viewer img {
-  max-width: 100%;
-  max-height: 100%;
-  width: auto;
-  height: auto;
-  object-fit: contain;
-  border-radius: 8px;
-  display: block;
-}
-
-.exlib-image-viewer img {
-  max-width: 100%;
-  max-height: 100%;
-  width: auto;
-  height: auto;
-  object-fit: contain;
-  border-radius: 8px;
-  display: block;
-}
-
-.exlib-image-viewer img {
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
-  border-radius: 8px;
-}
-
-/* Override modal constraints for image viewing */
 .exlib-modal-content.exlib-image-modal {
-  max-height: none !important;
-  height: 95vh !important;
+  width: 80vw !important;
+  max-width: 80vw !important;
+  max-height: 95vh !important;
+  height: auto !important;
   overflow: visible !important;
+  padding: 0 !important;
+  background: #fff !important;
 }
 
-/* Exercise Library Image Viewer - Responsive */
 .exlib-image-viewer {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 40px;
   width: 100%;
-  height: 80vh;
-  max-width: 80vw;
+  height: 95vh;
+  padding: 20px;
+  box-sizing: border-box;
 }
 
 .exlib-image-viewer img {
-  max-width: 100%;
-  max-height: 100%;
+  max-width: 95%;
+  max-height: 95%;
   object-fit: contain;
   border-radius: 8px;
-  cursor: pointer;
 }
 
-/* Mobile: Fullscreen */
 @media (max-width: 768px) {
+  .exlib-modal-content.exlib-image-modal {
+    width: 100vw !important;
+    max-width: 100vw !important;
+    max-height: 100vh !important;
+    border-radius: 0 !important;
+  }
+
   .exlib-image-viewer {
-    width: 100vw;
     height: 100vh;
-    max-width: 100vw;
     padding: 0;
   }
-  
+
   .exlib-image-viewer img {
+    max-width: 100%;
+    max-height: 100%;
     border-radius: 0;
   }
-}
-
-/* Image modal overrides - no scroll */
-.exlib-modal-content.exlib-image-modal {
-  max-height: 95vh !important;
-  overflow: visible !important;
-  width: 80vw !important;
-  background: #fff !important;
 }
