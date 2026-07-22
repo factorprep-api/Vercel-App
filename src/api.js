@@ -122,7 +122,6 @@ export const assignProgramBulk = async (athleteRows, programAssignment, columnId
   }
 };
 
-// --- RENAMED TO MATCH REACT IMPORTS ---
 export const addExerciseToLibrary = async (exerciseData) => {
   try {
     let url = `${GOOGLE_SCRIPT_API_URL}?action=addExercise&data=${encodeURIComponent(JSON.stringify(exerciseData))}`;
@@ -167,7 +166,15 @@ export const fetchHelpVideos = async () => {
   }
 };
 
-// ========== RESTORED MEDIA FUNCTIONS ==========
+export const updateProgram = async (oldName, programRows) => {
+  try {
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=updateProgram&oldName=${encodeURIComponent(oldName)}&programData=${encodeURIComponent(JSON.stringify(programRows))}`;
+    let resp = await fetch(url);
+    return await resp.json();
+  } catch (err) {
+    return { status: 'Error', message: err.message };
+  }
+};
 
 export function getMediaType(url) {
   if (!url) return null;
@@ -205,21 +212,7 @@ export function parseProgramsFromRaw(rawPrograms, coachEmail) {
       mediaType: mediaUrl ? getMediaType(mediaUrl) : null,
       isOwnedByCoach: ownerEmail.toLowerCase() === (coachEmail || '').toLowerCase(),
       rawData: row
-
-    export const updateProgram = async (oldName, programRows) => {
-  try {
-    let url = `${GOOGLE_SCRIPT_API_URL}?action=updateProgram&oldName=${encodeURIComponent(oldName)}&programData=${encodeURIComponent(JSON.stringify(programRows))}`;
-    let resp = await fetch(url);
-    let json = await resp.json();
-    return json;
-  } catch (err) {
-    return { status: 'Error', message: err.message };
-  }
-};
-
-      
     });
   }
   return programs;
 }
-
