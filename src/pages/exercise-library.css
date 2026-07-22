@@ -82,14 +82,15 @@
   align-items: center;
   justify-content: center;
   width: 100%;
-  height: 95vh;
+  height: 88vh;
   padding: 20px;
   box-sizing: border-box;
+  overflow: hidden;
 }
 
 .exlib-image-viewer img {
   max-width: 95%;
-  max-height: 95%;
+  max-height: 92%;
   object-fit: contain;
   border-radius: 8px;
 }
