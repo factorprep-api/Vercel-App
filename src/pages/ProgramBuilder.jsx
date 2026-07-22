@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { Plus, Save, ArrowUp, ArrowDown, Trash2, Hammer, CheckCircle, X, Library as LibIcon } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
-import { fetchAllData, saveFullProgram, getMediaType } from '../api';
+import { fetchAllData, saveFullProgram, updateProgram, getMediaType } from '../api';
 import './program-builder.css';
 import HelpButton from '../components/HelpButton';
 
@@ -157,24 +157,27 @@ export default function ProgramBuilder() {
     setDraft(draft.filter((_, idx) => idx !== i));
   }
 
-  async function handleSaveProgram() {
+    async function handleSaveProgram() {
     if (!form.name) { showToast('Program Name is required.', true); return; }
     if (draft.length === 0) { showToast('Draft is empty. Add movements first.', true); return; }
     setSaving(true);
     const rows = draft.map(i => [form.name, form.category, i.phase, i.exercise, i.sets, i.reps, i.intensity, i.tempo, i.rest, form.notes, form.privacyLevel, coachEmail, mediaUrl]);
     try {
-      console.log('🔥 SAVE PAYLOAD SIZE:', JSON.stringify(rows).length, 'chars'); console.log('Data:', rows); const res = await saveFullProgram(rows);
-      console.log('⚙️ RESPONSE:', JSON.stringify(res)); if (res.status === 'Success') {
-        showToast(`Program saved! (${res.rowCount} rows)`);
+      // This tells Google to delete the old version before saving so there are NO duplicates!
+      const targetName = loadProgramName ? loadProgramName : form.name;
+      const res = await updateProgram(targetName, rows);
+      if (res.status === 'Success') {
+        showToast(`Program saved!`);
         setDraft([]);
-        setForm(f => ({ ...f, name: '', notes: '', privacyLevel: 'PRIVATE' }));
+        setForm(f => ({ ...f, name: '', notes: '', privacyLevel: 'PRIVATE' })); // Leaves sets/reps populated for you!
         setLoadProgramName('');
         setMediaUrl('');
         await refreshData();
-      } else { showToast('Save failed: ' + (res.message || 'Unknown error'), true); }
+      } else { showToast('Save failed', true); }
     } catch (err) { showToast('Network error', true); }
     setSaving(false);
   }
+
 
   function handleLoadExisting() {
     if (!loadProgramName) { showToast('Select a program to edit.', true); return; }
