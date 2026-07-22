@@ -483,10 +483,8 @@ export default function ProgramViewer() {
                           <iframe src={`https://www.youtube.com/embed/${group.ytId}?autoplay=1&rel=0`} allowFullScreen title={group.name} />
                         ) : isImage ? (
                           <img src={group.videoUrl} alt={group.name} style={{ width: '100%', maxHeight: '40vh', objectFit: 'contain', borderRadius: '4px' }} />
-                        ) : (
-                          <video autoPlay controls playsInline preload="none" controlsList="nodownload">
-                            <source src={group.videoUrl} type="video/mp4" />
-                          </video>
+                                                ) : (
+                          <video key={group.videoUrl} src={group.videoUrl} autoPlay controls playsInline preload="metadata" controlsList="nodownload" style={{ width: '100%', borderRadius: '4px' }}></video>
                         )}
                       </div>
                     )}
