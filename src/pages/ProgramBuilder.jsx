@@ -42,7 +42,11 @@ export default function ProgramBuilder() {
   const draftRef = useRef(null);
 
   useEffect(() => { loadData(); }, []);
-  useEffect(() => { if (draftRef.current) draftRef.current.scrollTop = draftRef.current.scrollHeight; }, [draft]);
+    useEffect(() => { 
+    if (draftRef.current) {
+      draftRef.current.scrollTo({ top: draftRef.current.scrollHeight, behavior: 'smooth' });
+    } 
+  }, [draft]);
 
   async function loadData() {
     // Cache-first for instant load
@@ -316,7 +320,7 @@ export default function ProgramBuilder() {
           </div>
           <div className="pb-right">
             <h3 className="pb-section-title" style={{ textAlign: 'center', textTransform: 'uppercase', color: '#495057' }}>Live Draft View</h3>
-            <div className="pb-draft-list" ref={draftRef}>
+             <div className="pb-draft-list" ref={draftRef} style={{ maxHeight: '600px', overflowY: 'auto' }}>
               {draft.length === 0 ? (
                 <p className="pb-draft-empty">Draft is empty.</p>
               ) : draft.map((item, i) => (
