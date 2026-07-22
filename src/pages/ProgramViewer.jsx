@@ -212,12 +212,57 @@ export default function ProgramViewer() {
     return url && url.toLowerCase() !== 'undefined' ? url : '';
   }, [selectedProgram, programData]);
 
-  const workoutGroups = useMemo(() => {
+    const workoutGroups = useMemo(() => {
     if (!selectedProgram || !programData.length) return [];
     let rows = programData.slice(1).filter(r => String(r[0] || '').trim() === selectedProgram);
     if (!rows.length) return [];
     const groups = [];
     let currentGroup = null;
+    
+    rows.forEach((row, index) => {
+      const phase = String(row[2] || '').trim() || 'Work Block';
+      const name = String(row[3] || '').trim() || 'Unknown Exercise';
+      // FIX: Read the actual number of sets, default to 1 if empty
+      const numSets = parseInt(String(row[4] || '').trim(), 10) || 1; 
+      const reps = String(row[5] || '').trim() || '1';
+      const intensity = String(row[6] || '').trim();
+      const tempo = String(row[7] || '').trim();
+      const rest = String(row[8] || '').trim();
+      
+      if (!currentGroup || currentGroup.name !== name || currentGroup.phase !== phase) {
+        if (currentGroup) groups.push(currentGroup);
+        currentGroup = { id: 'ex_' + index, phase, name, details: [], baseLift: '', multiplier: 1.0, videoUrl: '', ytId: null };
+      }
+      
+      // FIX: Multiply the sets so athletes can track weight for each individual set!
+      for (let s = 0; s < numSets; s++) {
+        currentGroup.details.push({ sets: '1', reps, intensity, tempo, rest });
+      }
+    });
+
+    if (currentGroup) groups.push(currentGroup);
+    
+    const libMap = new Map();
+    for (let k = 1; k < libraryData.length; k++) {
+      const libRow = libraryData[k];
+      if (!libRow) continue;
+      const libName = normalizeString(libRow[0]);
+      if (libName && !libMap.has(libName)) { libMap.set(libName, libRow); }
+    }
+    
+    groups.forEach(group => {
+      const normalizedName = normalizeString(group.name);
+      const libRow = libMap.get(normalizedName);
+      if (libRow) {
+        group.baseLift = libRow.length > 3 ? String(libRow[3] || '').trim() : '';
+        group.multiplier = (libRow.length > 4 && String(libRow[4] || '').trim() !== '') ? parseFloat(libRow[4]) : 1.0;
+        const rawVid = String(libRow[1] || '').trim();
+        group.videoUrl = extractMediaUrl(rawVid); 
+        group.ytId = getYouTubeId(rawVid);
+      }
+    });
+    return groups;
+  }, [selectedProgram, programData, libraryData]);
     
     rows.forEach((row, index) => {
       const phase = String(row[2] || '').trim() || 'Work Block';
