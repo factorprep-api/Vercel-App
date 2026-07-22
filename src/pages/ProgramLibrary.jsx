@@ -28,7 +28,6 @@ export default function ProgramLibrary() {
 
   async function loadData() {
     try {
-      // Cache-first: check localStorage for instant load
       const cached = localStorage.getItem('fp_library_data');
       if (cached) {
         try {
@@ -39,14 +38,12 @@ export default function ProgramLibrary() {
         } catch {}
       }
       
-      // Fetch fresh data in background
       const allData = await fetchAllData();
       if (allData.error) { setError(allData.error); setLoading(false); return; }
       setProgramData(allData.programs);
       setAthletesData(allData.athletes);
       setLoading(false);
       
-      // Update cache with fresh data
       if (allData.programs && allData.athletes) {
         localStorage.setItem('fp_library_data', JSON.stringify({
           programs: allData.programs,
@@ -118,6 +115,14 @@ export default function ProgramLibrary() {
   const programs = useMemo(() => {
     if (!programData.length) return [];
     const map = {};
+    
+    // FIX: Normalize the Phase Names
+    const phaseMap = {
+      'warm up': 'Warm Up', 'warmup': 'Warm Up',
+      'work block': 'Work Block', 'workblock': 'Work Block',
+      'cool down': 'Cool Down', 'cooldown': 'Cool Down'
+    };
+
     programData.slice(1).forEach(row => {
       const name = String(row[0] || '').trim();
       if (!name) return;
@@ -125,7 +130,10 @@ export default function ProgramLibrary() {
         map[name] = { name, categories: new Set(), exercises: new Set(), phases: new Set(), rows: [], privacyLevel: '', ownerEmail: '' };
       }
       const cat = String(row[1] || '').trim();
-      const phase = String(row[2] || '').trim() || 'Work Block';
+      
+      const phaseKey = String(row[2] || '').toLowerCase().trim();
+      const phase = phaseMap[phaseKey] || 'Other Content';
+
       const ex = String(row[3] || '').trim();
       if (cat) map[name].categories.add(cat);
       if (ex) map[name].exercises.add(ex);
@@ -141,7 +149,6 @@ export default function ProgramLibrary() {
 
   const filteredPrograms = useMemo(() => {
     let result = programs;
-
     if (privacyFilter === 'private') {
       result = result.filter(p => p.privacyLevel === 'PRIVATE' && p.ownerEmail === coachEmail);
     } else if (privacyFilter === 'public') {
@@ -149,12 +156,10 @@ export default function ProgramLibrary() {
     } else {
       result = result.filter(p => p.ownerEmail === coachEmail || p.privacyLevel === 'PUBLIC' || !p.privacyLevel);
     }
-
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       result = result.filter(p => p.name.toLowerCase().includes(q));
     }
-
     return result;
   }, [programs, privacyFilter, coachEmail, searchQuery]);
 
@@ -176,7 +181,7 @@ export default function ProgramLibrary() {
     try {
       const res = await deleteProgram(programName);
       if (res.status === 'Success') {
-        showToast(`"${programName}" deleted (${res.deletedRows} rows)`);
+        showToast(`"${programName}" deleted`);
         await loadData();
       } else {
         showToast('Delete failed', true);
@@ -245,10 +250,18 @@ export default function ProgramLibrary() {
     }
   }
 
+  // FIX: Make sure the program expansion panel reads the phases cleanly
   function renderProgramPreview(program) {
     const phases = {};
+    const phaseMap = {
+      'warm up': 'Warm Up', 'warmup': 'Warm Up',
+      'work block': 'Work Block', 'workblock': 'Work Block',
+      'cool down': 'Cool Down', 'cooldown': 'Cool Down'
+    };
+
     program.rows.forEach(row => {
-      const phase = String(row[2] || '').trim() || 'Work Block';
+      const phaseKey = String(row[2] || '').toLowerCase().trim();
+      const phase = phaseMap[phaseKey] || 'Other Content';
       const name = String(row[3] || '').trim() || 'Unknown';
       if (!phases[phase]) phases[phase] = {};
       if (!phases[phase][name]) phases[phase][name] = [];
@@ -261,7 +274,8 @@ export default function ProgramLibrary() {
       });
     });
 
-    const phaseOrder = ['Warm Up', 'Work Block', 'Cool Down'];
+    // We include 'Other Content' here so anything mistyped is still visible to the coach
+    const phaseOrder = ['Warm Up', 'Work Block', 'Other Content', 'Cool Down'];
     const sortedPhases = Object.keys(phases).sort((a, b) => {
       const ia = phaseOrder.indexOf(a);
       const ib = phaseOrder.indexOf(b);
@@ -453,3 +467,4 @@ export default function ProgramLibrary() {
     </div>
   );
 }
+
