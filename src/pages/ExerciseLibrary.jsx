@@ -369,6 +369,31 @@ if (authLoading || !role) {
         )}
       </div>
 
+      {modalVideo && (
+        <div className="exlib-modal-overlay" onClick={closeModal}>
+          <div className={`exlib-modal-content ${modalVideo.url.toLowerCase().includes('.png') || modalVideo.url.toLowerCase().includes('.jpg') ? 'exlib-image-modal' : ''}`} onClick={e => e.stopPropagation()}>
+            <button className="exlib-close-btn" onClick={closeModal}><X size={28} /></button>
+            
+            {modalVideo.url.toLowerCase().includes('.png') || modalVideo.url.toLowerCase().includes('.jpg') ? (
+              <div className="exlib-image-viewer">
+                <img src={modalVideo.url} alt="Drill" />
+              </div>
+            ) : (
+              <div className="exlib-player-container">
+                {modalVideo.ytId ? (
+                  <iframe src={`https://www.youtube.com/embed/${modalVideo.ytId}?autoplay=1&rel=0`} allowFullScreen title="Exercise Video" />
+                ) : (
+                  <video controls autoPlay playsInline controlsList="nodownload"><source src={normalizeVideoUrl(modalVideo.url)} type="video/mp4" /></video>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* --- INSERTED ABOVE THIS LINE --- */}
+      {adding && (
+      
       {adding && (
         <AddExerciseModal
           coachEmail={coachEmail}
