@@ -12,23 +12,27 @@ function normalizeString(str) {
 
 function extractMediaUrl(rawVid) {
   if (!rawVid) return '';
-  let match = String(rawVid).match(/https:\/\/[^"'\s<>]+/i) || String(rawVid).match(/http:\/\/[^"'\s<>]+/i);
-  let cleanUrl = match ? match[0] : String(rawVid).trim();
-  
+  let match = String(rawVid).match(/https:\/\/[^"'\s<>]+/i);
+  if (match) {
+    let cleanUrl = match[0];
+    if (cleanUrl.includes('b-cdn.net') && !cleanUrl.toLowerCase().match(/\.(mp4|png|jpe?g|gif|webp|mp3|wav|m4a|webm|mov)$/i)) cleanUrl += '.mp4';
+    return cleanUrl;
+  }
   if (String(rawVid).includes('youtube') || String(rawVid).includes('youtu.be')) return String(rawVid);
-  
+  match = String(rawVid).match(/http:\/\/[^"'\s<>]+/i);
+  if (match) {
+    let cleanUrl = match[0];
+    if (cleanUrl.includes('b-cdn.net') && !cleanUrl.toLowerCase().match(/\.(mp4|png|jpe?g|gif|webp|mp3|wav|m4a|webm|mov)$/i)) cleanUrl += '.mp4';
+    return cleanUrl;
+  }
   if (String(rawVid).match(/^www\./) || String(rawVid).match(/\.com|\.net|\.be/)) {
-    if (!cleanUrl.startsWith('http')) cleanUrl = 'https://' + cleanUrl;
+    let url = 'https://' + String(rawVid).trim();
+    if (url.includes('b-cdn.net') && !url.toLowerCase().match(/\.(mp4|png|jpe?g|gif|webp|mp3|wav|m4a|webm|mov)$/i)) url += '.mp4';
+    return url;
   }
-
-  const lower = cleanUrl.toLowerCase();
-  const hasValidExt = lower.match(/\.(mp4|png|jpe?g|gif|webp|mp3|wav|m4a|webm|mov)$/i);
-  if (cleanUrl.includes('b-cdn.net') && !hasValidExt) {
-    cleanUrl += '.mp4';
-  }
-  
-  return cleanUrl;
+  return '';
 }
+
 
 function calculateTargetLoad(athletesData, athleteRowIndex, baseLift, multiplier, exerciseName, reps, intensity) {
   if (!intensity || isNaN(parseFloat(intensity)) || parseFloat(intensity) <= 0) return 'Auto';
