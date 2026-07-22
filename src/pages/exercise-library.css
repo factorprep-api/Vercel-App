@@ -70,7 +70,7 @@
 .exlib-modal-content.exlib-image-modal {
   width: 80vw !important;
   max-width: 80vw !important;
-  max-height: 95vh !important;
+  max-height: 92vh !important;
   height: auto !important;
   overflow: hidden !important;
   padding: 0 !important;
@@ -82,7 +82,7 @@
   align-items: center;
   justify-content: center;
   width: 100%;
-  height: 88vh;
+  height: 85vh;
   padding: 20px;
   box-sizing: border-box;
   overflow: hidden;
@@ -90,7 +90,7 @@
 
 .exlib-image-viewer img {
   max-width: 95%;
-  max-height: 92%;
+  max-height: 88%;
   object-fit: contain;
   border-radius: 8px;
 }
