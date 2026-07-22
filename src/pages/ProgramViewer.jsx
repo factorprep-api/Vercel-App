@@ -473,7 +473,7 @@ export default function ProgramViewer() {
               {section.title}
             </div>
 
-            <div className="pv-phase-body">
+            <div className="pv-phase-body" style={{ "--phase-color": section.color }}>
               {section.items.map(group => {
                 const hasMedia = group.videoUrl || group.ytId;
                 const isImage = group.videoUrl && (group.videoUrl.toLowerCase().includes('.png') || group.videoUrl.toLowerCase().includes('.jpg'));
