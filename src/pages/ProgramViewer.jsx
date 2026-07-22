@@ -267,12 +267,13 @@ export default function ProgramViewer() {
       'work block': 'Work Block', 'workblock': 'Work Block',
       'cool down': 'Cool Down', 'cooldown': 'Cool Down'
     };
-    const sections = [
-      { title: 'Warm Up', items: [], color: '#d3ca17' },
-      { title: 'Work Block', items: [], color: '#008ed3' },
+        const sections = [
+      { title: 'Warm Up', items: [], color: '#fd7e14' },      // Orange
+      { title: 'Work Block', items: [], color: '#22c55e' },   // Green
       { title: 'Other Content', items: [], color: '#888888' },
-      { title: 'Cool Down', items: [], color: '#dc3545' },
+      { title: 'Cool Down', items: [], color: '#ef4444' },    // Light Red
     ];
+    
     workoutGroups.forEach(g => {
       const phaseKey = String(g.phase || '').toLowerCase().trim();
       const normalizedPhaseTitle = phaseMap[phaseKey] || 'Other Content';
