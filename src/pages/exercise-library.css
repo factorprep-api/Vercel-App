@@ -72,7 +72,7 @@
   max-width: 80vw !important;
   max-height: 95vh !important;
   height: auto !important;
-  overflow: visible !important;
+  overflow: hidden !important;
   padding: 0 !important;
   background: #fff !important;
 }
