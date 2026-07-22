@@ -462,9 +462,12 @@ export default function ProgramViewer() {
           <p className="pv-placeholder">Select a program from above to view your workout.</p>
         )}
 
-        {phaseSections.map(section => (
+       {phaseSections.map(section => (
           <div key={section.title} className="pv-phase-card" style={{ borderTopColor: section.color }}>
-            <div className="pv-phase-header">{section.title}</div>
+            <div className="pv-phase-header" style={{ backgroundColor: section.color, color: '#fff' }}>
+              {section.title}
+            </div>
+
             <div className="pv-phase-body">
               {section.items.map(group => {
                 const hasMedia = group.videoUrl || group.ytId;
