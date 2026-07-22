@@ -257,14 +257,27 @@ export default function ProgramViewer() {
     return groups;
   }, [selectedProgram, programData, libraryData]);
 
-  const phaseSections = useMemo(() => {
-    return [
-      { title: 'Warm Up', items: workoutGroups.filter(g => g.phase === 'Warm Up'), color: '#d3ca17' },
-      { title: 'Work Block', items: workoutGroups.filter(g => g.phase === 'Work Block'), color: '#008ed3' },
-      { title: 'Other Content', items: workoutGroups.filter(g => g.phase !== 'Warm Up' && g.phase !== 'Work Block' && g.phase !== 'Cool Down'), color: '#888' },
-      { title: 'Cool Down', items: workoutGroups.filter(g => g.phase === 'Cool Down'), color: '#dc3545' },
-    ].filter(s => s.items.length > 0);
+   const phaseSections = useMemo(() => {
+    const phaseMap = {
+      'warm up': 'Warm Up', 'warmup': 'Warm Up',
+      'work block': 'Work Block', 'workblock': 'Work Block',
+      'cool down': 'Cool Down', 'cooldown': 'Cool Down'
+    };
+    const sections = [
+      { title: 'Warm Up', items: [], color: '#d3ca17' },
+      { title: 'Work Block', items: [], color: '#008ed3' },
+      { title: 'Other Content', items: [], color: '#888888' },
+      { title: 'Cool Down', items: [], color: '#dc3545' },
+    ];
+    workoutGroups.forEach(g => {
+      const phaseKey = String(g.phase || '').toLowerCase().trim();
+      const normalizedPhaseTitle = phaseMap[phaseKey] || 'Other Content';
+      const section = sections.find(s => s.title === normalizedPhaseTitle);
+      if (section) section.items.push(g);
+    });
+    return sections.filter(s => s.items.length > 0);
   }, [workoutGroups]);
+
 
   function handleProgramChange(progName) {
     setSelectedProgram(progName);
