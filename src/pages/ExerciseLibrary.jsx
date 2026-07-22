@@ -389,7 +389,7 @@ if (authLoading || !role) {
             
             {/* Split Image vs Video entirely so they don't break each other's layout */}
          {(modalVideo.url.toLowerCase().includes('.png') || modalVideo.url.toLowerCase().includes('.jpg')) ? (
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0', width: '85vw', height: '80vh', maxWidth: 'none' }}>
+              <div className="exlib-image-viewer">
                 <img src={modalVideo.url} alt="Drill" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
               </div>
 
