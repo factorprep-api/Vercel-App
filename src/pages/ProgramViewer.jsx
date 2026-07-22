@@ -433,7 +433,7 @@ export default function ProgramViewer() {
         </div>
 
         {(coachNote || programMediaUrl) && (
-          <div className="pv-coach-note" style={{ marginBottom: '20px' }}>
+          <div className="pv-coach-note" style={{ marginBottom: '20px', borderTopColor: '#6d4aff' }}>
             <div className="pv-coach-note-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h4><MessageSquare size={14} /> Coach's Notes</h4>
               {programMediaUrl && (
@@ -442,7 +442,7 @@ export default function ProgramViewer() {
                 </button>
               )}
             </div>
-            {coachNote && <p>{coachNote}</p>}
+            {coachNote && <p style={{ color: '#6d4aff', fontStyle: 'italic', marginLeft: '4px' }}>{coachNote}</p>}
             {programMediaUrl && showProgramMedia && (
               <div className="pv-media-player-wrap">
                 {getYouTubeId(programMediaUrl) ? (
@@ -483,7 +483,7 @@ export default function ProgramViewer() {
                     <div className="pv-exercise-header">
                       <h4 className="pv-exercise-name">{group.name}</h4>
                       {hasMedia && (
-                        <button className="pv-video-toggle" onClick={() => toggleMedia(group.id)}>
+                        <button className="pv-video-toggle" style={{ color: section.color, borderColor: section.color, background: `${section.color}0D` }} onClick={() => toggleMedia(group.id)}>
                           {isImage ? <ImageIcon size={12} /> : <Video size={12} />} Media
                         </button>
                       )}
@@ -516,7 +516,7 @@ export default function ProgramViewer() {
                                 {set.rest && <>Rest: <span style={{ color: '#555' }}>{set.rest}</span></>}
                               </div>
                             )}
-                            <div className="pv-target">Target: <span className="pv-target-value">{targetNum ? targetNum + 'kg' : target}</span></div>
+                            <div className="pv-target">Target: <span className="pv-target-value" style={{ color: section.color }}>{targetNum ? targetNum + 'kg' : target}</span></div>
                           </div>
                           <div className="pv-inputs">
                             <div className="pv-input-group">

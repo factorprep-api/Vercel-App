@@ -30,8 +30,8 @@
 
 .pv-exercise-name { font-size: 18px; color: #111; letter-spacing: 0.5px; }
 .pv-exercise-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 5px; }
-.pv-video-toggle { font-size: 11px; font-weight: bold; color: green; cursor: pointer; border: 1px solid green; padding: 4px 10px; border-radius: 12px; text-transform: uppercase; background: rgba(0,142,211,0.05); display: flex; align-items: center; gap: 4px; transition: 0.2s; }
-.pv-video-toggle:hover { background: green; color: #fff; }
+.pv-video-toggle { font-size: 11px; font-weight: bold; color: #22c55e; cursor: pointer; border: 1px solid #22c55e; padding: 4px 10px; border-radius: 12px; text-transform: uppercase; background: rgba(0,142,211,0.05); display: flex; align-items: center; gap: 4px; transition: 0.2s; }
+.pv-video-toggle:hover { background: #22c55e; color: #fff; }
 .pv-video-container { margin-top: 15px; background: #000; border-radius: 6px; overflow: hidden; min-height: 300px; position: relative; }
 .pv-video-container video, .pv-video-container iframe { width: 100%; height: auto; display: block; z-index: 10; position: relative; }
 .pv-video-container img { max-width: 100%; max-height: 50vh; display: block; margin: 10px auto; border-radius: 4px; }
@@ -294,4 +294,27 @@
   top: 0; left: 0; right: 0; bottom: 0;
   background: transparent;
   z-index: 5;
+}
+
+/* Coach's Notes styling */
+.pv-coach-note { 
+  margin-bottom: 20px; 
+  border-top: 3px solid #6d4aff; 
+  padding: 15px; 
+  background: #fafafa; 
+  border-radius: 6px;
+}
+
+.pv-coach-note h4 { 
+  color: #6d4aff; 
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pv-coach-note p { 
+  color: #6d4aff; 
+  margin: 0;
+  font-style: italic;
 }
