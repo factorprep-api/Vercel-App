@@ -114,12 +114,24 @@
   border: none;
 }
 
-/* Video modal sizing - shorter than image modal */
+/* Video modal sizing - tight fit, no extra space */
 .exlib-modal-content:not(.exlib-image-modal) {
-  max-height: 75vh !important;
+  max-height: 70vh !important;
   width: 90vw !important;
   max-width: 90vw !important;
-  padding: 20px !important;
+  padding: 0 !important;
+  background: #000 !important;
+  border-radius: 0 !important;
+}
+
+.exlib-modal-content:not(.exlib-image-modal) .exlib-player-container {
+  height: 60vh !important;
+  max-height: 60vh !important;
+}
+
+.exlib-modal-content:not(.exlib-image-modal) iframe,
+.exlib-modal-content:not(.exlib-image-modal) video {
+  border-radius: 0 !important;
 }
 
 .exlib-player-container iframe,
