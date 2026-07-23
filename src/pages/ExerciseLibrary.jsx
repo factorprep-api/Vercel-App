@@ -75,12 +75,11 @@ export default function ExerciseLibrary() {
   const { role, userEmail: coachEmail, isLoading: authLoading } = useAuth();
   const [adding, setAdding] = useState(false);
 
-
-// Debounce search effect - separate from mounting
-useEffect(() => {
-  const t = setTimeout(() => setDebouncedQuery(searchQuery), 300);
-  return () => clearTimeout(t);
-}, [searchQuery]);
+  // Debounce search effect
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(searchQuery), 300);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
 
   useEffect(() => {
     (async () => {
@@ -150,7 +149,7 @@ useEffect(() => {
     setEditing(exercise);
     setEditName(exercise.name);
     setEditVideo(exercise.rawUrl || '');
-    setEditMuscle(exercise.muscle || ''); // <--- Add this
+    setEditMuscle(exercise.muscle || '');
   }
 
   async function handleEditSave() {
@@ -159,13 +158,13 @@ useEffect(() => {
       const res = await updateExerciseInLibrary({
         name: editName.trim(),
         video: editVideo.trim(),
-        muscle: editMuscle.trim(), // <--- Add this
+        muscle: editMuscle.trim(),
         originalName: editing.name
       });
       if (res.status === 'Success') {
         showToast('Exercise updated!');
         setEditing(null);
-        await reloadLibrary(); // Will refresh automatically
+        await reloadLibrary();
       } else {
         showToast('Update failed', true);
       }
@@ -173,7 +172,6 @@ useEffect(() => {
       showToast('Network error', true);
     }
   }
-
 
   async function handleDelete(exercise) {
     if (!confirm(`Delete "${exercise.name}"? This cannot be undone.`)) return;
@@ -198,22 +196,17 @@ useEffect(() => {
     return [...cats].sort();
   }, [fullLibrary]);
 
-    const filteredForView = useMemo(() => {
-    // 1. Base filter: Only show global drills OR drills owned by THIS coach
+  const filteredForView = useMemo(() => {
     const allowedLibrary = fullLibrary.filter(ex => {
-      if (!ex.ownerEmail) return true; // Global Master Library (no owner)
-      if (!coachEmail) return false; // Not logged in = hide private drills
+      if (!ex.ownerEmail) return true;
+      if (!coachEmail) return false;
       return ex.ownerEmail.toLowerCase() === coachEmail.toLowerCase();
     });
-
-    // 2. Further filter if they clicked the "My Exercises" tab
     if (viewFilter === 'my') {
       return allowedLibrary.filter(ex => isCoachOwned(ex));
     }
-    
     return allowedLibrary;
   }, [fullLibrary, viewFilter, coachEmail]);
-
 
   const groupedLibrary = useMemo(() => buildGrouped(filteredForView), [filteredForView]);
 
@@ -243,39 +236,26 @@ useEffect(() => {
     ...(role === 'coach' ? [{ id: 'all', label: 'All Exercises' }, { id: 'my', label: 'My Exercises' }] : [])
   ];
 
-// Add these THREE guard clauses BEFORE the return statement:
-
-if (loading) {
-  return (
-    <div className="exlib-container">
-      <div className="exlib-body">
-        <p className="exlib-placeholder">Loading exercises...</p>
+  if (loading) {
+    return (
+      <div className="exlib-container">
+        <div className="exlib-body">
+          <p className="exlib-placeholder">Loading exercises...</p>
+        </div>
       </div>
-    </div>
-  );
-}
+    );
+  }
 
-if (authLoading || !role)  {
-  return (
-    <div className="exlib-container">
-      <div className="exlib-body">
-        <p className="exlib-placeholder">Loading your role...</p>
+  if (authLoading || !role) {
+    return (
+      <div className="exlib-container">
+        <div className="exlib-body">
+          <p className="exlib-placeholder">Loading your role...</p>
+        </div>
       </div>
-    </div>
-  );
-}
+    );
+  }
 
-if (authLoading || !role) {
-  return (
-    <div className="exlib-container">
-      <div className="exlib-body">
-        <p className="exlib-placeholder">Loading your role...</p>
-      </div>
-    </div>
-  );
-}
-
-// NOW the normal return statement continues:  
   return (
     <div className="exlib-container">
       <div className="exlib-body">
@@ -311,7 +291,6 @@ if (authLoading || !role) {
           />
         </div>
 
-        {loading && <p className="exlib-placeholder">Downloading Master Library...</p>}
         {error && <p className="exlib-error-text">Failed to load data. Please refresh.</p>}
         {!loading && !error && pageGroups.length === 0 && <p className="exlib-placeholder">No exercises found.</p>}
 
@@ -319,11 +298,13 @@ if (authLoading || !role) {
           <div key={group.cat}>
             <h3 className="exlib-category-title">{group.cat}</h3>
             <div className="exlib-video-row">
-                           {group.items.map((ex, idx) => {
+              {group.items.map((ex, idx) => {
                 const ytId = getYouTubeId(ex.rawUrl);
                 const owned = isCoachOwned(ex);
-                const isImg = ex.rawUrl.toLowerCase().includes('.png') || ex.rawUrl.toLowerCase().includes('.jpg');
-                
+                const isImg =
+                  ex.rawUrl.toLowerCase().includes('.png') ||
+                  ex.rawUrl.toLowerCase().includes('.jpg');
+
                 return (
                   <div key={`${group.cat}-${idx}`} className="exlib-video-card" onClick={() => openModal(ex.rawUrl)} title={ex.name}>
                     <div className="exlib-thumbnail" style={{ backgroundColor: isImg ? '#fff' : '' }}>
@@ -334,7 +315,7 @@ if (authLoading || !role) {
                       ) : (
                         <video className="exlib-vid-thumb-video" src={`${normalizeVideoUrl(ex.rawUrl)}#t=0.001`} preload="metadata" muted playsInline />
                       )}
-                      
+
                       {!isImg && <Play className="exlib-play-icon" size={32} fill="currentColor" stroke="none" />}
 
                       {owned && (
@@ -382,41 +363,65 @@ if (authLoading || !role) {
         />
       )}
 
-      {modalVideo && (
-        <div className="exlib-modal-overlay" onClick={closeModal}>
-          <div className={`exlib-modal-content ${(modalVideo.url.toLowerCase().includes('.png') || modalVideo.url.toLowerCase().includes('.jpg')) ? 'exlib-image-modal' : ''}`} onClick={e => e.stopPropagation()}>
-            <button className="exlib-close-btn" onClick={closeModal}><X size={28} /></button>
-            
-            {/* Split Image vs Video entirely so they don't break each other's layout */}
-         {(modalVideo.url.toLowerCase().includes('.png') || modalVideo.url.toLowerCase().includes('.jpg')) ? (
-              <div className="exlib-image-viewer">
-                <img src={modalVideo.url} alt="Drill" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
-              </div>
+      {/* ── VIDEO / IMAGE MODAL - FIXED ── */}
+      {modalVideo && (() => {
+        const isImage =
+          modalVideo.url.toLowerCase().includes('.png') ||
+          modalVideo.url.toLowerCase().includes('.jpg') ||
+          modalVideo.url.toLowerCase().includes('.jpeg') ||
+          modalVideo.url.toLowerCase().includes('.webp');
 
-            ) : (
-              <div className="exlib-player-container">
-                {modalVideo.ytId ? (
-                  <iframe src={`https://www.youtube.com/embed/${modalVideo.ytId}?autoplay=1&rel=0`} allowFullScreen title="Exercise Video" />
-                ) : (
-                  <video controls autoPlay playsInline controlsList="nodownload"><source src={normalizeVideoUrl(modalVideo.url)} type="video/mp4" /></video>
-                )}
-              </div>
-            )}
+        return (
+          <div className="exlib-modal-overlay" onClick={closeModal}>
+            <div
+               className={`exlib-modal-content ${isImage ? 'exlib-image-modal' : 'exlib-video-modal'}`}
+              onClick={e => e.stopPropagation()}
+            >
+              <button className="exlib-close-btn" onClick={closeModal}>
+                <X size={22} />
+              </button>
+
+              {isImage ? (
+                <div className="exlib-image-viewer">
+                  <img src={modalVideo.url} alt="Drill" />
+                </div>
+              ) : (
+                <div className="exlib-player-container">
+                  {modalVideo.ytId ? (
+                    <iframe
+                      src={`https://www.youtube.com/embed/${modalVideo.ytId}?autoplay=1&rel=0`}
+                      allowFullScreen
+                      allow="autoplay; encrypted-media"
+                      title="Exercise Video"
+                    />
+                  ) : (
+                    <video
+                      controls
+                      autoPlay
+                      playsInline
+                      controlsList="nodownload"
+                    >
+                      <source src={normalizeVideoUrl(modalVideo.url)} type="video/mp4" />
+                    </video>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {editing && (
         <div className="exlib-modal-overlay" onClick={() => setEditing(null)}>
           <div className="exlib-edit-modal" onClick={e => e.stopPropagation()}>
             <button className="exlib-close-btn" onClick={() => setEditing(null)}><X size={24} /></button>
             <h3 className="exlib-edit-title">Edit Exercise</h3>
-            
+
             <div className="exlib-edit-field">
               <label className="exlib-edit-label">Exercise Name:</label>
               <input className="exlib-edit-input" value={editName} onChange={e => setEditName(e.target.value)} />
             </div>
-            
+
             <div className="exlib-edit-field">
               <label className="exlib-edit-label">Category / Muscle:</label>
               <input className="exlib-edit-input" value={editMuscle} onChange={e => setEditMuscle(e.target.value)} />
