@@ -384,10 +384,7 @@ if (authLoading || !role) {
 
       {modalVideo && (
         <div className="exlib-modal-overlay" onClick={closeModal}>
-          <div className="exlib-modal-content" onClick={e => e.stopPropagation()} style={{ background: 
-          (modalVideo.url.toLowerCase().includes('.png') || modalVideo.url.toLowerCase().includes('.jpg')) ? '#fff' : '', maxHeight: 
-          (modalVideo.url.toLowerCase().includes('.png') ||                                                                               
-          modalVideo.url.toLowerCase().includes('.jpg')) ? '95vh' : '90vh'    }}>
+          <div className={`exlib-modal-content ${(modalVideo.url.toLowerCase().includes('.png') || modalVideo.url.toLowerCase().includes('.jpg')) ? 'exlib-image-modal' : ''}`} onClick={e => e.stopPropagation()}>
             <button className="exlib-close-btn" onClick={closeModal}><X size={28} /></button>
             
             {/* Split Image vs Video entirely so they don't break each other's layout */}
