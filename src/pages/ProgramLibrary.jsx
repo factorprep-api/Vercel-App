@@ -1,484 +1,436 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Play, ChevronDown, ChevronUp, Video, Image as ImageIcon, Save, CheckCircle, MessageSquare, UserPlus, Globe } from 'lucide-react';
-import { getYouTubeId } from '../utils/helpers';
-import { useAuth } from '../hooks/useAuth';
-import { fetchAllData, getAthleteByEmail, saveSession, getMediaType } from '../api';
-import HelpButton from '../components/HelpButton';
-import './program-viewer.css';
+import { Search, Trash2, UserPlus, CheckCircle, X, Layers, Dumbbell, FolderClosed, Lock, Globe, Eye } from 'lucide-react';
+import { supabase } from '../supabase';
+import { fetchAllData, deleteProgram, updateAssignment, assignProgramBulk } from '../api';
+import './program-library.css';
 
-function normalizeString(str) {
-  return String(str).toLowerCase().replace(/\./g, ' ').replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim();
-}
-
-function extractMediaUrl(rawVid) {
-  if (!rawVid) return '';
-  let match = String(rawVid).match(/https:\/\/[^"'\s<>]+/i) || String(rawVid).match(/http:\/\/[^"'\s<>]+/i);
-  let cleanUrl = match ? match[0] : String(rawVid).trim();
-  
-  if (String(rawVid).includes('youtube') || String(rawVid).includes('youtu.be')) return String(rawVid);
-  
-  if (String(rawVid).match(/^www\./) || String(rawVid).match(/\.com|\.net|\.be/)) {
-    if (!cleanUrl.startsWith('http')) cleanUrl = 'https://' + cleanUrl;
-  }
-
-  const lower = cleanUrl.toLowerCase();
-  const hasValidExt = lower.match(/\.(mp4|png|jpe?g|gif|webp|mp3|wav|m4a|webm|mov)$/i);
-  if (cleanUrl.includes('b-cdn.net') && !hasValidExt) {
-    cleanUrl += '.mp4';
-  }
-  
-  return cleanUrl;
-}
-
-function calculateTargetLoad(athletesData, athleteRowIndex, baseLift, multiplier, exerciseName, reps, intensity) {
-  if (!intensity || isNaN(parseFloat(intensity)) || parseFloat(intensity) <= 0) return 'Auto';
-  if (!baseLift || baseLift.toLowerCase() === 'none') return 'Auto';
-  const headers = athletesData[0] || [];
-  let colIndex = -1;
-  for (let i = 0; i < headers.length; i++) {
-    if (normalizeString(headers[i]) === normalizeString(baseLift)) { colIndex = i; break; }
-  }
-  if (colIndex === -1) return 'Missing ' + baseLift;
-  if (athleteRowIndex === null || athleteRowIndex >= athletesData.length) return 'Select athlete';
-  const athleteRowData = athletesData[athleteRowIndex] || [];
-  const athlete1RM = parseFloat(athleteRowData[colIndex]);
-  if (isNaN(athlete1RM) || athlete1RM <= 0) return 'No Max Logged';
-  const safeMultiplier = parseFloat(multiplier) || 1.0;
-  const safeReps = parseFloat(reps) || 1;
-  const modified1RM = athlete1RM * safeMultiplier;
-  const target = modified1RM * (1.0278 - (0.0278 * safeReps)) * (parseFloat(intensity) / 100);
-  if (isNaN(target)) return 'Auto';
-  return target.toFixed(1) + ' kg';
-}
-
-function findAthleteRowByEmail(athletesData, email) {
-  if (!athletesData.length || !email) return null;
-  const headers = athletesData[0] || [];
-  let emailCol = -1;
-  for (let i = 0; i < headers.length; i++) {
-    const h = String(headers[i] || '').trim().toLowerCase();
-    if (h === 'email' || h === 'e-mail') { emailCol = i; break; }
-  }
-  if (emailCol === -1) return null;
-  for (let i = 1; i < athletesData.length; i++) {
-    if (String((athletesData[i] || [])[emailCol] || '').trim().toLowerCase() === email.toLowerCase()) return i;
-  }
-  return null;
-}
-
-export default function ProgramViewer() {
+export default function ProgramLibrary() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [dataLoaded, setDataLoaded] = useState(false);
-  const [athletesData, setAthletesData] = useState([]);
   const [programData, setProgramData] = useState([]);
-  const [libraryData, setLibraryData] = useState([]);
-  const [athleteRowIndex, setAthleteRowIndex] = useState(null);
-  const [athleteName, setAthleteName] = useState('');
-  const [selectedProgram, setSelectedProgram] = useState('');
-  const [expandedVideos, setExpandedVideos] = useState(new Set());
-  const [inputValues, setInputValues] = useState({});
-  const [saving, setSaving] = useState(false);
-  const [saveSuccess, setSaveSuccess] = useState(false);
-  const [showProgramMedia, setShowProgramMedia] = useState(false);
+  const [athletesData, setAthletesData] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const { userEmail, isLoading: authLoading } = useAuth();
+  const [expandedProgram, setExpandedProgram] = useState(null);
+  const [assignModalOpen, setAssignModalOpen] = useState(false);
+  const [assignAthletes, setAssignAthletes] = useState(new Set());
+  const [assignPrograms, setAssignPrograms] = useState([]);
+  const [athleteSearch, setAthleteSearch] = useState('');
+  const [toast, setToast] = useState(null);
+  const [deleting, setDeleting] = useState(null);
+  const [coachEmail, setCoachEmail] = useState('');
+  const [privacyFilter, setPrivacyFilter] = useState('all');
+  const [bulkAssigning, setBulkAssigning] = useState(false);
 
-  useEffect(() => { if (userEmail) loadData(true); }, [userEmail]);
+  useEffect(() => {
+    loadCoachEmail();
+    loadData();
+  }, []);
 
-  async function loadData(useCache = false) {
+  async function loadCoachEmail() {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) { setCoachEmail(user.email); }
+  }
+
+  async function loadData() {
     try {
-      if (!userEmail) { setError('Not authenticated'); setLoading(false); return; }
-      const cached = localStorage.getItem('fp_program_data');
-      if (useCache && cached) {
-        try {
-          const parsed = JSON.parse(cached);
-          setAthletesData(parsed.athletes); setProgramData(parsed.programs); setLibraryData(parsed.library);
-          setDataLoaded(true); setLoading(false);
-          const athleteCached = localStorage.getItem('fp_athlete_data');
-          if (athleteCached) {
-            try {
-              const pAthlete = JSON.parse(athleteCached);
-              if (pAthlete.name) setAthleteName(pAthlete.name);
-              if (pAthlete.rowIndex !== undefined) setAthleteRowIndex(pAthlete.rowIndex);
-            } catch {}
-          }
-          refreshData();
-          return;
-        } catch {}
-      }
       const allData = await fetchAllData();
       if (allData.error) { setError(allData.error); setLoading(false); return; }
-      setAthletesData(allData.athletes); setProgramData(allData.programs); setLibraryData(allData.library);
-      localStorage.setItem('fp_program_data', JSON.stringify({ athletes: allData.athletes, programs: allData.programs, library: allData.library, cachedAt: new Date().toISOString() }));
-      setDataLoaded(true); setLoading(false);
-      const athleteResult = await getAthleteByEmail(userEmail);
-      let rowIndex = null;
-      if (athleteResult.status === 'Success' && athleteResult.rowIndex) { rowIndex = parseInt(athleteResult.rowIndex); } else { rowIndex = findAthleteRowByEmail(allData.athletes, userEmail); }
-      setAthleteRowIndex(rowIndex);
-      let name = '';
-      if (rowIndex !== null && allData.athletes[rowIndex]) { name = String(allData.athletes[rowIndex][0] || '').trim(); } else { name = athleteResult.athleteName || athleteResult.name || userEmail.split('@')[0]; }
-      setAthleteName(name);
-    } catch (err) { setError('Failed to load data. Please refresh.'); setLoading(false); }
+      setProgramData(allData.programs);
+      setAthletesData(allData.athletes);
+      setLoading(false);
+    } catch (err) {
+      setError('Failed to load programs. Please refresh.');
+      setLoading(false);
+    }
   }
 
-  async function refreshData() {
-    try {
-      const allData = await fetchAllData();
-      if (!allData.error) {
-        setAthletesData(allData.athletes); setProgramData(allData.programs); setLibraryData(allData.library);
-        localStorage.setItem('fp_program_data', JSON.stringify({ athletes: allData.athletes, programs: allData.programs, library: allData.library, cachedAt: new Date().toISOString() }));
-      }
-    } catch {}
-  }
-
-  const assignedPrograms = useMemo(() => {
-    if (athleteRowIndex === null || !athletesData.length) return [];
+  const athleteNames = useMemo(() => {
+    if (!athletesData.length) return [];
     const headers = athletesData[0] || [];
-    let assignColIndex = -1;
-    for (let c = 0; c < headers.length; c++) { if (String(headers[c] || '').trim().toLowerCase() === 'program assignment') { assignColIndex = c; break; } }
-    if (assignColIndex === -1) return [];
-    const assignedStr = String((athletesData[athleteRowIndex] || [])[assignColIndex] || '').trim();
-    if (!assignedStr) return [];
-    return assignedStr.split(',').map(s => s.trim()).filter(Boolean);
-  }, [athletesData, athleteRowIndex]);
+    let roleCol = -1;
+    for (let i = 0; i < headers.length; i++) {
+      if (String(headers[i] || '').trim().toLowerCase() === 'role') { roleCol = i; break; }
+    }
+    return athletesData.slice(1)
+      .filter(row => {
+        if (roleCol !== -1) {
+          const role = String(row[roleCol] || '').trim().toLowerCase();
+          return role !== 'coach';
+        }
+        return true;
+      })
+      .map(row => String(row[0] || '').trim())
+      .filter(Boolean)
+      .sort();
+  }, [athletesData]);
 
-  const publicPrograms = useMemo(() => {
+  const athleteOptions = useMemo(() => {
+    if (!athletesData.length) return [];
+    const headers = athletesData[0] || [];
+    let roleCol = -1;
+    for (let i = 0; i < headers.length; i++) {
+      if (String(headers[i] || '').trim().toLowerCase() === 'role') { roleCol = i; break; }
+    }
+    return athletesData.slice(1)
+      .map((row, i) => ({ row: i + 1, name: String(row[0] || '').trim(), rawData: row }))
+      .filter(a => {
+        if (!a.name) return false;
+        if (roleCol !== -1) {
+          const role = String(a.rawData[roleCol] || '').trim().toLowerCase();
+          return role !== 'coach';
+        }
+        return true;
+      })
+      .map(a => ({ row: a.row, name: a.name }));
+  }, [athletesData]);
+
+  const filteredAthletes = useMemo(() => {
+    if (!athleteSearch.trim()) return athleteOptions;
+    const q = athleteSearch.toLowerCase();
+    return athleteOptions.filter(a => a.name.toLowerCase().includes(q));
+  }, [athleteOptions, athleteSearch]);
+
+  const ownedProgramNames = useMemo(() => {
+    if (!programData.length) return [];
+    const names = programData.slice(1).filter(row => {
+      const owner = String(row[11] || '').trim();
+      return owner === coachEmail;
+    }).map(r => String(r[0] || '').trim()).filter(Boolean);
+    return [...new Set(names)].sort();
+  }, [programData, coachEmail]);
+
+  const programs = useMemo(() => {
     if (!programData.length) return [];
     const map = {};
     programData.slice(1).forEach(row => {
       const name = String(row[0] || '').trim();
-      const privacy = String(row[10] || '').trim().toUpperCase();
       if (!name) return;
-      if (privacy === 'PUBLIC' && !map[name]) { map[name] = { name, exercises: new Set(), phases: new Set() }; }
-      if (map[name]) {
-        const ex = String(row[3] || '').trim();
-        if (ex) map[name].exercises.add(ex);
-        map[name].phases.add(String(row[2] || 'Work Block').trim());
+      if (!map[name]) {
+        map[name] = { name, categories: new Set(), exercises: new Set(), phases: new Set(), rows: [], privacyLevel: '', ownerEmail: '' };
       }
+      const cat = String(row[1] || '').trim();
+      const phase = String(row[2] || '').trim() || 'Work Block';
+      const ex = String(row[3] || '').trim();
+      if (cat) map[name].categories.add(cat);
+      if (ex) map[name].exercises.add(ex);
+      map[name].phases.add(phase);
+      map[name].rows.push(row);
+      const privacy = String(row[10] || '').trim().toUpperCase();
+      const owner = String(row[11] || '').trim();
+      if (privacy && !map[name].privacyLevel) map[name].privacyLevel = privacy;
+      if (owner && !map[name].ownerEmail) map[name].ownerEmail = owner;
     });
     return Object.values(map).sort((a, b) => a.name.localeCompare(b.name));
   }, [programData]);
 
-  const coachNote = useMemo(() => {
-    if (!selectedProgram || !programData.length) return '';
-    const rows = programData.slice(1).filter(r => String(r[0] || '').trim() === selectedProgram);
-    if (!rows.length) return '';
-    const note = String(rows[0][9] || '').trim();
-    return note && note.toLowerCase() !== 'undefined' ? note : '';
-  }, [selectedProgram, programData]);
+  const filteredPrograms = useMemo(() => {
+    let result = programs;
 
-  const programMediaUrl = useMemo(() => {
-    if (!selectedProgram || !programData.length) return '';
-    const rows = programData.slice(1).filter(r => String(r[0] || '').trim() === selectedProgram);
-    if (!rows.length) return '';
-    const url = String(rows[0][12] || '').trim();
-    return url && url.toLowerCase() !== 'undefined' ? url : '';
-  }, [selectedProgram, programData]);
-
-  const workoutGroups = useMemo(() => {
-    if (!selectedProgram || !programData.length) return [];
-    let rows = programData.slice(1).filter(r => String(r[0] || '').trim() === selectedProgram);
-    if (!rows.length) return [];
-    const groups = [];
-    let currentGroup = null;
-    
-    rows.forEach((row, index) => {
-      const phase = String(row[2] || '').trim() || 'Work Block';
-      const name = String(row[3] || '').trim() || 'Unknown Exercise';
-      const numSets = parseInt(String(row[4] || '').trim(), 10) || 1; 
-      const reps = String(row[5] || '').trim() || '1';
-      const intensity = String(row[6] || '').trim();
-      const tempo = String(row[7] || '').trim();
-      const rest = String(row[8] || '').trim();
-      
-      if (!currentGroup || currentGroup.name !== name || currentGroup.phase !== phase) {
-        if (currentGroup) groups.push(currentGroup);
-        currentGroup = { id: 'ex_' + index, phase, name, details: [], baseLift: '', multiplier: 1.0, videoUrl: '', ytId: null };
-      }
-      
-      for (let s = 0; s < numSets; s++) {
-        currentGroup.details.push({ sets: '1', reps, intensity, tempo, rest });
-      }
-    });
-
-    if (currentGroup) groups.push(currentGroup);
-    
-    const libMap = new Map();
-    for (let k = 1; k < libraryData.length; k++) {
-      const libRow = libraryData[k];
-      if (!libRow) continue;
-      const libName = normalizeString(libRow[0]);
-      if (libName && !libMap.has(libName)) { libMap.set(libName, libRow); }
+    if (privacyFilter === 'private') {
+      result = result.filter(p => p.privacyLevel === 'PRIVATE' && p.ownerEmail === coachEmail);
+    } else if (privacyFilter === 'public') {
+      result = result.filter(p => p.privacyLevel === 'PUBLIC');
+    } else {
+      result = result.filter(p => p.ownerEmail === coachEmail || p.privacyLevel === 'PUBLIC' || !p.privacyLevel);
     }
-    
-    groups.forEach(group => {
-      const normalizedName = normalizeString(group.name);
-      const libRow = libMap.get(normalizedName);
-      if (libRow) {
-        group.baseLift = libRow.length > 3 ? String(libRow[3] || '').trim() : '';
-        group.multiplier = (libRow.length > 4 && String(libRow[4] || '').trim() !== '') ? parseFloat(libRow[4]) : 1.0;
-        const rawVid = String(libRow[1] || '').trim();
-        group.videoUrl = extractMediaUrl(rawVid); 
-        group.ytId = getYouTubeId(rawVid);
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(p => p.name.toLowerCase().includes(q));
+    }
+
+    return result;
+  }, [programs, privacyFilter, coachEmail, searchQuery]);
+
+  function toggleExpand(name) {
+    setExpandedProgram(expandedProgram === name ? null : name);
+  }
+
+  function showToast(message, isError = false) {
+    setToast({ message, isError });
+    setTimeout(() => setToast(null), 3000);
+  }
+
+  async function handleDelete(programName) {
+    if (!confirm(`Delete "${programName}"? This removes all rows. This cannot be undone.`)) return;
+    setDeleting(programName);
+    try {
+      const res = await deleteProgram(programName);
+      if (res.status === 'Success') {
+        showToast(`"${programName}" deleted (${res.deletedRows} rows)`);
+        await loadData();
+      } else {
+        showToast('Delete failed', true);
       }
-    });
-    return groups;
-  }, [selectedProgram, programData, libraryData]);
-
-  const phaseSections = useMemo(() => {
-    const phaseMap = {
-      'warm up': 'Warm Up', 'warmup': 'Warm Up',
-      'work block': 'Work Block', 'workblock': 'Work Block',
-      'cool down': 'Cool Down', 'cooldown': 'Cool Down'
-    };
-    const sections = [
-      { title: 'Warm Up', items: [], color: '#fd7e14' },
-      { title: 'Work Block', items: [], color: '#22c55e' },
-      { title: 'Other Content', items: [], color: '#888888' },
-      { title: 'Cool Down', items: [], color: '#ff6b6b' },
-    ];
-    workoutGroups.forEach(g => {
-      const phaseKey = String(g.phase || '').toLowerCase().trim();
-      const normalizedPhaseTitle = phaseMap[phaseKey] || 'Other Content';
-      const section = sections.find(s => s.title === normalizedPhaseTitle);
-      if (section) section.items.push(g);
-    });
-    return sections.filter(s => s.items.length > 0);
-  }, [workoutGroups]);
-
-  function handleProgramChange(progName) { setSelectedProgram(progName); setInputValues({}); setSaveSuccess(false); setShowProgramMedia(false); }
-
-  function toggleMedia(groupId) {
-    setExpandedVideos(prev => { const next = new Set(prev); if (next.has(groupId)) next.delete(groupId); else next.add(groupId); return next; });
+    } catch (err) {
+      showToast('Network error', true);
+    }
+    setDeleting(null);
   }
 
-  function handleInputChange(groupId, detailIdx, field, value) {
-    const key = groupId + '_' + detailIdx;
-    setInputValues(prev => ({ ...prev, [key]: { ...prev[key], [field]: value } }));
+  function toggleAthlete(rowNum) {
+    setAssignAthletes(prev => {
+      const next = new Set(prev);
+      if (next.has(rowNum)) next.delete(rowNum); else next.add(rowNum);
+      return next;
+    });
   }
 
-  async function handleSaveSession() {
-    if (!workoutGroups.length) return;
-    setSaving(true);
-    const loggedProgStr = selectedProgram;
-    const setsToLog = [];
-    const maxUpdates = {};
-    workoutGroups.forEach(group => {
-      const isCore = group.baseLift && group.baseLift.toLowerCase() !== 'none' && group.name.toLowerCase() === group.baseLift.toLowerCase();
-      group.details.forEach((set, idx) => {
-        const key = group.id + '_' + idx;
-        const input = inputValues[key] || {};
-        const target = calculateTargetLoad(athletesData, athleteRowIndex, group.baseLift, group.multiplier, group.name, set.reps, set.intensity);
-        const targetNum = target.replace(' kg', '');
-        const wt = input.wt || (isNaN(parseFloat(targetNum)) ? '' : targetNum);
-        const rp = input.reps || set.reps;
-        if (!wt || wt === '--' || !rp) return;
-        const wtNum = parseFloat(wt);
-        const rpNum = parseFloat(rp);
-        if (wtNum > 0 && rpNum > 0) {
-          setsToLog.push({ exercise: group.name, weight: wtNum, reps: rpNum });
-          if (isCore && group.baseLift && group.baseLift !== 'none') {
-            const e1rm = Math.round(wtNum / (1.0278 - (0.0278 * rpNum)));
-            if (!maxUpdates[group.baseLift] || e1rm > maxUpdates[group.baseLift]) maxUpdates[group.baseLift] = e1rm;
-          }
-        }
+  function selectAllFiltered() {
+    setAssignAthletes(prev => {
+      const next = new Set(prev);
+      filteredAthletes.forEach(a => next.add(a.row));
+      return next;
+    });
+  }
+
+  function clearAthleteSelection() {
+    setAssignAthletes(new Set());
+  }
+
+  async function handleBulkAssign() {
+    if (assignAthletes.size === 0) { showToast('Select at least one athlete.', true); return; }
+    if (assignPrograms.length === 0) { showToast('Select at least one program.', true); return; }
+    const headers = athletesData[0] || [];
+    let assignCol = -1;
+    for (let c = 0; c < headers.length; c++) {
+      if (String(headers[c] || '').trim().toLowerCase() === 'program assignment') { assignCol = c; break; }
+    }
+    if (assignCol === -1) { showToast('Program Assignment column not found.', true); return; }
+    const rows = Array.from(assignAthletes);
+    setBulkAssigning(true);
+    try {
+      const res = await assignProgramBulk(rows, assignPrograms.join(', '), assignCol);
+      if (res.status === 'Success') {
+        showToast(`Assigned to ${res.rowsUpdated} athlete(s)`);
+        setAssignModalOpen(false);
+        setAssignAthletes(new Set());
+        setAssignPrograms([]);
+      } else {
+        showToast('Assignment failed', true);
+      }
+    } catch (err) {
+      showToast('Network error', true);
+    }
+    setBulkAssigning(false);
+  }
+
+  function renderPrivacyBadge(program) {
+    const level = program.privacyLevel || 'PRIVATE';
+    if (level === 'PUBLIC') {
+      return <span className="pl-privacy-badge pl-privacy-public"><Globe size={10} /> Public</span>;
+    } else if (level === 'ASSIGNED') {
+      return <span className="pl-privacy-badge pl-privacy-assigned"><UserPlus size={10} /> Assigned</span>;
+    } else {
+      return <span className="pl-privacy-badge pl-privacy-private"><Lock size={10} /> Private</span>;
+    }
+  }
+
+  function renderProgramPreview(program) {
+    const phases = {};
+    program.rows.forEach(row => {
+      const phase = String(row[2] || '').trim() || 'Work Block';
+      const name = String(row[3] || '').trim() || 'Unknown';
+      if (!phases[phase]) phases[phase] = {};
+      if (!phases[phase][name]) phases[phase][name] = [];
+      phases[phase][name].push({
+        sets: String(row[4] || '').trim() || '1',
+        reps: String(row[5] || '').trim() || '1',
+        intensity: String(row[6] || '').trim(),
+        tempo: String(row[7] || '').trim(),
+        rest: String(row[8] || '').trim()
       });
     });
-    if (!setsToLog.length && !Object.keys(maxUpdates).length) { alert('Nothing to save.'); setSaving(false); return; }
-    const payload = { athlete: athleteName, prog: loggedProgStr, sets: setsToLog, maxUpdates };
-    try {
-      const res = await saveSession(payload);
-      if (res.status === 'Success') { setSaveSuccess(true); } else { alert('Save failed. Please try again.'); }
-    } catch (err) { alert('Network error. Please try again.'); }
-    setSaving(false);
-  }
 
-  if (loading) {
-    return (
-      <div className="pv-container">
-        <div className="pv-body">
-          <h2 style={{ fontSize: '24px', color: '#008ed3', marginBottom: '16px', fontWeight: '700' }}>Today's Workout</h2>
-          <p className="pv-placeholder">Loading program data...</p>
-        </div>
-        <HelpButton pageName="Program View" position="bottom-right" />
-      </div>
-    );
-  }
+    const phaseOrder = ['Warm Up', 'Work Block', 'Cool Down'];
+    const sortedPhases = Object.keys(phases).sort((a, b) => {
+      const ia = phaseOrder.indexOf(a);
+      const ib = phaseOrder.indexOf(b);
+      if (ia !== -1 && ib !== -1) return ia - ib;
+      if (ia !== -1) return -1;
+      if (ib !== -1) return 1;
+      return a.localeCompare(b);
+    });
 
-  if (error) {
-    return (
-      <div className="pv-container">
-        <div className="pv-body">
-          <h2 style={{ fontSize: '24px', color: '#008ed3', marginBottom: '16px', fontWeight: '700' }}>Today's Workout</h2>
-          <p className="pv-error">{error}</p>
-        </div>
-        <HelpButton pageName="Program View" position="bottom-right" />
-      </div>
-    );
-  }
-
-  return (
-    <div className="pv-container">
-      <div className="pv-body">
-        <h2 style={{ fontSize: '24px', color: '#008ed3', marginBottom: '16px', fontWeight: '700' }}>Today's Workout</h2>
-        {athleteName && <p style={{ color: '#666', fontSize: '15px', marginBottom: '20px' }}>Welcome, {athleteName}</p>}
-
-        <div className="pv-search-box">
-          <input type="text" placeholder="Search programs..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
-        </div>
-
-        <div className="pv-panels">
-          <div className="pv-panel">
-            <div className="pv-panel-header">
-              <h3 className="pv-panel-title" style={{ color: '#008ed3' }}><UserPlus size={20} style={{ verticalAlign: 'middle', marginRight: 8 }} /> My Programs</h3>
-              <span className="pv-count-badge">{assignedPrograms.length}</span>
+    return sortedPhases.map(phase => (
+      <div key={phase} className="pl-phase-section">
+        <div className="pl-phase-title">{phase}</div>
+        {Object.entries(phases[phase]).map(([exName, sets]) => (
+          <div key={exName} className="pl-exercise-row">
+            <div>
+              <div className="pl-ex-name">{exName}</div>
+              {sets.map((s, i) => (
+                <div key={i} className="pl-ex-detail">
+                  Set {i + 1}: {s.reps} reps{s.intensity ? ` @ ${s.intensity}%` : ''}
+                  {s.tempo ? ` | Tempo: ${s.tempo}` : ''}
+                  {s.rest ? ` | Rest: ${s.rest}` : ''}
+                </div>
+              ))}
             </div>
-            {assignedPrograms.length === 0 ? (
-              <p className="pv-panel-empty">No programs assigned yet.</p>
-            ) : (
-              <div className="pv-program-buttons">
-                {assignedPrograms.filter(prog => prog.toLowerCase().includes(searchQuery.toLowerCase())).map(prog => (
-                  <button key={prog} className={`pv-program-btn ${selectedProgram === prog ? 'active' : ''}`} onClick={() => handleProgramChange(prog)}>
-                    <Play size={16} /> {prog}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="pv-panel">
-            <div className="pv-panel-header">
-              <h3 className="pv-panel-title" style={{ color: '#2e7d32' }}><Globe size={20} style={{ verticalAlign: 'middle', marginRight: 8 }} /> Public Programs</h3>
-              <span className="pv-count-badge">{publicPrograms.length}</span>
-            </div>
-            {publicPrograms.length === 0 ? (
-              <p className="pv-panel-empty">No public programs available.</p>
-            ) : (
-              <div className="pv-program-buttons">
-                {publicPrograms.filter(prog => prog.name.toLowerCase().includes(searchQuery.toLowerCase())).map(prog => (
-                  <button key={prog.name} className={`pv-program-btn ${selectedProgram === prog.name ? 'active' : ''}`} onClick={() => handleProgramChange(prog.name)}>
-                    <Play size={16} /> {prog.name}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {(coachNote || programMediaUrl) && (
-          <div className="pv-coach-note" style={{ marginBottom: '20px' }}>
-            <div className="pv-coach-note-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h4><MessageSquare size={14} /> Coach's Notes</h4>
-              {programMediaUrl && (
-                <button className="pv-media-inline-btn" onClick={() => setShowProgramMedia(!showProgramMedia)}>
-                  {getMediaType(programMediaUrl) === 'audio' ? '🎙️' : '🎬'} {showProgramMedia ? 'Hide' : 'Play'}
-                </button>
-              )}
-            </div>
-            {coachNote && <p>{coachNote}</p>}
-            {programMediaUrl && showProgramMedia && (
-              <div className="pv-media-player-wrap">
-                {getYouTubeId(programMediaUrl) ? (
-                  <iframe src={'https://www.youtube.com/embed/' + getYouTubeId(programMediaUrl) + '?autoplay=1&rel=0'} allowFullScreen title="Coach Program Media" className="pv-media-iframe" />
-                ) : (programMediaUrl.toLowerCase().includes('.png') || programMediaUrl.toLowerCase().includes('.jpg')) ? (
-                  <img src={programMediaUrl} alt="Program Media" style={{ maxWidth: '100%', maxHeight: '400px', objectFit: 'contain', borderRadius: '8px' }} />
-                ) : getMediaType(programMediaUrl) === 'audio' ? (
-                  <audio src={programMediaUrl} controls preload="metadata" className="pv-media-audio" />
-                ) : (
-                  <video src={programMediaUrl} controls playsInline preload="metadata" className="pv-media-video" />
-                )}
-              </div>
-            )}
-          </div>
-        )}
-
-        {workoutGroups.length === 0 && selectedProgram && <p className="pv-placeholder">No exercises found for this program.</p>}
-        {!selectedProgram && <p className="pv-placeholder">Select a program from above to view your workout.</p>}
-
-        {phaseSections.map(section => (
-          <div key={section.title} className="pv-phase-card" style={{ borderTopColor: section.color }}>
-            <div className="pv-phase-header">{section.title}</div>
-            <div className="pv-phase-body">
-              {section.items.map(group => {
-                const hasMedia = group.videoUrl || group.ytId;
-                const isImage = group.videoUrl && (group.videoUrl.toLowerCase().includes('.png') || group.videoUrl.toLowerCase().includes('.jpg'));
-                
-                return (
-                  <div key={group.id}>
-                    <div className="pv-exercise-header">
-                      <h4 className="pv-exercise-name">{group.name}</h4>
-                      {hasMedia && (
-                        <button className="pv-video-toggle" onClick={() => toggleMedia(group.id)}>
-                          {isImage ? <ImageIcon size={12} /> : <Video size={12} />} Media
-                        </button>
-                      )}
-                    </div>
-                    
-                    {hasMedia && expandedVideos.has(group.id) && (
-                      <div className="pv-video-container" style={{ padding: isImage ? '10px' : '0' }}>
-                        {group.ytId ? (
-                          <iframe src={`https://www.youtube.com/embed/${group.ytId}?autoplay=1&rel=0`} allowFullScreen title={group.name} />
-                        ) : isImage ? (
-                          <img src={group.videoUrl} alt={group.name} style={{ width: '100%', maxHeight: '40vh', objectFit: 'contain', borderRadius: '4px' }} />
-                        ) : (
-                          <video autoPlay controls playsInline preload="none" controlsList="nodownload"><source src={group.videoUrl} type="video/mp4" /></video>
-                        )}
-                      </div>
-                    )}
-                    
-                    {group.details.map((set, idx) => {
-                      const target = calculateTargetLoad(athletesData, athleteRowIndex, group.baseLift, group.multiplier, group.name, set.reps, set.intensity);
-                      const targetNum = target.replace(' kg', '');
-                      const inputKey = group.id + '_' + idx;
-                      const input = inputValues[inputKey] || {};
-                      return (
-                        <div key={idx} className="pv-set-row">
-                          <div className="pv-set-info">
-                            <div className="pv-set-label"><strong>Set {idx + 1}:</strong> {set.reps} reps {set.intensity ? '@ ' + set.intensity + '%' : ''}</div>
-                            {(set.tempo || set.rest) && (
-                              <div className="pv-set-meta">
-                                {set.tempo && <>Tempo: <span style={{ color: '#555' }}>{set.tempo}</span>{set.rest ? ' | ' : ''}</>}
-                                {set.rest && <>Rest: <span style={{ color: '#555' }}>{set.rest}</span></>}
-                              </div>
-                            )}
-                            <div className="pv-target">Target: <span className="pv-target-value">{targetNum ? targetNum + 'kg' : target}</span></div>
-                          </div>
-                          <div className="pv-inputs">
-                            <div className="pv-input-group">
-                              <span className="pv-input-label">kg</span>
-                              <input type="number" className="pv-input" placeholder={targetNum || '--'} value={input.wt || ''} onChange={e => handleInputChange(group.id, idx, 'wt', e.target.value)} />
-                            </div>
-                            <div className="pv-input-group">
-                              <span className="pv-input-label">reps</span>
-                              <input type="number" className="pv-input" placeholder={set.reps} value={input.reps || ''} onChange={e => handleInputChange(group.id, idx, 'reps', e.target.value)} />
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              })}
-            </div>
+            <div className="pl-ex-sets">{sets.length} set{sets.length > 1 ? 's' : ''}</div>
           </div>
         ))}
+      </div>
+    ));
+  }
 
-        {workoutGroups.length > 0 && !saveSuccess && (
-          <div className="pv-tracker">
-            <button className="pv-save-btn" onClick={handleSaveSession} disabled={saving}>
-              <Save size={18} /> {saving ? 'SAVING...' : 'SAVE & COMPLETE WORKOUT'}
+  const privacyTabs = [
+    { id: 'all', label: 'All Programs' },
+    { id: 'private', label: 'Private' },
+    { id: 'public', label: 'Public' }
+  ];
+
+  return (
+    <div className="pl-container">
+      <div className="pl-body">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+          <h2 style={{ fontSize: '24px', color: '#008ed3', fontWeight: '700', margin: 0 }}>Program Library</h2>
+          <button className="pl-bulk-assign-btn" onClick={() => setAssignModalOpen(true)}>
+            <UserPlus size={16} /> Assign Programs
+          </button>
+        </div>
+
+        <div className="pl-privacy-tabs">
+          {privacyTabs.map(tab => (
+            <button
+              key={tab.id}
+              className={`pl-privacy-tab ${privacyFilter === tab.id ? 'active' : ''}`}
+              onClick={() => setPrivacyFilter(tab.id)}
+            >
+              {tab.label}
             </button>
-          </div>
+          ))}
+        </div>
+
+        <div className="pl-search-wrapper">
+          <Search className="pl-search-icon" size={18} />
+          <input
+            type="text"
+            className="pl-search-box"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            placeholder="Search programs..."
+          />
+        </div>
+
+        {loading && <p className="pl-placeholder">Loading programs...</p>}
+        {error && <p className="pl-error">{error}</p>}
+        {!loading && !error && filteredPrograms.length === 0 && (
+          <p className="pl-placeholder">No programs found.</p>
         )}
 
-        {saveSuccess && (
-          <div className="pv-tracker">
-            <p className="pv-success-msg"><CheckCircle size={18} /> Excellent work! Data logged to your history.</p>
+        {!loading && !error && (
+          <div className="pl-program-list">
+            {filteredPrograms.map(program => (
+              <div key={program.name} className="pl-program-card">
+                <div className="pl-program-header" onClick={() => toggleExpand(program.name)}>
+                  <div>
+                    <div className="pl-program-name">{program.name}</div>
+                    <div className="pl-program-meta">
+                      <span className="pl-meta-badge"><Layers size={10} /> {program.categories.size} categor{program.categories.size === 1 ? 'y' : 'ies'}</span>
+                      <span className="pl-meta-badge"><Dumbbell size={10} /> {program.exercises.size} exercises</span>
+                      <span className="pl-meta-badge"><FolderClosed size={10} /> {program.phases.size} phases</span>
+                      {renderPrivacyBadge(program)}
+                    </div>
+                  </div>
+                  <div className="pl-actions" onClick={e => e.stopPropagation()}>
+                    {/* Only show Delete button for owned programs */}
+                    {program.ownerEmail === coachEmail && (
+                      <button className="pl-delete-btn" onClick={() => handleDelete(program.name)} disabled={deleting === program.name}>
+                        <Trash2 size={14} /> {deleting === program.name ? '...' : 'Delete'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+                {expandedProgram === program.name && (
+                  <div className="pl-expand">
+                    {renderProgramPreview(program)}
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         )}
       </div>
-      <HelpButton pageName="Program View" position="bottom-right" />
+
+      {/* Bulk Assign Modal */}
+      {assignModalOpen && (
+        <div className="pl-assign-modal" onClick={() => setAssignModalOpen(false)}>
+          <div className="pl-assign-content" onClick={e => e.stopPropagation()}>
+            <button className="pl-assign-close" onClick={() => setAssignModalOpen(false)}><X size={20} /></button>
+            <h3 className="pl-assign-title">Assign Programs To Athletes</h3>
+            
+            <div className="pl-assign-step">
+              <h4>Step 1: Select Athlete(s)</h4>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+                <div style={{ position: 'relative', flex: 1 }}>
+                  <Search size={16} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#999' }} />
+                  <input
+                    type="text"
+                    className="pl-input"
+                    style={{ paddingLeft: 32 }}
+                    value={athleteSearch}
+                    onChange={e => setAthleteSearch(e.target.value)}
+                    placeholder="Search athletes..."
+                  />
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 15 }}>
+                <button onClick={selectAllFiltered} style={{ flex: 1, padding: '8px', fontSize: 12, fontWeight: 'bold', background: '#e3f2fd', color: '#008ed3', border: '1px solid #008ed3', borderRadius: 4, cursor: 'pointer' }}>Select All Visible</button>
+                <button onClick={clearAthleteSelection} style={{ flex: 1, padding: '8px', fontSize: 12, fontWeight: 'bold', background: '#fee', color: '#dc3545', border: '1px solid #fcc', borderRadius: 4, cursor: 'pointer' }}>Clear All</button>
+              </div>
+              <div style={{ maxHeight: '200px', overflowY: 'auto', border: '1px solid #eee', borderRadius: 6, background: '#fff' }}>
+                {filteredAthletes.length === 0 ? (
+                  <p style={{ padding: 16, color: '#888', textAlign: 'center' }}>No athletes found.</p>
+                ) : filteredAthletes.map(a => (
+                  <label
+                    key={a.row}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
+                      borderBottom: '1px solid #f5f5f5', cursor: 'pointer',
+                      background: assignAthletes.has(a.row) ? '#e3f2fd' : 'transparent'
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={assignAthletes.has(a.row)}
+                      onChange={() => toggleAthlete(a.row)}
+                      style={{ width: 18, height: 18, cursor: 'pointer' }}
+                    />
+                    <span style={{ fontSize: 14, color: '#333' }}>{a.name}</span>
+                  </label>
+                ))}
+              </div>
+              <p style={{ fontSize: 12, color: '#008ed3', margin: '10px 0 0 0', fontWeight: 'bold' }}>{assignAthletes.size} athlete(s) selected</p>
+            </div>
+
+            <div className="pl-assign-step">
+              <h4>Step 2: Select Program(s)</h4>
+              <label style={{ fontSize: 13, fontWeight: 600, color: '#555', display: 'block', marginBottom: 6 }}>Available Programs:</label>
+              <select
+                className="pl-multi-select"
+                multiple
+                value={assignPrograms}
+                onChange={e => setAssignPrograms(Array.from(e.target.selectedOptions).map(o => o.value))}
+              >
+                {ownedProgramNames.map(p => <option key={p} value={p}>{p}</option>)}
+              </select>
+              <p style={{ fontSize: 12, color: '#888', margin: '4px 0 0 0' }}>Hold Ctrl/Cmd to select multiple programs.</p>
+            </div>
+
+            <button className="pl-assign-confirm-btn" onClick={handleBulkAssign} disabled={bulkAssigning}>
+              {bulkAssigning ? 'Assigning...' : `Assign to ${assignAthletes.size} Athlete(s)`}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {toast && (
+        <div className={`pl-toast ${toast.isError ? 'error' : ''}`}>
+          {toast.isError ? <X size={16} /> : <CheckCircle size={16} />}
+          {toast.message}
+        </div>
+      )}
     </div>
   );
 }
