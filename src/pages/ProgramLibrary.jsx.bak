@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Search, Trash2, UserPlus, CheckCircle, X, Layers, Dumbbell, FolderClosed, Lock, Globe, Eye } from 'lucide-react';
-import { useAuth } from '../hooks/useAuth';
+import { supabase } from '../supabase';
 import { fetchAllData, deleteProgram, updateAssignment, assignProgramBulk } from '../api';
 import './program-library.css';
 
@@ -17,14 +17,19 @@ export default function ProgramLibrary() {
   const [athleteSearch, setAthleteSearch] = useState('');
   const [toast, setToast] = useState(null);
   const [deleting, setDeleting] = useState(null);
+  const [coachEmail, setCoachEmail] = useState('');
   const [privacyFilter, setPrivacyFilter] = useState('all');
   const [bulkAssigning, setBulkAssigning] = useState(false);
 
-  const { userEmail, role, isLoading: authLoading } = useAuth();
-
   useEffect(() => {
+    loadCoachEmail();
     loadData();
   }, []);
+
+  async function loadCoachEmail() {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) { setCoachEmail(user.email); }
+  }
 
   async function loadData() {
     try {
@@ -89,10 +94,10 @@ export default function ProgramLibrary() {
     if (!programData.length) return [];
     const names = programData.slice(1).filter(row => {
       const owner = String(row[11] || '').trim();
-      return owner === userEmail;
+      return owner === coachEmail;
     }).map(r => String(r[0] || '').trim()).filter(Boolean);
     return [...new Set(names)].sort();
-  }, [programData, userEmail]);
+  }, [programData, coachEmail]);
 
   const programs = useMemo(() => {
     if (!programData.length) return [];
@@ -122,11 +127,11 @@ export default function ProgramLibrary() {
     let result = programs;
 
     if (privacyFilter === 'private') {
-      result = result.filter(p => p.privacyLevel === 'PRIVATE' && p.ownerEmail === userEmail);
+      result = result.filter(p => p.privacyLevel === 'PRIVATE' && p.ownerEmail === coachEmail);
     } else if (privacyFilter === 'public') {
       result = result.filter(p => p.privacyLevel === 'PUBLIC');
     } else {
-      result = result.filter(p => p.ownerEmail === userEmail || p.privacyLevel === 'PUBLIC' || !p.privacyLevel);
+      result = result.filter(p => p.ownerEmail === coachEmail || p.privacyLevel === 'PUBLIC' || !p.privacyLevel);
     }
 
     if (searchQuery.trim()) {
@@ -135,7 +140,7 @@ export default function ProgramLibrary() {
     }
 
     return result;
-  }, [programs, privacyFilter, userEmail, searchQuery]);
+  }, [programs, privacyFilter, coachEmail, searchQuery]);
 
   function toggleExpand(name) {
     setExpandedProgram(expandedProgram === name ? null : name);
@@ -275,16 +280,6 @@ export default function ProgramLibrary() {
     { id: 'public', label: 'Public' }
   ];
 
-  if (authLoading) {
-    return (
-      <div className="pl-container">
-        <div className="pl-body">
-          <p className="pl-placeholder">Loading...</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="pl-container">
       <div className="pl-body">
@@ -340,7 +335,7 @@ export default function ProgramLibrary() {
                   </div>
                   <div className="pl-actions" onClick={e => e.stopPropagation()}>
                     {/* Only show Delete button for owned programs */}
-                    {program.ownerEmail === userEmail && (
+                    {program.ownerEmail === coachEmail && (
                       <button className="pl-delete-btn" onClick={() => handleDelete(program.name)} disabled={deleting === program.name}>
                         <Trash2 size={14} /> {deleting === program.name ? '...' : 'Delete'}
                       </button>
@@ -381,25 +376,37 @@ export default function ProgramLibrary() {
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 8, marginBottom: 15 }}>
-                <button onClick={selectAllFiltered} className="pl-athlete-action-btn pl-athlete-select-all">Select All Visible</button>
-                <button onClick={clearAthleteSelection} className="pl-athlete-action-btn pl-athlete-clear-all">Clear All</button>
+                <button onClick={selectAllFiltered} style={{ flex: 1, padding: '8px', fontSize: 12, fontWeight: 'bold', background: '#e3f2fd', color: '#008ed3', border: '1px solid #008ed3', borderRadius: 4, cursor: 'pointer' }}>Select All Visible</button>
+                <button onClick={clearAthleteSelection} style={{ flex: 1, padding: '8px', fontSize: 12, fontWeight: 'bold', background: '#fee', color: '#dc3545', border: '1px solid #fcc', borderRadius: 4, cursor: 'pointer' }}>Clear All</button>
               </div>
-              <div className="pl-athlete-list-container">
+              <div style={{ maxHeight: '200px', overflowY: 'auto', border: '1px solid #eee', borderRadius: 6, background: '#fff' }}>
                 {filteredAthletes.length === 0 ? (
                   <p style={{ padding: 16, color: '#888', textAlign: 'center' }}>No athletes found.</p>
                 ) : filteredAthletes.map(a => (
-                  <label key={a.row} className={`pl-athlete-item ${assignAthletes.has(a.row) ? 'selected' : ''}`}>
-                    <input type="checkbox" checked={assignAthletes.has(a.row)} onChange={() => toggleAthlete(a.row)} className="pl-athlete-checkbox" />
-                    <span className="pl-athlete-name">{a.name}</span>
+                  <label
+                    key={a.row}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
+                      borderBottom: '1px solid #f5f5f5', cursor: 'pointer',
+                      background: assignAthletes.has(a.row) ? '#e3f2fd' : 'transparent'
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={assignAthletes.has(a.row)}
+                      onChange={() => toggleAthlete(a.row)}
+                      style={{ width: 18, height: 18, cursor: 'pointer' }}
+                    />
+                    <span style={{ fontSize: 14, color: '#333' }}>{a.name}</span>
                   </label>
                 ))}
               </div>
-              <p className="pl-selection-count">{assignAthletes.size} athlete(s) selected</p>
+              <p style={{ fontSize: 12, color: '#008ed3', margin: '10px 0 0 0', fontWeight: 'bold' }}>{assignAthletes.size} athlete(s) selected</p>
             </div>
 
             <div className="pl-assign-step">
               <h4>Step 2: Select Program(s)</h4>
-              <label className="pl-program-label">Available Programs:</label>
+              <label style={{ fontSize: 13, fontWeight: 600, color: '#555', display: 'block', marginBottom: 6 }}>Available Programs:</label>
               <select
                 className="pl-multi-select"
                 multiple
@@ -408,7 +415,7 @@ export default function ProgramLibrary() {
               >
                 {ownedProgramNames.map(p => <option key={p} value={p}>{p}</option>)}
               </select>
-              <p className="pl-multi-select-help">Hold Ctrl/Cmd to select multiple programs.</p>
+              <p style={{ fontSize: 12, color: '#888', margin: '4px 0 0 0' }}>Hold Ctrl/Cmd to select multiple programs.</p>
             </div>
 
             <button className="pl-assign-confirm-btn" onClick={handleBulkAssign} disabled={bulkAssigning}>
