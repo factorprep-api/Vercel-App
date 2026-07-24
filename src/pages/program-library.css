@@ -69,8 +69,8 @@
 .pl-privacy-assigned { background: #e3f2fd; color: #1565c0; }
 
 /* Bulk Assign Button */
-.pl-bulk-assign-btn { display: flex; align-items: center; gap: 6px; padding: 10px 16px; background: #008ed3; color: white; border: none; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; transition: background 0.15s; }
-.pl-bulk-assign-btn:hover { background: #0077b5; }
+.pl-bulk-assign-btn { display: flex; align-items: center; gap: 6px; padding: 10px 16px; background: #2e7d32; color: white; border: none; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; transition: background 0.15s; }
+.pl-bulk-assign-btn:hover { background: #1b5e20; }
 
 /* Modal Close */
 .pl-assign-close { position: absolute; top: 16px; right: 16px; background: none; border: none; cursor: pointer; color: #888; display: flex; }
