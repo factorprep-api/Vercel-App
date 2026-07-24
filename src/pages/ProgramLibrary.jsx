@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Search, Trash2, UserPlus, CheckCircle, X, Layers, Dumbbell, FolderClosed, Lock, Globe, Eye } from 'lucide-react';
-import { supabase } from '../supabase';
+import { useAuth } from '../hooks/useAuth';
 import { fetchAllData, deleteProgram, updateAssignment, assignProgramBulk } from '../api';
 import './program-library.css';
 
@@ -17,9 +17,10 @@ export default function ProgramLibrary() {
   const [athleteSearch, setAthleteSearch] = useState('');
   const [toast, setToast] = useState(null);
   const [deleting, setDeleting] = useState(null);
-  const [coachEmail, setCoachEmail] = useState('');
   const [privacyFilter, setPrivacyFilter] = useState('all');
   const [bulkAssigning, setBulkAssigning] = useState(false);
+
+  const { userEmail, role, isLoading: authLoading } = useAuth();
 
   useEffect(() => {
     loadCoachEmail();
@@ -28,7 +29,7 @@ export default function ProgramLibrary() {
 
   async function loadCoachEmail() {
     const { data: { user } } = await supabase.auth.getUser();
-    if (user) { setCoachEmail(user.email); }
+    if (user) { // setCoachEmail(user.email); }
   }
 
   async function loadData() {
@@ -94,10 +95,10 @@ export default function ProgramLibrary() {
     if (!programData.length) return [];
     const names = programData.slice(1).filter(row => {
       const owner = String(row[11] || '').trim();
-      return owner === coachEmail;
+      return owner === userEmail;
     }).map(r => String(r[0] || '').trim()).filter(Boolean);
     return [...new Set(names)].sort();
-  }, [programData, coachEmail]);
+  }, [programData, userEmail]);
 
   const programs = useMemo(() => {
     if (!programData.length) return [];
@@ -127,11 +128,11 @@ export default function ProgramLibrary() {
     let result = programs;
 
     if (privacyFilter === 'private') {
-      result = result.filter(p => p.privacyLevel === 'PRIVATE' && p.ownerEmail === coachEmail);
+      result = result.filter(p => p.privacyLevel === 'PRIVATE' && p.ownerEmail === userEmail);
     } else if (privacyFilter === 'public') {
       result = result.filter(p => p.privacyLevel === 'PUBLIC');
     } else {
-      result = result.filter(p => p.ownerEmail === coachEmail || p.privacyLevel === 'PUBLIC' || !p.privacyLevel);
+      result = result.filter(p => p.ownerEmail === userEmail || p.privacyLevel === 'PUBLIC' || !p.privacyLevel);
     }
 
     if (searchQuery.trim()) {
@@ -140,7 +141,7 @@ export default function ProgramLibrary() {
     }
 
     return result;
-  }, [programs, privacyFilter, coachEmail, searchQuery]);
+  }, [programs, privacyFilter, userEmail, searchQuery]);
 
   function toggleExpand(name) {
     setExpandedProgram(expandedProgram === name ? null : name);
@@ -335,7 +336,7 @@ export default function ProgramLibrary() {
                   </div>
                   <div className="pl-actions" onClick={e => e.stopPropagation()}>
                     {/* Only show Delete button for owned programs */}
-                    {program.ownerEmail === coachEmail && (
+                    {program.ownerEmail === userEmail && (
                       <button className="pl-delete-btn" onClick={() => handleDelete(program.name)} disabled={deleting === program.name}>
                         <Trash2 size={14} /> {deleting === program.name ? '...' : 'Delete'}
                       </button>
