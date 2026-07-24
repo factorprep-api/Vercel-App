@@ -21,6 +21,7 @@ export default function ProgramLibrary() {
   const [bulkAssigning, setBulkAssigning] = useState(false);
 
   const { userEmail, role, isLoading: authLoading } = useAuth();
+  console.log('Auth:', { userEmail, role, authLoading });
 
   useEffect(() => {
     loadData();
