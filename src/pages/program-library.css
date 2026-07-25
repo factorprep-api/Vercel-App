@@ -139,7 +139,7 @@
 
 /* Mobile: Delete button icon only */
 @media (max-width: 768px) {
-  .pl-delete-btn span:not(.lucide) {
+  .pl-delete-text {
     display: none;
   }
   .pl-delete-btn {
