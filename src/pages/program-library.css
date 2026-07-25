@@ -179,3 +179,39 @@
     display: none;
   }
 }
+
+/* MOBILE: Fix Program card layout */
+@media (max-width: 768px) {
+  .pl-program-header {
+    display: flex;
+    align-items: center !important;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .pl-program-meta {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+  .pl-actions {
+    display: flex;
+    align-items: center !important;
+    margin-top: 0 !important;
+    position: relative !important;
+    top: 0 !important;
+  }
+  .pl-delete-btn {
+    padding: 4px 8px !important;
+    display: inline-flex;
+    align-items: center;
+  }
+  .pl-delete-btn svg {
+    width: 14px !important;
+    height: 14px !important;
+    vertical-align: middle;
+  }
+  .pl-delete-text {
+    display: none;
+  }
+}
