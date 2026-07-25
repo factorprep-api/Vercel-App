@@ -147,3 +147,20 @@
     gap: 0;
   }
 }
+
+/* Mobile: Delete button matches Public badge height & alignment */
+@media (max-width: 768px) {
+  .pl-delete-text {
+    display: none;
+  }
+  .pl-delete-btn {
+    padding: 3px 8px;
+    gap: 0;
+    display: inline-flex;
+    align-items: center;
+  }
+  .pl-delete-btn svg {
+    width: 10px !important;
+    height: 10px !important;
+  }
+}
