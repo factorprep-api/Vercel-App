@@ -136,3 +136,14 @@
   .pl-athlete-action-btn { padding: 6px 10px; font-size: 12px; }
   .pl-assign-confirm-btn { padding: 12px; font-size: 14px; }
 }
+
+/* Mobile: Delete button icon only */
+@media (max-width: 768px) {
+  .pl-delete-btn span:not(.lucide) {
+    display: none;
+  }
+  .pl-delete-btn {
+    padding: 8px 10px;
+    gap: 0;
+  }
+}
