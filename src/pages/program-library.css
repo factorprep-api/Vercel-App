@@ -148,19 +148,25 @@
   }
 }
 
-/* Mobile: Delete button matches Public badge height & alignment */
+/* Mobile: Delete button aligned with Public badge */
 @media (max-width: 768px) {
   .pl-delete-text {
     display: none;
   }
+  /* Align the entire actions section with meta badges */
+  .pl-program-header {
+    align-items: flex-start;
+  }
+  .pl-actions {
+    align-self: center;
+    margin-top: 2px;
+  }
   .pl-delete-btn {
-    padding: 3px 8px;
-    gap: 0;
+    padding: 2px 6px;
     display: inline-flex;
-    align-items: center;
   }
   .pl-delete-btn svg {
-    width: 10px !important;
-    height: 10px !important;
+    width: 12px !important;
+    height: 12px !important;
   }
 }
