@@ -137,12 +137,11 @@
   .pl-assign-confirm-btn { padding: 12px; font-size: 14px; }
 }
 
-/* Mobile: Delete button matches Public badge height & line-height */
+/* Mobile: Delete button aligns with BOTTOM of Public badge */
 @media (max-width: 768px) {
   .pl-delete-text {
     display: none;
   }
-  /* Match Public badge dimensions exactly */
   .pl-delete-btn {
     padding: 2px 8px !important;
     border-radius: 4px;
@@ -157,12 +156,11 @@
     height: 12px !important;
     vertical-align: middle;
   }
-  /* Ensure program header aligns children properly */
   .pl-program-header {
     align-items: flex-start;
   }
   .pl-actions {
     position: relative;
-    top: 4px;
+    top: 18px;
   }
 }
