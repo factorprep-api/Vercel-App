@@ -119,99 +119,56 @@
 .pl-assign-confirm-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* Mobile Responsive */
-@media (max-width: 768px) {
-  .pl-assign-modal { padding: 12px; }
-  .pl-assign-content { padding: 20px; max-width: 100%; }
-  .pl-assign-title { font-size: 16px; }
-  .pl-assign-step { padding: 12px; }
-}
-@media (max-width: 480px) {
-  .pl-assign-modal { padding: 8px; }
-  .pl-assign-content { padding: 16px; border-radius: 8px; }
-  .pl-assign-title { font-size: 15px; margin-bottom: 16px; }
-  .pl-assign-step { padding: 10px; margin-bottom: 12px; }
-  .pl-athlete-search { padding: 8px 10px 8px 32px; font-size: 13px; }
-  .pl-athlete-item { padding: 10px 12px; }
-  .pl-athlete-name { font-size: 13px; }
-  .pl-athlete-action-btn { padding: 6px 10px; font-size: 12px; }
-  .pl-assign-confirm-btn { padding: 12px; font-size: 14px; }
-}
 
 /* Mobile: Complete program header layout fix */
+
+/* MOBILE: Fix Program card layout */
+
+/* MOBILE ONLY */
 @media (max-width: 768px) {
-  .pl-program-card {
-    padding: 12px;
-  }
   .pl-program-header {
-    display: flex;
-    flex-wrap: wrap;
+    display: flex !important;
     align-items: center !important;
+    justify-content: space-between;
+    flex-wrap: nowrap !important;
     gap: 8px;
-    margin-bottom: 8px;
   }
-  .pl-program-title {
-    flex: 1 1 100%;
-    margin-bottom: 8px;
-  }
-  .pl-program-meta {
-    flex: 1 1 calc(100% - 60px);
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
+  .pl-program-header > div:first-child {
+    flex: 1;
+    min-width: 0;
   }
   .pl-actions {
-    flex: 0 0 auto;
+    flex-shrink: 0;
     display: flex;
-    align-items: center !important;
-  }
-  .pl-delete-btn {
-    padding: 4px 10px !important;
-    height: 24px !important;
-    display: inline-flex;
     align-items: center;
-    justify-content: center;
-  }
-  .pl-delete-btn svg {
-    width: 14px !important;
-    height: 14px !important;
+    position: static !important;
+    top: auto !important;
+    margin-top: 0 !important;
   }
   .pl-delete-text {
     display: none;
-  }
-}
-
-/* MOBILE: Fix Program card layout */
-@media (max-width: 768px) {
-  .pl-program-header {
-    display: flex;
-    align-items: center !important;
-    justify-content: space-between;
-    gap: 8px;
-  }
-  .pl-program-meta {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    flex-wrap: wrap;
-  }
-  .pl-actions {
-    display: flex;
-    align-items: center !important;
-    margin-top: 0 !important;
-    position: relative !important;
-    top: 0 !important;
   }
   .pl-delete-btn {
     padding: 4px 8px !important;
     display: inline-flex;
     align-items: center;
+    height: auto !important;
   }
   .pl-delete-btn svg {
     width: 14px !important;
     height: 14px !important;
-    vertical-align: middle;
   }
-  .pl-delete-text {
-    display: none;
-  }
+  .pl-assign-modal { padding: 12px; }
+  .pl-assign-content { padding: 20px; max-width: 100%; }
+  .pl-assign-title { font-size: 16px; }
+  .pl-assign-step { padding: 12px; }
+  .pl-athlete-search { padding: 10px 12px 10px 34px; font-size: 14px; }
+  .pl-athlete-item { padding: 12px; }
+  .pl-athlete-name { font-size: 14px; }
+  .pl-athlete-action-btn { padding: 8px 12px; font-size: 14px; }
+  .pl-multi-select { padding: 10px; font-size: 14px; min-height: 90px; }
+  .pl-assign-confirm-btn { padding: 13px; font-size: 15px; }
+  .pl-multi-select-help { font-size: 12px !important; }
+  .pl-container { padding: 12px 8px; }
+  .pl-body { padding-top: 8px; }
 }
