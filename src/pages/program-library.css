@@ -126,29 +126,25 @@
 
 /* MOBILE ONLY */
 @media (max-width: 768px) {
-  /* Match badge dimensions: font-size 11px, padding 3px 8px ≈ 17px tall */
-  .pl-delete-btn {
-    padding: 3px 8px !important;
-    display: inline-flex !important;
-    align-items: center;
-    justify-content: center;
-    height: 17px !important;
-    line-height: 11px;
-    border-radius: 10px;
-    font-size: 11px !important;
-  }
-  .pl-delete-btn svg {
-    width: 11px !important;
-    height: 11px !important;
-    vertical-align: middle;
-  }
   .pl-delete-text {
     display: none;
   }
+  .pl-delete-btn {
+    padding: 4px 8px !important;
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+  }
+  .pl-delete-btn svg {
+    width: 14px !important;
+    height: 14px !important;
+    vertical-align: middle;
+  }
   .pl-program-header {
     display: flex !important;
-    align-items: flex-start !important;
-    flex-wrap: wrap;
+    align-items: flex-end !important;
+    justify-content: space-between;
+    flex-wrap: nowrap !important;
     gap: 8px;
   }
   .pl-program-header > div:first-child {
@@ -162,6 +158,5 @@
     position: static !important;
     top: auto !important;
     margin-top: 0 !important;
-    margin-left: auto;
   }
 }
