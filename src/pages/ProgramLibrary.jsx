@@ -249,14 +249,14 @@ export default function ProgramLibrary() {
 
     return sortedPhases.map(phase => (
       <div key={phase} className="pl-phase-section">
-        <div className="pl-phase-title">{phase}</div>
+        <div className={`pl-phase-title pl-phase-${phase.toLowerCase().replace(' ', '-')}`}>{phase}</div>
         {Object.entries(phases[phase]).map(([exName, sets]) => (
           <div key={exName} className="pl-exercise-row">
             <div>
               <div className="pl-ex-name">{exName}</div>
               {sets.map((s, i) => (
                 <div key={i} className="pl-ex-detail">
-                  Set {i + 1}: {s.reps} reps{s.intensity ? ` @ ${s.intensity}%` : ''}
+                  {s.sets} set{s.sets !== '1' ? 's' : ''}: {s.reps} reps{s.intensity ? ` @ ${s.intensity}%` : ''}
                   {s.tempo ? ` | Tempo: ${s.tempo}` : ''}
                   {s.rest ? ` | Rest: ${s.rest}` : ''}
                 </div>
