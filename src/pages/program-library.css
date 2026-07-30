@@ -163,3 +163,4 @@
     margin-top: 0 !important;
   }
 }
+.pl-phase-title { font-size: 14px; font-weight: bold; text-transform: uppercase; color: #008ed3; margin-bottom: 8px; padding: 12px 0; border-bottom: 1px solid #eee; letter-spacing: 1px; }
