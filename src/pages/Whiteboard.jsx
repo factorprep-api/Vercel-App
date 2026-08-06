@@ -461,7 +461,7 @@ function Whiteboard() {
           </div>
         </div>
       )}
-    <HelpButton pageName="Whiteboard" position="bottom-right" />
+      <HelpButton pageName="Whiteboard" position="bottom-right" />
     </div>
   );
 }

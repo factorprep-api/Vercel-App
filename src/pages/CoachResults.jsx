@@ -827,8 +827,8 @@ function ProgressionChart({ data, weeklyData }) {
         <rect x={padding.left + 360} y={3} width={12} height={10} fill={COLORS.zone1} opacity="0.5" rx="2" />
         <text x={padding.left + 378} y={12} fontSize="11" fill={COLORS.darkText}>Weekly Volume</text>
       </svg>
+      <HelpButton pageName="Coach Results" position="bottom-right" />
     </div>
-    <HelpButton pageName="Coach Results" position="bottom-right" />
   );
 }
 
