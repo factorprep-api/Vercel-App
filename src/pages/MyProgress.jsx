@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Dumbbell, Clock } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
+import HelpButton from '../components/HelpButton';
 import { fetchAllData, fetchLogbookByAthlete, getAthleteByEmail } from '../api';
 import './my-progress.css';
 
@@ -180,6 +181,7 @@ export default function MyProgress() {
           </>
         )}
       </div>
+    <HelpButton pageName="My Progress" position="bottom-right" />
     </div>
   );
 }
