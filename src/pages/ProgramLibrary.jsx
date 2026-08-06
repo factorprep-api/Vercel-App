@@ -425,6 +425,7 @@ export default function ProgramLibrary() {
           {toast.message}
         </div>
       )}
+      <HelpButton pageName="Program Library" position="bottom-right" />
     </div>
   );
 }
