@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Search, Trash2, UserPlus, CheckCircle, X, Layers, Dumbbell, FolderClosed, Lock, Globe, Eye } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
+import HelpButton from '../components/HelpButton';
 import { fetchAllData, deleteProgram, updateAssignment, assignProgramBulk } from '../api';
 import './program-library.css';
 
@@ -249,20 +250,13 @@ export default function ProgramLibrary() {
 
     return sortedPhases.map(phase => (
       <div key={phase} className="pl-phase-section">
-        <div className={`pl-phase-title pl-phase-${phase.toLowerCase().replace(' ', '-')}`}>{phase}</div>
-        {Object.entries(phases[phase]).map(([exName, sets]) => (
-          <div key={exName} className="pl-exercise-row">
-            <div>
-              <div className="pl-ex-name">{exName}</div>
-              {sets.map((s, i) => (
-                <div key={i} className="pl-ex-detail">
-                  {s.sets} set{s.sets !== '1' ? 's' : ''}: {s.reps} reps{s.intensity ? ` @ ${s.intensity}%` : ''}
                   {s.tempo ? ` | Tempo: ${s.tempo}` : ''}
                   {s.rest ? ` | Rest: ${s.rest}` : ''}
                 </div>
               ))}
             </div>
-            <div className="pl-ex-sets">{sets.length} set{sets.length > 1 ? 's' : ''}</div>
+                  {s.sets} set{s.sets !== '1' ? 's' : ''}: {s.reps} reps{s.intensity ? ` @ ${s.intensity}%` : ''}
+            <div className='pl-ex-sets'>{(() => { const t = sets.reduce((sum, s) => sum + (parseInt(s.sets) || 1), 0); return t + ' set' + (t > 1 ? 's' : ''); })()}</div>
           </div>
         ))}
       </div>
@@ -424,6 +418,7 @@ export default function ProgramLibrary() {
           {toast.message}
         </div>
       )}
+      <HelpButton pageName="Program Library" position="bottom-right" />
     </div>
   );
 }

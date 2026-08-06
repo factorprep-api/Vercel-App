@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../hooks/useAuth';
+import HelpButton from '../components/HelpButton';
 import { fetchAllData, fetchLogbookByAthlete } from '../api.js';
 
 const COLORS = {
@@ -742,6 +743,7 @@ export default function CoachResults() {
           </div>
         </>
       )}
+      <HelpButton pageName="Coach Results" position="bottom-right" />
     </div>
   );
 }
