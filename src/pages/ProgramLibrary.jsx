@@ -256,7 +256,7 @@ export default function ProgramLibrary() {
               <div className="pl-ex-name">{exName}</div>
               {sets.map((s, i) => (
                 <div key={i} className="pl-ex-detail">
-                  Set {i + 1}: {s.reps} reps{s.intensity ? ` @ ${s.intensity}%` : ''}
+                  {s.sets} set{s.sets !== "1" ? "s" : ""}: {s.reps} reps{s.intensity ? ` @ ${s.intensity}%` : ''}
                   {s.tempo ? ` | Tempo: ${s.tempo}` : ''}
                   {s.rest ? ` | Rest: ${s.rest}` : ''}
                 </div>
