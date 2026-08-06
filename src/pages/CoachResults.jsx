@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../hooks/useAuth';
+import HelpButton from '../components/HelpButton';
 import { fetchAllData, fetchLogbookByAthlete } from '../api.js';
 
 const COLORS = {
@@ -827,6 +828,7 @@ function ProgressionChart({ data, weeklyData }) {
         <text x={padding.left + 378} y={12} fontSize="11" fill={COLORS.darkText}>Weekly Volume</text>
       </svg>
     </div>
+    <HelpButton pageName="Coach Results" position="bottom-right" />
   );
 }
 

@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { Stage, Layer, Line, Rect, Circle, Arrow, Text, Group } from 'react-konva';
+import HelpButton from '../components/HelpButton';
 import { addExerciseToLibrary } from '../api.js';
 
 const DESIGN = { 
@@ -460,6 +461,7 @@ function Whiteboard() {
           </div>
         </div>
       )}
+    <HelpButton pageName="Whiteboard" position="bottom-right" />
     </div>
   );
 }
