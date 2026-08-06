@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Search, Trash2, UserPlus, CheckCircle, X, Layers, Dumbbell, FolderClosed, Lock, Globe, Eye } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
+import HelpButton from '../components/HelpButton';
 import { fetchAllData, deleteProgram, updateAssignment, assignProgramBulk } from '../api';
 import './program-library.css';
 
