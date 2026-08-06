@@ -262,7 +262,7 @@ export default function ProgramLibrary() {
                 </div>
               ))}
             </div>
-            <div className="pl-ex-sets">{sets.length} set{sets.length > 1 ? 's' : ''}</div>
+            <div className='pl-ex-sets'>{(() => { const t = sets.reduce((sum, s) => sum + (parseInt(s.sets) || 1), 0); return t + ' set' + (t > 1 ? 's' : ''); })()}</div>
           </div>
         ))}
       </div>
