@@ -67,21 +67,26 @@ export default function App() {
             <Navigate to="/login" />
           )
         } />
+        <Route path="/athlete-hub" element={
+          <ProtectedRoute allowedRoles={['athlete', 'coach']}>
+            <Suspense fallback={<LoadingFallback />}><AthleteHub /></Suspense>
+          </ProtectedRoute>
+        } />
 
         <Route path="/progress" element={
-          <ProtectedRoute allowedRoles={['athlete']}>
+          <ProtectedRoute allowedRoles={['athlete', 'coach']}>
             <Suspense fallback={<LoadingFallback />}><MyProgress /></Suspense>
           </ProtectedRoute>
         } />
         
         <Route path="/program-viewer" element={
-          <ProtectedRoute allowedRoles={['athlete']}>
+          <ProtectedRoute allowedRoles={['athlete', 'coach']}>
             <Suspense fallback={<LoadingFallback />}><ProgramViewer /></Suspense>
           </ProtectedRoute>
         } />
         
         <Route path="/shop" element={
-          <ProtectedRoute allowedRoles={['athlete']}>
+          <ProtectedRoute allowedRoles={['athlete', 'coach']}>
             <Suspense fallback={<LoadingFallback />}><Shop /></Suspense>
           </ProtectedRoute>
         } />
