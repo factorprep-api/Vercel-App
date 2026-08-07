@@ -17,7 +17,7 @@ export default function CoachHub() {
     { title: 'Coach Results', desc: 'View athlete progress & performance data', icon: BarChart2, path: '/coach-results', color: '#005d8a', bgImage: '/coach-results-card.png' },
     { title: 'Exercise Library', desc: 'Search all exercise videos', icon: Dumbbell, path: '/exercise-library', color: '#d3ca17', bgImage: '/el-card.png' },
     { title: 'Drill Designer', desc: 'Draw and save training drills', icon: Pencil, path: '/whiteboard', color: '#6d28d9', bgImage: '/Whiteboard-Card.png' },
-    { title: 'Athlete Hub', desc: 'Use the app as an athlete', icon: User, path: '/athlete-hub', color: '#e65100' }
+    { title: 'Athlete Hub', desc: 'Use the app as an athlete', icon: User, path: '/athlete-hub', color: '#e65100', external: true }
   ];
 
   return (
