@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Play, ChevronDown, ChevronUp, Video, Image as ImageIcon, Save, CheckCircle, MessageSquare, UserPlus, Globe } from 'lucide-react';
 import { getYouTubeId } from '../utils/helpers';
 import { useAuth } from '../hooks/useAuth';
-import { fetchAllData, getAthleteByEmail, saveSession, getMediaType } from '../api';
+import { fetchAllData, getAthleteByEmail, saveSession, getMediaType, getLatestMaxes, getLastLoggedWeight } from '../api';
 import HelpButton from '../components/HelpButton';
 import './program-viewer.css';
 
@@ -34,25 +34,47 @@ function extractMediaUrl(rawVid) {
 }
 
 
-function calculateTargetLoad(athletesData, athleteRowIndex, baseLift, multiplier, exerciseName, reps, intensity) {
+// Calculate target load using pre-fetched maxes
+// libraryData = merged library array, each item = [name, video, muscle, formula, '', owner, notes]
+// athleteMaxes = { 'Exercise Name': { date, oneRM } } from getLatestMaxes
+// lastWeights = { 'exercise_key': { weight, reps } } from getLastLoggedWeight
+function calculateTargetLoad(libraryData, athleteMaxes, lastWeights, exerciseName, reps, intensity) {
   if (!intensity || isNaN(parseFloat(intensity)) || parseFloat(intensity) <= 0) return 'Auto';
-  if (!baseLift || baseLift.toLowerCase() === 'none') return 'Auto';
-  const headers = athletesData[0] || [];
-  let colIndex = -1;
-  for (let i = 0; i < headers.length; i++) {
-    if (normalizeString(headers[i]) === normalizeString(baseLift)) { colIndex = i; break; }
-  }
-  if (colIndex === -1) return 'Missing ' + baseLift;
-  if (athleteRowIndex === null || athleteRowIndex >= athletesData.length) return 'Select athlete';
-  const athleteRowData = athletesData[athleteRowIndex] || [];
-  const athlete1RM = parseFloat(athleteRowData[colIndex]);
-  if (isNaN(athlete1RM) || athlete1RM <= 0) return 'No Max Logged';
-  const safeMultiplier = parseFloat(multiplier) || 1.0;
+
   const safeReps = parseFloat(reps) || 1;
-  const modified1RM = athlete1RM * safeMultiplier;
-  const target = modified1RM * (1.0278 - (0.0278 * safeReps)) * (parseFloat(intensity) / 100);
+  const intensityDecimal = parseFloat(intensity) / 100;
+
+  // Find exercise in library to check Formula column (index 3)
+  const exInfo = libraryData.find(ex => normalizeString(ex[0]) === normalizeString(exerciseName));
+  const isFormula = exInfo && String(exInfo[3] || '').trim().toLowerCase() === 'yes';
+
+  let oneRM = 0;
+
+  if (isFormula) {
+    // Epley exercise — look up latest 1RM
+    const maxEntry = athleteMaxes[normalizeString(exerciseName)];
+    if (maxEntry && maxEntry.oneRM > 0) {
+      oneRM = maxEntry.oneRM;
+    } else {
+      return 'First time';
+    }
+  } else {
+    // Non-Epley — try last logged weight
+    const lastEntry = lastWeights[normalizeString(exerciseName)];
+    if (lastEntry && lastEntry.weight) {
+      const lastWt = parseFloat(lastEntry.weight);
+      const lastReps = parseFloat(lastEntry.reps) || 1;
+      oneRM = lastWt * (1 + 0.0333 * lastReps);
+    } else {
+      return 'No previous data';
+    }
+  }
+
+  if (!oneRM) return 'Auto';
+  const repMax = oneRM / (1 + 0.0333 * safeReps);
+  const target = repMax * intensityDecimal;
   if (isNaN(target)) return 'Auto';
-  return target.toFixed(1) + ' kg';
+  return Math.round(target) + ' kg';
 }
 
 function findAthleteRowByEmail(athletesData, email) {
@@ -72,6 +94,7 @@ function findAthleteRowByEmail(athletesData, email) {
 
 export default function ProgramViewer() {
   const [loading, setLoading] = useState(true);
+  const [targetCalcs, setTargetCalcs] = useState({});
   const [error, setError] = useState(null);
   const [dataLoaded, setDataLoaded] = useState(false);
   const [athletesData, setAthletesData] = useState([]);
@@ -89,6 +112,51 @@ export default function ProgramViewer() {
   const { userEmail, isLoading: authLoading } = useAuth();
 
   useEffect(() => { if (userEmail) loadData(true); }, [userEmail]);
+
+  // Fetch maxes and calculate targets when athleteName or workoutGroups change
+  useEffect(() => {
+    if (!athleteName || !workoutGroups.length || !libraryData.length) return;
+    
+    let cancelled = false;
+    
+    async function fetchAndCalcTargets() {
+      // Fetch latest maxes
+      const maxesResp = await getLatestMaxes(athleteName);
+      const athleteMaxes = {};
+      if (maxesResp.status === 'Success') {
+        Object.keys(maxesResp.data || {}).forEach(key => {
+          athleteMaxes[normalizeString(key)] = maxesResp.data[key];
+        });
+      }
+      
+      // Fetch last logged weights for all exercises in program
+      const lastWeights = {};
+      const uniqueExercises = [...new Set(workoutGroups.map(g => g.name))];
+      await Promise.all(uniqueExercises.map(async exName => {
+        try {
+          const lastLogged = await getLastLoggedWeight(athleteName, exName);
+          if (!cancelled && lastLogged.status === 'Success' && lastLogged.data) {
+            lastWeights[normalizeString(exName)] = lastLogged.data;
+          }
+        } catch (e) {}
+      }));
+      
+      if (cancelled) return;
+      
+      // Pre-calculate all targets
+      const calcs = {};
+      workoutGroups.forEach(group => {
+        group.details.forEach((set, idx) => {
+          const inputKey = group.id + '_' + idx;
+          calcs[inputKey] = calculateTargetLoad(libraryData, athleteMaxes, lastWeights, group.name, set.reps, set.intensity);
+        });
+      });
+      setTargetCalcs(calcs);
+    }
+    
+    fetchAndCalcTargets();
+    return () => { cancelled = true; };
+  }, [athleteName, workoutGroups, libraryData]);
 
   async function loadData(useCache = false) {
     try {
@@ -146,7 +214,9 @@ export default function ProgramViewer() {
         name = athleteResult.athleteName || athleteResult.name || userEmail.split('@')[0];
       }
       setAthleteName(name);
+
     } catch (err) {
+      console.error('loadData error:', err);
       setError('Failed to load data. Please refresh.');
       setLoading(false);
     }
@@ -317,37 +387,32 @@ export default function ProgramViewer() {
     setSaving(true);
     const loggedProgStr = selectedProgram;
     const setsToLog = [];
-    const maxUpdates = {};
+    
     workoutGroups.forEach(group => {
-      const isCore = group.baseLift && group.baseLift.toLowerCase() !== 'none' && group.name.toLowerCase() === group.baseLift.toLowerCase();
       group.details.forEach((set, idx) => {
         const key = group.id + '_' + idx;
         const input = inputValues[key] || {};
-        const target = calculateTargetLoad(athletesData, athleteRowIndex, group.baseLift, group.multiplier, group.name, set.reps, set.intensity);
-        const targetNum = target.replace(' kg', '');
-        const wt = input.wt || (isNaN(parseFloat(targetNum)) ? '' : targetNum);
+        const target = targetCalcs[key] || '';
+        const targetNum = typeof target === 'string' && target.includes('kg') ? target.replace(' kg', '') : '';
+        const wt = input.wt || (targetNum ? targetNum : '');
         const rp = input.reps || set.reps;
         if (!wt || wt === '--' || !rp) return;
         const wtNum = parseFloat(wt);
         const rpNum = parseFloat(rp);
         if (wtNum > 0 && rpNum > 0) {
-          setsToLog.push({ exercise: group.name, weight: wtNum, reps: rpNum });
-          if (isCore && group.baseLift && group.baseLift !== 'none') {
-            const e1rm = Math.round(wtNum / (1.0278 - (0.0278 * rpNum)));
-            if (!maxUpdates[group.baseLift] || e1rm > maxUpdates[group.baseLift]) maxUpdates[group.baseLift] = e1rm;
-          }
+          setsToLog.push({ exercise: group.name, weight: wtNum, reps: rpNum, intensity: set.intensity || '' });
         }
       });
     });
-    if (!setsToLog.length && !Object.keys(maxUpdates).length) {
+    if (!setsToLog.length) {
       alert('Nothing to save.');
       setSaving(false);
       return;
     }
-    const payload = { athlete: athleteName, prog: loggedProgStr, sets: setsToLog, maxUpdates };
+    const payload = { athlete: athleteName, prog: loggedProgStr, sets: setsToLog };
     try {
       const res = await saveSession(payload);
-      if (res.status === 'Success') { setSaveSuccess(true); } else { alert('Save failed. Please try again.'); }
+      if (res.status === 'Success') { setSaveSuccess(true); setTimeout(() => setSaveSuccess(false), 3000); } else { alert('Save failed. Please try again.'); }
     } catch (err) {
       alert('Network error. Please try again.');
     }
@@ -502,10 +567,10 @@ export default function ProgramViewer() {
                     )}
                     
                     {group.details.map((set, idx) => {
-                      const target = calculateTargetLoad(athletesData, athleteRowIndex, group.baseLift, group.multiplier, group.name, set.reps, set.intensity);
-                      const targetNum = target.replace(' kg', '');
                       const inputKey = group.id + '_' + idx;
                       const input = inputValues[inputKey] || {};
+                      const target = targetCalcs[inputKey] || 'Loading...';
+                      const targetNum = typeof target === 'string' && target.includes('kg') ? target.replace(' kg', '') : '';
                       return (
                         <div key={idx} className="pv-set-row">
                           <div className="pv-set-info">
