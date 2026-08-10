@@ -216,3 +216,26 @@ export function parseProgramsFromRaw(rawPrograms, coachEmail) {
   }
   return programs;
 }
+
+
+export const getLatestMaxes = async (athleteName) => {
+  try {
+    const url = `${GOOGLE_SCRIPT_API_URL}?action=getLatestMaxes&athlete=${encodeURIComponent(athleteName)}`;
+    const resp = await fetch(url);
+    const json = await resp.json();
+    return json;
+  } catch (err) {
+    return { status: "Error", data: {} };
+  }
+};
+
+export const getLastLoggedWeight = async (athleteName, exerciseName) => {
+  try {
+    const url = `${GOOGLE_SCRIPT_API_URL}?action=getLastLoggedWeight&athlete=${encodeURIComponent(athleteName)}&exercise=${encodeURIComponent(exerciseName)}`;
+    const resp = await fetch(url);
+    const json = await resp.json();
+    return json;
+  } catch (err) {
+    return { status: "Error", data: null };
+  }
+};
