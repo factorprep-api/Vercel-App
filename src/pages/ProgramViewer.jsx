@@ -113,51 +113,6 @@ export default function ProgramViewer() {
 
   useEffect(() => { if (userEmail) loadData(true); }, [userEmail]);
 
-  // Fetch maxes and calculate targets when athleteName or workoutGroups change
-  useEffect(() => {
-    if (!athleteName || !workoutGroups.length || !libraryData.length) return;
-    
-    let cancelled = false;
-    
-    async function fetchAndCalcTargets() {
-      // Fetch latest maxes
-      const maxesResp = await getLatestMaxes(athleteName);
-      const athleteMaxes = {};
-      if (maxesResp.status === 'Success') {
-        Object.keys(maxesResp.data || {}).forEach(key => {
-          athleteMaxes[normalizeString(key)] = maxesResp.data[key];
-        });
-      }
-      
-      // Fetch last logged weights for all exercises in program
-      const lastWeights = {};
-      const uniqueExercises = [...new Set(workoutGroups.map(g => g.name))];
-      await Promise.all(uniqueExercises.map(async exName => {
-        try {
-          const lastLogged = await getLastLoggedWeight(athleteName, exName);
-          if (!cancelled && lastLogged.status === 'Success' && lastLogged.data) {
-            lastWeights[normalizeString(exName)] = lastLogged.data;
-          }
-        } catch (e) {}
-      }));
-      
-      if (cancelled) return;
-      
-      // Pre-calculate all targets
-      const calcs = {};
-      workoutGroups.forEach(group => {
-        group.details.forEach((set, idx) => {
-          const inputKey = group.id + '_' + idx;
-          calcs[inputKey] = calculateTargetLoad(libraryData, athleteMaxes, lastWeights, group.name, set.reps, set.intensity);
-        });
-      });
-      setTargetCalcs(calcs);
-    }
-    
-    fetchAndCalcTargets();
-    return () => { cancelled = true; };
-  }, [athleteName, workoutGroups, libraryData]);
-
   async function loadData(useCache = false) {
     try {
       if (!userEmail) { setError('Not authenticated'); setLoading(false); return; }
@@ -334,6 +289,51 @@ export default function ProgramViewer() {
     });
     return groups;
   }, [selectedProgram, programData, libraryData]);
+
+  // Fetch maxes and calculate targets when athleteName or workoutGroups change
+  useEffect(() => {
+    if (!athleteName || !workoutGroups.length || !libraryData.length) return;
+    
+    let cancelled = false;
+    
+    async function fetchAndCalcTargets() {
+      // Fetch latest maxes
+      const maxesResp = await getLatestMaxes(athleteName);
+      const athleteMaxes = {};
+      if (maxesResp.status === 'Success') {
+        Object.keys(maxesResp.data || {}).forEach(key => {
+          athleteMaxes[normalizeString(key)] = maxesResp.data[key];
+        });
+      }
+      
+      // Fetch last logged weights for all exercises in program
+      const lastWeights = {};
+      const uniqueExercises = [...new Set(workoutGroups.map(g => g.name))];
+      await Promise.all(uniqueExercises.map(async exName => {
+        try {
+          const lastLogged = await getLastLoggedWeight(athleteName, exName);
+          if (!cancelled && lastLogged.status === 'Success' && lastLogged.data) {
+            lastWeights[normalizeString(exName)] = lastLogged.data;
+          }
+        } catch (e) {}
+      }));
+      
+      if (cancelled) return;
+      
+      // Pre-calculate all targets
+      const calcs = {};
+      workoutGroups.forEach(group => {
+        group.details.forEach((set, idx) => {
+          const inputKey = group.id + '_' + idx;
+          calcs[inputKey] = calculateTargetLoad(libraryData, athleteMaxes, lastWeights, group.name, set.reps, set.intensity);
+        });
+      });
+      setTargetCalcs(calcs);
+    }
+    
+    fetchAndCalcTargets();
+    return () => { cancelled = true; };
+  }, [athleteName, workoutGroups, libraryData]);
 
   const phaseSections = useMemo(() => {
     const phaseMap = {
