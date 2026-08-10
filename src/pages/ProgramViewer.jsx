@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Play, ChevronDown, ChevronUp, Video, Image as ImageIcon, Save, CheckCircle, MessageSquare, UserPlus, Globe } from 'lucide-react';
 import { getYouTubeId } from '../utils/helpers';
 import { useAuth } from '../hooks/useAuth';
@@ -110,6 +111,7 @@ export default function ProgramViewer() {
   const [showProgramMedia, setShowProgramMedia] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const { userEmail, isLoading: authLoading } = useAuth();
+  const navigate = useNavigate();
 
   useEffect(() => { if (userEmail) loadData(true); }, [userEmail]);
 
@@ -410,9 +412,12 @@ export default function ProgramViewer() {
       return;
     }
     const payload = { athlete: athleteName, prog: loggedProgStr, sets: setsToLog };
+    console.log('=== SAVE PAYLOAD ===', JSON.stringify(payload));
+    console.log('=== PAYLOAD LENGTH ===', JSON.stringify(payload).length, 'bytes');
     try {
       const res = await saveSession(payload);
-      if (res.status === 'Success') { setSaveSuccess(true); setTimeout(() => setSaveSuccess(false), 3000); } else { alert('Save failed. Please try again.'); }
+      console.log('=== SAVE RESPONSE ===', res);
+      if (res.status === 'Success') { setSaveSuccess(true); setTimeout(() => navigate('/athlete-hub'), 2000); } else { alert('Save failed: ' + (res.message || 'Unknown error')); }
     } catch (err) {
       alert('Network error. Please try again.');
     }
