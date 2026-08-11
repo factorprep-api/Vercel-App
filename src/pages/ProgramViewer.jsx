@@ -35,9 +35,6 @@ function extractMediaUrl(rawVid) {
 }
 
 // Calculate target load using pre-fetched maxes
-// libraryData = merged library array, each item = [name, video, muscle, formula, '', owner, notes]
-// athleteMaxes = { 'Exercise Name': { oneRM: number } } from getLatestMaxes (maxes field, not data)
-// lastWeights = { 'exercise_key': { weight: number, reps: number } } from getLastLoggedWeight
 function calculateTargetLoad(libraryData, athleteMaxes, lastWeights, exerciseName, reps, intensity) {
   if (!intensity || isNaN(parseFloat(intensity)) || parseFloat(intensity) <= 0) return 'Auto';
 
@@ -56,7 +53,6 @@ function calculateTargetLoad(libraryData, athleteMaxes, lastWeights, exerciseNam
     if (maxEntry && typeof maxEntry === 'object' && maxEntry.oneRM > 0) {
       oneRM = maxEntry.oneRM;
     } else if (maxEntry && typeof maxEntry === 'number' && maxEntry > 0) {
-      // Handle case where maxes might be directly a number
       oneRM = maxEntry;
     } else {
       return 'First time';
@@ -293,31 +289,26 @@ export default function ProgramViewer() {
     return groups;
   }, [selectedProgram, programData, libraryData]);
 
-  // Fetch maxes and calculate targets when athleteName or workoutGroups change
   useEffect(() => {
     if (!athleteName || !workoutGroups.length || !libraryData.length) return;
     
     let cancelled = false;
     
     async function fetchAndCalcTargets() {
-      // Fetch latest maxes — NOTE: maxesResp has 'maxes' field, not 'data'
       const maxesResp = await getLatestMaxes(athleteName);
       const athleteMaxes = {};
       if (maxesResp.status === 'Success' && maxesResp.maxes) {
-        // maxesResp.maxes format: { 'Exercise Name': oneRM_value }
         Object.keys(maxesResp.maxes).forEach(key => {
           athleteMaxes[normalizeString(key)] = { oneRM: maxesResp.maxes[key] };
         });
       }
       
-      // Fetch last logged weights for all exercises in program
       const lastWeights = {};
       const uniqueExercises = [...new Set(workoutGroups.map(g => g.name))];
       await Promise.all(uniqueExercises.map(async exName => {
         try {
           const lastLogged = await getLastLoggedWeight(athleteName, exName);
           if (!cancelled && lastLogged.status === 'Success') {
-            // lastLogged has format: { weight, reps, intensity, date, program, exercise }
             lastWeights[normalizeString(exName)] = {
               weight: lastLogged.weight || 0,
               reps: lastLogged.reps || 0
@@ -328,7 +319,6 @@ export default function ProgramViewer() {
       
       if (cancelled) return;
       
-      // Pre-calculate all targets
       const calcs = {};
       workoutGroups.forEach(group => {
         group.details.forEach((set, idx) => {
@@ -455,6 +445,20 @@ export default function ProgramViewer() {
 
   return (
     <div className="pv-container">
+      {/* INJECTED STYLE FIX: Removes arrows from the kg input and sets standard width */}
+      <style>{`
+        .pv-input-kg::-webkit-outer-spin-button,
+        .pv-input-kg::-webkit-inner-spin-button {
+          -webkit-appearance: none;
+          margin: 0;
+        }
+        .pv-input-kg {
+          -moz-appearance: textfield;
+          width: 65px !important;
+          text-align: center;
+        }
+      `}</style>
+
       <div className="pv-body">
         <h2 style={{ fontSize: '24px', color: '#008ed3', marginBottom: '16px', fontWeight: '700' }}>Today's Workout</h2>
         {athleteName && <p style={{ color: '#666', fontSize: '15px', marginBottom: '20px' }}>Welcome, {athleteName}</p>}
@@ -596,7 +600,8 @@ export default function ProgramViewer() {
                           <div className="pv-inputs">
                             <div className="pv-input-group">
                               <span className="pv-input-label">kg</span>
-                              <input type="number" className="pv-input" placeholder={targetNum || '--'} value={input.wt || ''} onChange={e => handleInputChange(group.id, idx, 'wt', e.target.value)} />
+                              {/* ADDED 'pv-input-kg' CLASS HERE to trigger the style block above */}
+                              <input type="number" className="pv-input pv-input-kg" placeholder={targetNum || '--'} value={input.wt || ''} onChange={e => handleInputChange(group.id, idx, 'wt', e.target.value)} />
                             </div>
                             <div className="pv-input-group">
                               <span className="pv-input-label">reps</span>
