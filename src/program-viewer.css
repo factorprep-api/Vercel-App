@@ -1,0 +1,11 @@
+
+/* Hide number input spinners */
+.pv-input[type="number"]::-webkit-outer-spin-button,
+.pv-input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.pv-input[type="number"] {
+  -moz-appearance: textfield;
+}
