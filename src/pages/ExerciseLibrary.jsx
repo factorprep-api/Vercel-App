@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Play, Search, X, Pencil, Trash2, Plus } from 'lucide-react';
 import { getYouTubeId, normalizeVideoUrl } from '../utils/helpers';
 import { useAuth } from '../hooks/useAuth';
-import { fetchExerciseLibrary, deleteExerciseFromLibrary, updateExerciseInLibrary, addExerciseToLibrary } from '../api.js';
+import { fetchExerciseLibrary, deleteExerciseFromLibrary, updateExerciseInLibrary, addExerciseToLibrary, getAthleteByEmail } from '../api.js';
 import './exercise-library.css';
 import HelpButton from '../components/HelpButton';
 
@@ -57,7 +57,8 @@ function PageButtons({ currentPage, totalPages, onChange }) {
   return <>{buttons}</>;
 }
 
-export default function ExerciseLibrary() {
+// Added viewMode prop. Defaults to 'athlete' if not provided by the parent page.
+export default function ExerciseLibrary({ viewMode = 'athlete' }) {
   const [fullLibrary, setFullLibrary] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -72,8 +73,11 @@ export default function ExerciseLibrary() {
   const [editVideo, setEditVideo] = useState('');
   const [editMuscle, setEditMuscle] = useState('');
   const [deleting, setDeleting] = useState(null);
-  const { role, userEmail: coachEmail, isLoading: authLoading } = useAuth();
   const [adding, setAdding] = useState(false);
+  const [assignedCoachEmail, setAssignedCoachEmail] = useState('');
+  
+  // Removed the 'coachEmail' alias to fix the logic trap
+  const { role, userEmail, isLoading: authLoading } = useAuth();
 
   // Debounce search effect
   useEffect(() => {
@@ -83,7 +87,20 @@ export default function ExerciseLibrary() {
 
   useEffect(() => {
     (async () => {
-      // Try cache first
+      // 1. Fetch the user's assigned coach if logged in
+      if (userEmail) {
+        try {
+          const athleteResult = await getAthleteByEmail(userEmail);
+          if (athleteResult && athleteResult.status === 'Success') {
+            const coachE = athleteResult.coachEmail || athleteResult.coach || '';
+            setAssignedCoachEmail(coachE);
+          }
+        } catch (err) {
+          console.warn("Failed to fetch assigned coach", err);
+        }
+      }
+
+      // 2. Fetch the library data
       const cached = localStorage.getItem('fp_exercise_library');
       if (cached) {
         try {
@@ -104,6 +121,7 @@ export default function ExerciseLibrary() {
           return;
         } catch {}
       }
+      
       // No cache - fetch fresh
       try {
         const controller = new AbortController();
@@ -118,16 +136,24 @@ export default function ExerciseLibrary() {
         setLoading(false);
       }
     })();
-  }, []);
+  }, [userEmail]);
 
+  // Only true if the logged-in user actually owns the exercise (allows editing/deleting)
   function isCoachOwned(exercise) {
-    if (!exercise.ownerEmail || !coachEmail) return false;
-    return exercise.ownerEmail.toLowerCase() === coachEmail.toLowerCase();
+    if (!exercise.ownerEmail || !userEmail) return false;
+    return exercise.ownerEmail.toLowerCase() === userEmail.toLowerCase();
   }
 
+  // Show badge if owned by logged-in user OR their assigned coach
   function renderCoachBadge(exercise) {
-    if (!isCoachOwned(exercise)) return null;
-    return <span className="exlib-coach-badge">• Coach</span>;
+    if (!exercise.ownerEmail) return null;
+    const isMine = userEmail && exercise.ownerEmail.toLowerCase() === userEmail.toLowerCase();
+    const isMyCoach = assignedCoachEmail && exercise.ownerEmail.toLowerCase() === assignedCoachEmail.toLowerCase();
+    
+    if (isMine || isMyCoach) {
+      return <span className="exlib-coach-badge">• Coach</span>;
+    }
+    return null;
   }
 
   function showToast(message, isError = false) {
@@ -198,15 +224,21 @@ export default function ExerciseLibrary() {
 
   const filteredForView = useMemo(() => {
     const allowedLibrary = fullLibrary.filter(ex => {
-      if (!ex.ownerEmail) return true;
-      if (!coachEmail) return false;
-      return ex.ownerEmail.toLowerCase() === coachEmail.toLowerCase();
+      if (!ex.ownerEmail) return true; // Global exercises are always allowed
+      if (!userEmail) return false;
+      
+      const isMine = ex.ownerEmail.toLowerCase() === userEmail.toLowerCase();
+      const isMyCoach = assignedCoachEmail && ex.ownerEmail.toLowerCase() === assignedCoachEmail.toLowerCase();
+      
+      // Allow if owned by me OR my assigned coach
+      return isMine || isMyCoach;
     });
+
     if (viewFilter === 'my') {
       return allowedLibrary.filter(ex => isCoachOwned(ex));
     }
     return allowedLibrary;
-  }, [fullLibrary, viewFilter, coachEmail]);
+  }, [fullLibrary, viewFilter, userEmail, assignedCoachEmail]);
 
   const groupedLibrary = useMemo(() => buildGrouped(filteredForView), [filteredForView]);
 
@@ -232,8 +264,9 @@ export default function ExerciseLibrary() {
   const openModal = (rawUrl) => setModalVideo({ url: rawUrl, ytId: getYouTubeId(rawUrl) });
   const closeModal = () => setModalVideo(null);
 
+  // Secured viewFilters by checking viewMode as well
   const viewFilters = [
-    ...(role === 'coach' ? [{ id: 'all', label: 'All Exercises' }, { id: 'my', label: 'My Exercises' }] : [])
+    ...(role === 'coach' && viewMode === 'coach' ? [{ id: 'all', label: 'All Exercises' }, { id: 'my', label: 'My Exercises' }] : [])
   ];
 
   if (loading) {
@@ -246,11 +279,12 @@ export default function ExerciseLibrary() {
     );
   }
 
-  if (authLoading || !role) {
+  // Removed `|| !role` so athletes don't get trapped here
+  if (authLoading) {
     return (
       <div className="exlib-container">
         <div className="exlib-body">
-          <p className="exlib-placeholder">Loading your role...</p>
+          <p className="exlib-placeholder">Loading...</p>
         </div>
       </div>
     );
@@ -261,7 +295,9 @@ export default function ExerciseLibrary() {
       <div className="exlib-body">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
           <h2 style={{ fontSize: '24px', color: '#008ed3', fontWeight: '700', margin: 0 }}>Exercise Library</h2>
-          {role === 'coach' && (
+          
+          {/* Secured Add Exercise button to only show on Coach Hub */}
+          {role === 'coach' && viewMode === 'coach' && (
             <button className="exlib-add-btn" onClick={() => setAdding(true)}>
               <Plus size={16} /> Add Exercise
             </button>
@@ -318,7 +354,8 @@ export default function ExerciseLibrary() {
 
                       {!isImg && <Play className="exlib-play-icon" size={32} fill="currentColor" stroke="none" />}
 
-                      {owned && (
+                      {/* Only owners get edit/delete capabilities */}
+                      {owned && viewMode === 'coach' && (
                         <div className="exlib-owner-actions" onClick={e => e.stopPropagation()}>
                           <button className="exlib-edit-btn" onClick={() => openEditModal(ex)} title="Edit">
                             <Pencil size={14} />
@@ -352,7 +389,7 @@ export default function ExerciseLibrary() {
 
       {adding && (
         <AddExerciseModal
-          coachEmail={coachEmail}
+          userEmail={userEmail}
           existingCategories={existingCategories}
           onClose={() => setAdding(false)}
           onSuccess={async () => {
@@ -449,7 +486,7 @@ export default function ExerciseLibrary() {
   );
 }
 
-function AddExerciseModal({ coachEmail, existingCategories, onClose, onSuccess }) {
+function AddExerciseModal({ userEmail, existingCategories, onClose, onSuccess }) {
   const [name, setName] = useState('');
   const [video, setVideo] = useState('');
   const [muscle, setMuscle] = useState('Coach Exercises');
@@ -459,7 +496,7 @@ function AddExerciseModal({ coachEmail, existingCategories, onClose, onSuccess }
 
   async function handleSave() {
     if (!name.trim()) { alert('Exercise name is required.'); return; }
-    if (!coachEmail) { alert('Not authenticated. Please sign in again.'); return; }
+    if (!userEmail) { alert('Not authenticated. Please sign in again.'); return; }
     setSaving(true);
     try {
       const res = await addExerciseToLibrary({
@@ -468,7 +505,7 @@ function AddExerciseModal({ coachEmail, existingCategories, onClose, onSuccess }
         muscle: muscle.trim() || 'Coach Exercises',
         baseLift: baseLift.trim(),
         multiplier: multiplier ? parseFloat(multiplier) : 1.0,
-        ownerEmail: coachEmail
+        ownerEmail: userEmail
       });
       if (res.status === 'Success') {
         await onSuccess();
