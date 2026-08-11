@@ -4,11 +4,16 @@ import { useAuth } from '../hooks/useAuth';
 import { fetchAllData, fetchLogbookByAthlete, getAthleteByEmail } from '../api';
 import './my-progress.css';
 
+function normalizeString(str) {
+  return String(str).toLowerCase().replace(/\./g, ' ').replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim();
+}
+
 export default function MyProgress() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [maxes, setMaxes] = useState([]);
   const [history, setHistory] = useState([]);
+  const [programsData, setProgramsData] = useState([]);
   const [athleteName, setAthleteName] = useState('');
   const [activeTab, setActiveTab] = useState('maxes');
   const [exerciseFilter, setExerciseFilter] = useState('All');
@@ -37,6 +42,7 @@ export default function MyProgress() {
             setHistoryLoaded(true);
             setLoading(false);
           }
+          if (parsed.programs) setProgramsData(parsed.programs);
         }
       } catch {}
     }
@@ -73,6 +79,9 @@ export default function MyProgress() {
 
       fetchAllData().then(allData => {
         const athletes = allData.athletes;
+        const programs = allData.programs || [];
+        setProgramsData(programs);
+
         if (!athletes || !athletes.length) return;
         const headers = athletes[0] || [];
         let athleteRow = null;
@@ -100,6 +109,7 @@ export default function MyProgress() {
           athleteName: name,
           maxes: parsedMaxes,
           history: formattedHistory,
+          programs: programs,
           cachedAt: new Date().toISOString()
         }));
       }).catch(() => {});
@@ -122,18 +132,63 @@ export default function MyProgress() {
     });
   }, [history]);
 
-  const sessionDetails = useMemo(() => {
+  const phaseLookup = useMemo(() => {
+    const lookup = {};
+    if (!programsData.length) return lookup;
+    for (let i = 1; i < programsData.length; i++) {
+      const row = programsData[i];
+      const progName = String(row[0] || '').trim();
+      const phase = String(row[2] || '').trim() || 'Work Block';
+      const exName = String(row[3] || '').trim();
+      if (progName && exName) {
+        const key = normalizeString(progName) + '|' + normalizeString(exName);
+        if (!lookup[key]) lookup[key] = phase;
+      }
+    }
+    return lookup;
+  }, [programsData]);
+
+  const sessionSections = useMemo(() => {
     if (!selectedSession) return [];
     const session = sessions.find(s => s.date === selectedSession.date && s.prog === selectedSession.prog);
     if (!session) return [];
+
+    // Build exercise lookup keyed by normalized name
     const exGroups = {};
     session.sets.forEach(set => {
-      const key = set.ex.toLowerCase().trim();
-      if (!exGroups[key]) exGroups[key] = { name: set.ex, sets: [] };
+      const key = normalizeString(set.ex);
+      if (!exGroups[key]) exGroups[key] = { name: set.ex, sets: [], phase: null };
       exGroups[key].sets.push(set);
     });
-    return Object.values(exGroups);
-  }, [selectedSession, sessions]);
+
+    // Assign phases using program data
+    Object.values(exGroups).forEach(group => {
+      const lookupKey = normalizeString(selectedSession.prog) + '|' + normalizeString(group.name);
+      group.phase = phaseLookup[lookupKey] || 'Other Content';
+    });
+
+    const sections = [
+      { title: 'Warm Up', items: [], color: '#fd7e14' },
+      { title: 'Work Block', items: [], color: '#22c55e' },
+      { title: 'Other Content', items: [], color: '#888888' },
+      { title: 'Cool Down', items: [], color: '#ef4444' },
+    ];
+
+    // Map raw phase names to section titles
+    const phaseMapping = {
+      'warm up': 'Warm Up', 'warmup': 'Warm Up',
+      'work block': 'Work Block', 'workblock': 'Work Block',
+      'cool down': 'Cool Down', 'cooldown': 'Cool Down'
+    };
+
+    Object.values(exGroups).forEach(group => {
+      const phaseTitle = phaseMapping[group.phase?.toLowerCase()] || group.phase;
+      const section = sections.find(s => s.title === phaseTitle);
+      if (section) section.items.push(group);
+    });
+
+    return sections.filter(s => s.items.length > 0);
+  }, [selectedSession, sessions, phaseLookup, programsData]);
 
   const uniqueExercises = useMemo(() => {
     return [...new Set(history.map(h => h.ex).filter(Boolean))].sort();
@@ -191,15 +246,28 @@ export default function MyProgress() {
                       <h3 style={{ fontSize: '20px', color: '#333', marginBottom: '4px' }}>{selectedSession.prog}</h3>
                       <p style={{ color: '#666', fontSize: '14px' }}>Completed: {selectedSession.date}</p>
                     </div>
-                    {sessionDetails.map(group => (
-                      <div key={group.name} style={{ marginBottom: '16px', padding: '12px', border: '1px solid #e0e0e0', borderRadius: '10px', backgroundColor: '#fafafa' }}>
-                        <h4 style={{ fontSize: '16px', color: '#333', marginBottom: '8px', fontWeight: '600' }}>{group.name}</h4>
-                        {group.sets.map((set, idx) => (
-                          <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: idx < group.sets.length - 1 ? '1px solid #eee' : 'none', fontSize: '14px' }}>
-                            <div><strong>Set {idx + 1}:</strong> {set.reps} reps{set.intensity ? ' @ ' + set.intensity + '%' : ''}</div>
-                            <div style={{ fontWeight: '600', color: '#008ed3' }}>{set.wt}kg</div>
-                          </div>
-                        ))}
+                    {sessionSections.map(section => (
+                      <div key={section.title} className="pv-phase-card" style={{ borderTopColor: section.color, borderTopStyle: 'solid', borderTopWidth: '4px', borderRadius: '12px', overflow: 'hidden', marginBottom: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
+                        <div className="pv-phase-header" style={{ backgroundColor: section.color, color: '#fff', padding: '8px 16px', fontWeight: '700', fontSize: '15px' }}>
+                          {section.title}
+                        </div>
+                        <div style={{ padding: '12px' }}>
+                          {section.items.map(group => (
+                            <div key={group.name} style={{ marginBottom: '16px' }}>
+                              <h4 style={{ fontSize: '16px', color: '#333', marginBottom: '8px', fontWeight: '600' }}>{group.name}</h4>
+                              {group.sets.map((set, idx) => (
+                                <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 12px', borderBottom: '1px solid #eee', fontSize: '14px' }}>
+                                  <div>
+                                    <strong>Set {idx + 1}:</strong> {set.reps} reps {set.intensity ? '@ ' + set.intensity + '%' : ''}
+                                  </div>
+                                  <div style={{ fontWeight: '600', color: '#008ed3' }}>
+                                    {set.wt}kg x {set.reps}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     ))}
                   </>
