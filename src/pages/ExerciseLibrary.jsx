@@ -57,8 +57,7 @@ function PageButtons({ currentPage, totalPages, onChange }) {
   return <>{buttons}</>;
 }
 
-// Added viewMode prop. Defaults to 'athlete' if not provided by the parent page.
-export default function ExerciseLibrary({ viewMode = 'athlete' }) {
+export default function ExerciseLibrary({ viewMode: propViewMode = 'athlete' }) {
   const [fullLibrary, setFullLibrary] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -76,8 +75,12 @@ export default function ExerciseLibrary({ viewMode = 'athlete' }) {
   const [adding, setAdding] = useState(false);
   const [assignedCoachEmail, setAssignedCoachEmail] = useState('');
   
-  // Removed the 'coachEmail' alias to fix the logic trap
   const { role, userEmail, isLoading: authLoading } = useAuth();
+
+  // FIX 1: Read the developer's URL parameter to get the Mode Switch
+  const queryParams = new URLSearchParams(window.location.search);
+  const urlViewMode = queryParams.get('viewMode');
+  const viewMode = urlViewMode || propViewMode;
 
   // Debounce search effect
   useEffect(() => {
@@ -86,12 +89,17 @@ export default function ExerciseLibrary({ viewMode = 'athlete' }) {
   }, [searchQuery]);
 
   useEffect(() => {
+    // FIX 2: Stop the race condition. Wait until authentication is finished!
+    if (authLoading) return;
+
+    let isMounted = true; // Safety guard to prevent double-loading
+
     (async () => {
       // 1. Fetch the user's assigned coach if logged in
       if (userEmail) {
         try {
           const athleteResult = await getAthleteByEmail(userEmail);
-          if (athleteResult && athleteResult.status === 'Success') {
+          if (athleteResult && athleteResult.status === 'Success' && isMounted) {
             const coachE = athleteResult.coachEmail || athleteResult.coach || '';
             setAssignedCoachEmail(coachE);
           }
@@ -102,7 +110,7 @@ export default function ExerciseLibrary({ viewMode = 'athlete' }) {
 
       // 2. Fetch the library data
       const cached = localStorage.getItem('fp_exercise_library');
-      if (cached) {
+      if (cached && isMounted) {
         try {
           const parsed = JSON.parse(cached);
           setFullLibrary(parsed);
@@ -113,12 +121,14 @@ export default function ExerciseLibrary({ viewMode = 'athlete' }) {
             const timeoutId = setTimeout(() => controller.abort(), 8000);
             const lib = await fetchExerciseLibrary({ signal: controller.signal });
             clearTimeout(timeoutId);
-            setFullLibrary(lib);
-            localStorage.setItem('fp_exercise_library', JSON.stringify(lib));
+            if (isMounted) {
+              setFullLibrary(lib);
+              localStorage.setItem('fp_exercise_library', JSON.stringify(lib));
+            }
           } catch (err) {
             console.warn("Background refresh failed:", err.message);
           }
-          return;
+          return; // If cache worked, stop here.
         } catch {}
       }
       
@@ -128,17 +138,21 @@ export default function ExerciseLibrary({ viewMode = 'athlete' }) {
         const timeoutId = setTimeout(() => controller.abort(), 8000);
         const lib = await fetchExerciseLibrary({ signal: controller.signal });
         clearTimeout(timeoutId);
-        setFullLibrary(lib);
-        localStorage.setItem('fp_exercise_library', JSON.stringify(lib));
+        if (isMounted) {
+          setFullLibrary(lib);
+          localStorage.setItem('fp_exercise_library', JSON.stringify(lib));
+        }
       } catch {
-        setError(true);
+        if (isMounted) setError(true);
       } finally {
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     })();
-  }, [userEmail]);
 
-  // Only true if the logged-in user actually owns the exercise (allows editing/deleting)
+    return () => { isMounted = false; }; // Cleanup function
+  }, [userEmail, authLoading]);
+
+  // Only true if the logged-in user actually owns the exercise
   function isCoachOwned(exercise) {
     if (!exercise.ownerEmail || !userEmail) return false;
     return exercise.ownerEmail.toLowerCase() === userEmail.toLowerCase();
@@ -224,13 +238,12 @@ export default function ExerciseLibrary({ viewMode = 'athlete' }) {
 
   const filteredForView = useMemo(() => {
     const allowedLibrary = fullLibrary.filter(ex => {
-      if (!ex.ownerEmail) return true; // Global exercises are always allowed
+      if (!ex.ownerEmail) return true; 
       if (!userEmail) return false;
       
       const isMine = ex.ownerEmail.toLowerCase() === userEmail.toLowerCase();
       const isMyCoach = assignedCoachEmail && ex.ownerEmail.toLowerCase() === assignedCoachEmail.toLowerCase();
       
-      // Allow if owned by me OR my assigned coach
       return isMine || isMyCoach;
     });
 
@@ -264,10 +277,19 @@ export default function ExerciseLibrary({ viewMode = 'athlete' }) {
   const openModal = (rawUrl) => setModalVideo({ url: rawUrl, ytId: getYouTubeId(rawUrl) });
   const closeModal = () => setModalVideo(null);
 
-  // Secured viewFilters by checking viewMode as well
   const viewFilters = [
     ...(role === 'coach' && viewMode === 'coach' ? [{ id: 'all', label: 'All Exercises' }, { id: 'my', label: 'My Exercises' }] : [])
   ];
+
+  if (authLoading) {
+    return (
+      <div className="exlib-container">
+        <div className="exlib-body">
+          <p className="exlib-placeholder">Authenticating...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -279,24 +301,12 @@ export default function ExerciseLibrary({ viewMode = 'athlete' }) {
     );
   }
 
-  // Removed `|| !role` so athletes don't get trapped here
-  if (authLoading) {
-    return (
-      <div className="exlib-container">
-        <div className="exlib-body">
-          <p className="exlib-placeholder">Loading...</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="exlib-container">
       <div className="exlib-body">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
           <h2 style={{ fontSize: '24px', color: '#008ed3', fontWeight: '700', margin: 0 }}>Exercise Library</h2>
           
-          {/* Secured Add Exercise button to only show on Coach Hub */}
           {role === 'coach' && viewMode === 'coach' && (
             <button className="exlib-add-btn" onClick={() => setAdding(true)}>
               <Plus size={16} /> Add Exercise
@@ -354,7 +364,6 @@ export default function ExerciseLibrary({ viewMode = 'athlete' }) {
 
                       {!isImg && <Play className="exlib-play-icon" size={32} fill="currentColor" stroke="none" />}
 
-                      {/* Only owners get edit/delete capabilities */}
                       {owned && viewMode === 'coach' && (
                         <div className="exlib-owner-actions" onClick={e => e.stopPropagation()}>
                           <button className="exlib-edit-btn" onClick={() => openEditModal(ex)} title="Edit">
@@ -400,7 +409,6 @@ export default function ExerciseLibrary({ viewMode = 'athlete' }) {
         />
       )}
 
-      {/* ── VIDEO / IMAGE MODAL - FIXED ── */}
       {modalVideo && (() => {
         const isImage =
           modalVideo.url.toLowerCase().includes('.png') ||
@@ -555,3 +563,4 @@ function AddExerciseModal({ userEmail, existingCategories, onClose, onSuccess })
     </div>
   );
 }
+
