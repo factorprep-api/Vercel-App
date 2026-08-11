@@ -34,11 +34,10 @@ function extractMediaUrl(rawVid) {
   return '';
 }
 
-
 // Calculate target load using pre-fetched maxes
 // libraryData = merged library array, each item = [name, video, muscle, formula, '', owner, notes]
-// athleteMaxes = { 'Exercise Name': { date, oneRM } } from getLatestMaxes
-// lastWeights = { 'exercise_key': { weight, reps } } from getLastLoggedWeight
+// athleteMaxes = { 'Exercise Name': { oneRM: number } } from getLatestMaxes (maxes field, not data)
+// lastWeights = { 'exercise_key': { weight: number, reps: number } } from getLastLoggedWeight
 function calculateTargetLoad(libraryData, athleteMaxes, lastWeights, exerciseName, reps, intensity) {
   if (!intensity || isNaN(parseFloat(intensity)) || parseFloat(intensity) <= 0) return 'Auto';
 
@@ -52,10 +51,13 @@ function calculateTargetLoad(libraryData, athleteMaxes, lastWeights, exerciseNam
   let oneRM = 0;
 
   if (isFormula) {
-    // Epley exercise — look up latest 1RM
+    // Epley exercise — look up latest 1RM (maxes has format { oneRM: number })
     const maxEntry = athleteMaxes[normalizeString(exerciseName)];
-    if (maxEntry && maxEntry.oneRM > 0) {
+    if (maxEntry && typeof maxEntry === 'object' && maxEntry.oneRM > 0) {
       oneRM = maxEntry.oneRM;
+    } else if (maxEntry && typeof maxEntry === 'number' && maxEntry > 0) {
+      // Handle case where maxes might be directly a number
+      oneRM = maxEntry;
     } else {
       return 'First time';
     }
@@ -262,7 +264,6 @@ export default function ProgramViewer() {
         currentGroup = { id: 'ex_' + index, phase, name, details: [], baseLift: '', multiplier: 1.0, videoUrl: '', ytId: null };
       }
       
-      // Multiply out the sets so the athlete UI shows individual input rows for tracking
       for (let s = 0; s < numSets; s++) {
         currentGroup.details.push({ sets: '1', reps, intensity, tempo, rest });
       }
@@ -299,12 +300,13 @@ export default function ProgramViewer() {
     let cancelled = false;
     
     async function fetchAndCalcTargets() {
-      // Fetch latest maxes
+      // Fetch latest maxes — NOTE: maxesResp has 'maxes' field, not 'data'
       const maxesResp = await getLatestMaxes(athleteName);
       const athleteMaxes = {};
-      if (maxesResp.status === 'Success') {
-        Object.keys(maxesResp.data || {}).forEach(key => {
-          athleteMaxes[normalizeString(key)] = maxesResp.data[key];
+      if (maxesResp.status === 'Success' && maxesResp.maxes) {
+        // maxesResp.maxes format: { 'Exercise Name': oneRM_value }
+        Object.keys(maxesResp.maxes).forEach(key => {
+          athleteMaxes[normalizeString(key)] = { oneRM: maxesResp.maxes[key] };
         });
       }
       
@@ -314,8 +316,12 @@ export default function ProgramViewer() {
       await Promise.all(uniqueExercises.map(async exName => {
         try {
           const lastLogged = await getLastLoggedWeight(athleteName, exName);
-          if (!cancelled && lastLogged.status === 'Success' && lastLogged.data) {
-            lastWeights[normalizeString(exName)] = lastLogged.data;
+          if (!cancelled && lastLogged.status === 'Success') {
+            // lastLogged has format: { weight, reps, intensity, date, program, exercise }
+            lastWeights[normalizeString(exName)] = {
+              weight: lastLogged.weight || 0,
+              reps: lastLogged.reps || 0
+            };
           }
         } catch (e) {}
       }));
@@ -343,11 +349,11 @@ export default function ProgramViewer() {
       'work block': 'Work Block', 'workblock': 'Work Block',
       'cool down': 'Cool Down', 'cooldown': 'Cool Down'
     };
-        const sections = [
-      { title: 'Warm Up', items: [], color: '#fd7e14' },      // Orange
-      { title: 'Work Block', items: [], color: '#22c55e' },   // Green
+    const sections = [
+      { title: 'Warm Up', items: [], color: '#fd7e14' },
+      { title: 'Work Block', items: [], color: '#22c55e' },
       { title: 'Other Content', items: [], color: '#888888' },
-      { title: 'Cool Down', items: [], color: '#ef4444' },    // Light Red
+      { title: 'Cool Down', items: [], color: '#ef4444' },
     ];
     
     workoutGroups.forEach(g => {
@@ -374,7 +380,6 @@ export default function ProgramViewer() {
       } else {
         next.add(groupId);
       }
-      // Create completely new Set instance
       return new Set(next);
     });
   }
@@ -626,4 +631,3 @@ export default function ProgramViewer() {
     </div>
   );
 }
-
