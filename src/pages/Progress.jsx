@@ -1,40 +1,43 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { Dumbbell, Clock, ChevronLeft } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { fetchAllData, fetchLogbookByAthlete, getAthleteByEmail } from '../api';
 import './my-progress.css';
-
-function normalizeString(str) {
-  return String(str).toLowerCase().replace(/\./g, ' ').replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim();
-}
 
 export default function MyProgress() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [maxes, setMaxes] = useState([]);
   const [history, setHistory] = useState([]);
-  const [programsData, setProgramsData] = useState([]);
   const [athleteName, setAthleteName] = useState('');
   const [activeTab, setActiveTab] = useState('maxes');
   const [exerciseFilter, setExerciseFilter] = useState('All');
   const [selectedSession, setSelectedSession] = useState(null);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
   const { userEmail, isLoading: authLoading } = useAuth();
+  const loadedRef = useRef(false);
 
   useEffect(() => {
-    if (userEmail) loadData();
+    if (userEmail && !loadedRef.current) {
+      loadedRef.current = true;
+      loadData();
+    }
   }, [userEmail]);
 
   async function loadData() {
+    // Load cached data immediately
     const cached = localStorage.getItem('fp_progress_data');
     if (cached) {
       try {
         const parsed = JSON.parse(cached);
         if (parsed.athleteName) {
           setAthleteName(parsed.athleteName);
-          if (parsed.maxes && Array.isArray(parsed.maxes)) setMaxes(parsed.maxes);
-          if (parsed.history && Array.isArray(parsed.history)) setHistory(parsed.history);
-          if (parsed.programs && Array.isArray(parsed.programs)) setProgramsData(parsed.programs);
-          setLoading(false);
+          if (parsed.maxes) setMaxes(parsed.maxes);
+          if (parsed.history) {
+            setHistory(parsed.history);
+            setHistoryLoaded(true);
+            setLoading(false);
+          }
         }
       } catch {}
     }
@@ -46,6 +49,7 @@ export default function MyProgress() {
         return;
       }
 
+      // Get athlete name first (fast call)
       const athleteResult = await getAthleteByEmail(userEmail);
       let name = '';
       if (athleteResult.status === 'Success') {
@@ -55,34 +59,7 @@ export default function MyProgress() {
       }
       setAthleteName(name);
 
-      const allData = await fetchAllData();
-      const athletes = allData.athletes;
-      const headers = athletes[0] || [];
-      const programs = allData.programs || [];
-      setProgramsData(programs);
-
-      let athleteRow = null;
-      for (let i = 1; i < athletes.length; i++) {
-        if (String(athletes[i][0] || '').trim().toLowerCase() === name.toLowerCase()) {
-          athleteRow = athletes[i];
-          break;
-        }
-      }
-
-      const parsedMaxes = [];
-      if (athleteRow) {
-        const skipCols = ['pin', 'email', 'role', 'coach', 'notes', 'phone', 'password', 'program assignment'];
-        for (let c = 1; c < headers.length; c++) {
-          const liftName = String(headers[c] || '').trim();
-          if (!liftName || skipCols.includes(liftName.toLowerCase())) continue;
-          const liftWeight = parseFloat(athleteRow[c]);
-          if (!isNaN(liftWeight) && liftWeight > 0) {
-            parsedMaxes.push({ name: liftName, weight: liftWeight });
-          }
-        }
-      }
-      setMaxes(parsedMaxes);
-
+      // Load logbook immediately (fast, only this athlete's data)
       const logResult = await fetchLogbookByAthlete(name);
       const logData = logResult.data || [];
       const formattedHistory = logData.map(item => ({
@@ -93,26 +70,49 @@ export default function MyProgress() {
         wt: item.wt || '',
         reps: item.reps || ''
       }));
-
       setHistory(formattedHistory);
-
-      localStorage.setItem('fp_progress_data', JSON.stringify({
-        email: userEmail,
-        athleteName: name,
-        maxes: parsedMaxes,
-        history: formattedHistory,
-        programs: programs,
-        cachedAt: new Date().toISOString()
-      }));
-
+      setHistoryLoaded(true);
       setLoading(false);
+
+      // Load maxes in background (separate, doesn't block History Vault)
+      fetchAllData().then(allData => {
+        const athletes = allData.athletes;
+        if (!athletes || !athletes.length) return;
+        const headers = athletes[0] || [];
+        let athleteRow = null;
+        for (let i = 1; i < athletes.length; i++) {
+          if (String(athletes[i][0] || '').trim().toLowerCase() === name.toLowerCase()) {
+            athleteRow = athletes[i];
+            break;
+          }
+        }
+        const parsedMaxes = [];
+        if (athleteRow) {
+          const skipCols = ['pin', 'email', 'role', 'coach', 'notes', 'phone', 'password', 'program assignment'];
+          for (let c = 1; c < headers.length; c++) {
+            const liftName = String(headers[c] || '').trim();
+            if (!liftName || skipCols.includes(liftName.toLowerCase())) continue;
+            const liftWeight = parseFloat(athleteRow[c]);
+            if (!isNaN(liftWeight) && liftWeight > 0) {
+              parsedMaxes.push({ name: liftName, weight: liftWeight });
+            }
+          }
+        }
+        setMaxes(parsedMaxes);
+        localStorage.setItem('fp_progress_data', JSON.stringify({
+          email: userEmail,
+          athleteName: name,
+          maxes: parsedMaxes,
+          history: formattedHistory,
+          cachedAt: new Date().toISOString()
+        }));
+      }).catch(() => {});
     } catch (err) {
       setError('Failed to load progress data. Please refresh.');
       setLoading(false);
     }
   }
 
-  // Group history into sessions by date + program name, newest first
   const sessions = useMemo(() => {
     const map = {};
     history.forEach(item => {
@@ -126,60 +126,20 @@ export default function MyProgress() {
     });
   }, [history]);
 
-  // Build phase lookup from Programs sheet for session view
-  const phaseLookup = useMemo(() => {
-    const lookup = {};
-    if (!programsData.length) return lookup;
-    for (let i = 1; i < programsData.length; i++) {
-      const row = programsData[i];
-      const progName = String(row[0] || '').trim();
-      const phase = String(row[2] || '').trim() || 'Work Block';
-      const exName = String(row[3] || '').trim();
-      if (progName && exName) {
-        const key = normalizeString(progName) + '|' + normalizeString(exName);
-        if (!lookup[key]) lookup[key] = phase;
-      }
-    }
-    return lookup;
-  }, [programsData]);
-
-  const sessionPhases = useMemo(() => {
+  const sessionDetails = useMemo(() => {
     if (!selectedSession) return [];
     const session = sessions.find(s => s.date === selectedSession.date && s.prog === selectedSession.prog);
     if (!session) return [];
 
-    // Group sets by exercise
     const exGroups = {};
     session.sets.forEach(set => {
-      const key = normalizeString(set.ex);
+      const key = set.ex.toLowerCase().trim();
       if (!exGroups[key]) exGroups[key] = { name: set.ex, sets: [] };
       exGroups[key].sets.push(set);
     });
 
-    // Assign phases using lookup
-    const phaseMap = {
-      'warm up': 'Warm Up', 'warmup': 'Warm Up',
-      'work block': 'Work Block', 'workblock': 'Work Block',
-      'cool down': 'Cool Down', 'cooldown': 'Cool Down'
-    };
-
-    const sections = [
-      { title: 'Warm Up', items: [], color: '#fd7e14' },
-      { title: 'Work Block', items: [], color: '#22c55e' },
-      { title: 'Other Content', items: [], color: '#888888' },
-      { title: 'Cool Down', items: [], color: '#ef4444' },
-    ];
-
-    Object.values(exGroups).forEach(group => {
-      const lookupKey = normalizeString(selectedSession.prog) + '|' + normalizeString(group.name);
-      const phaseRaw = phaseLookup[lookupKey] || 'Work Block';
-      const phaseTitle = phaseMap[String(phaseRaw).toLowerCase().trim()] || 'Other Content';
-      const section = sections.find(s => s.title === phaseTitle);
-      if (section) section.items.push(group);
-    });
-
-    return sections.filter(s => s.items.length > 0);
-  }, [selectedSession, sessions, phaseLookup]);
+    return Object.values(exGroups);
+  }, [selectedSession, sessions]);
 
   const uniqueExercises = useMemo(() => {
     return [...new Set(history.map(h => h.ex).filter(Boolean))].sort();
@@ -212,9 +172,7 @@ export default function MyProgress() {
               <div className="mp-maxes-card">
                 <div className="mp-maxes-header">Current Core Maxes</div>
                 <div className="mp-maxes-grid">
-                  {loading && maxes.length === 0 ? (
-                    <p className="mp-placeholder">Loading metrics...</p>
-                  ) : maxes.length === 0 ? (
+                  {maxes.length === 0 ? (
                     <p className="mp-placeholder">No metrics recorded yet.</p>
                   ) : (
                     maxes.map((max, i) => (
@@ -239,28 +197,15 @@ export default function MyProgress() {
                       <h3 style={{ fontSize: '20px', color: '#333', marginBottom: '4px' }}>{selectedSession.prog}</h3>
                       <p style={{ color: '#666', fontSize: '14px' }}>Completed: {selectedSession.date}</p>
                     </div>
-                    {sessionPhases.map(section => (
-                      <div key={section.title} className="pv-phase-card" style={{ borderTopColor: section.color, borderTopStyle: 'solid', borderTopWidth: '4px', borderRadius: '12px', overflow: 'hidden', marginBottom: '20px', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}>
-                        <div className="pv-phase-header" style={{ backgroundColor: section.color, color: '#fff', padding: '8px 16px', fontWeight: '700', fontSize: '15px' }}>
-                          {section.title}
-                        </div>
-                        <div style={{ padding: '12px' }}>
-                          {section.items.map(group => (
-                            <div key={group.name} style={{ marginBottom: '16px' }}>
-                              <h4 style={{ fontSize: '16px', color: '#333', marginBottom: '8px', fontWeight: '600' }}>{group.name}</h4>
-                              {group.sets.map((set, idx) => (
-                                <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 12px', borderBottom: '1px solid #eee', fontSize: '14px' }}>
-                                  <div>
-                                    <strong>Set {idx + 1}:</strong> {set.reps} reps {set.intensity ? '@ ' + set.intensity + '%' : ''}
-                                  </div>
-                                  <div style={{ fontWeight: '600', color: '#008ed3' }}>
-                                    {set.wt}kg x {set.reps}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          ))}
-                        </div>
+                    {sessionDetails.map(group => (
+                      <div key={group.name} style={{ marginBottom: '16px', padding: '12px', border: '1px solid #e0e0e0', borderRadius: '10px', backgroundColor: '#fafafa' }}>
+                        <h4 style={{ fontSize: '16px', color: '#333', marginBottom: '8px', fontWeight: '600' }}>{group.name}</h4>
+                        {group.sets.map((set, idx) => (
+                          <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: idx < group.sets.length - 1 ? '1px solid #eee' : 'none', fontSize: '14px' }}>
+                            <div><strong>Set {idx + 1}:</strong> {set.reps} reps{set.intensity ? ' @ ' + set.intensity + '%' : ''}</div>
+                            <div style={{ fontWeight: '600', color: '#008ed3' }}>{set.wt}kg</div>
+                          </div>
+                        ))}
                       </div>
                     ))}
                   </>
@@ -268,7 +213,7 @@ export default function MyProgress() {
                   <>
                     <div style={{ marginBottom: '24px' }}>
                       <h3 style={{ fontSize: '18px', color: '#333', marginBottom: '12px' }}>Past Sessions</h3>
-                      {loading && sessions.length === 0 ? (
+                      {!historyLoaded ? (
                         <p className="mp-placeholder">Loading sessions...</p>
                       ) : sessions.length === 0 ? (
                         <p className="mp-placeholder">No sessions recorded yet.</p>
@@ -297,9 +242,7 @@ export default function MyProgress() {
                       {uniqueExercises.map(ex => <option key={ex} value={ex}>{ex}</option>)}
                     </select>
                     <div className="mp-history-list">
-                      {loading && history.length === 0 ? (
-                        <p className="mp-placeholder">Loading history...</p>
-                      ) : filteredHistory.length === 0 ? (
+                      {filteredHistory.length === 0 ? (
                         <p className="mp-placeholder">No records found.</p>
                       ) : (
                         filteredHistory.map((item, i) => (
