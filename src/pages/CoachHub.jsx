@@ -12,11 +12,11 @@ export default function CoachHub() {
   );
 
   const cards = [
-    { title: 'Program Builder', desc: 'Create and edit training programs', icon: Wrench, path: '/program-builder', color: '#008ed3', bgImage: '/pb-card.png' },
-    { title: 'Program Library', desc: 'View and manage all saved programs', icon: BookOpen, path: '/program-library', color: '#2e7d32', bgImage: '/pl-card.png' },
-    { title: 'Coach Results', desc: 'View athlete progress', icon: BarChart2, path: '/coach-results', color: '#005d8a', bgImage: '/coach-results-card-v2.png' },
-    { title: 'Exercise Library', desc: 'Search all exercise videos', icon: Dumbbell, path: '/exercise-library', color: '#d3ca17', bgImage: '/el-card.png' },
-    { title: 'Drill Designer', desc: 'Draw and save training drills', icon: Pencil, path: '/whiteboard', color: '#6d28d9', bgImage: '/Whiteboard-Card.png' },
+    { title: 'Program Builder', desc: 'Create and edit training programs', icon: Wrench, path: '/program-builder', color: '#008ed3', bgImage: '/program-builder-card.png' },
+    { title: 'Program Library', desc: 'View and manage all saved programs', icon: BookOpen, path: '/program-library', color: '#2e7d32', bgImage: '/program-library-card.png' },
+    { title: 'Coach Results', desc: 'View athlete progress', icon: BarChart2, path: '/coach-results', color: '#005d8a', bgImage: '/coach-results-card.png' },
+    { title: 'Exercise Library', desc: 'Search all exercise videos', icon: Dumbbell, path: '/exercise-library', color: '#d3ca17', bgImage: '/exercise-library-card-v2.png' },
+    { title: 'Drill Designer', desc: 'Draw and save training drills', icon: Pencil, path: '/whiteboard', color: '#6d28d9', bgImage: '/whiteboard-card.png' },
    { title: 'Athlete Hub', desc: 'Use the app as an athlete', icon: User, path: '/athlete-hub', color: '#e65100', bgImage: '/athlete-hub-card.png', external: true }
   ];
 
