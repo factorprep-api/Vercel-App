@@ -26,6 +26,28 @@ export const fetchLogbookByAthlete = async (athleteName) => {
   }
 };
 
+// NEW ENDPOINT — Get latest maxes from Athlete_Maxes sheet
+export const getLatestMaxes = async (athleteName) => {
+  try {
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=getLatestMaxes&athlete=${encodeURIComponent(athleteName)}`;
+    let resp = await fetch(url);
+    return await resp.json();
+  } catch (err) {
+    return { status: "Error", maxes: {} };
+  }
+};
+
+// NEW ENDPOINT — Get last logged weight for specific exercise
+export const getLastLoggedWeight = async (athleteName, exerciseName) => {
+  try {
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=getLastLoggedWeight&athlete=${encodeURIComponent(athleteName)}&exercise=${encodeURIComponent(exerciseName)}`;
+    let resp = await fetch(url);
+    return await resp.json();
+  } catch (err) {
+    return { status: "NotFound" };
+  }
+};
+
 export const createAthlete = async ({ email, name }) => {
   try {
     let url = `${GOOGLE_SCRIPT_API_URL}?action=createAthlete&email=${encodeURIComponent(email)}&name=${encodeURIComponent(name)}`;
@@ -59,20 +81,28 @@ export const saveSession = async (payload) => {
   }
 };
 
+// FIXED — Corrected column mapping (Formula at [3], removed multiplier, starts at index 0)
 export async function fetchExerciseLibrary(options = {}) {
   const response = await fetch(`${GOOGLE_SCRIPT_API_URL}?action=getFullData`, options);
   const json = await response.json();
   const lib = [];
-  for (let i = 1; i < json.library.length; i++) {
+  // loadMergedLibrary strips headers, so start at index 0 (not 1)
+  for (let i = 0; i < json.library.length; i++) {
     const row = json.library[i];
     const name = String(row[0] || '').trim();
     const url = String(row[1] || '').trim();
-    const muscle = (row.length > 2 && String(row[2]).trim()) ? String(row[2]).trim() : 'Other';
-    const baseLift = (row.length > 3 && String(row[3]).trim()) ? String(row[3]).trim() : '';
-    const multiplier = (row.length > 4 && String(row[4]).trim()) ? parseFloat(row[4]) || 1.0 : 1.0;
-    const ownerEmail = (row.length > 5 && String(row[5]).trim()) ? String(row[5]).trim() : '';
-    if (!name || !url) continue;
-    lib.push({ name, muscle, rawUrl: url, baseLift, multiplier, ownerEmail });
+    const muscle = (row[2] && String(row[2]).trim()) ? String(row[2]).trim() : 'Other';
+    const formula = (row[3] && String(row[3]).trim()) ? String(row[3]).trim().toLowerCase() : '';
+    const ownerEmail = (row[5] && String(row[5]).trim()) ? String(row[5]).trim() : '';
+    if (!name) continue;
+    lib.push({
+      name,
+      muscle,
+      rawUrl: url,
+      formula,          // "yes" = Epley exercise, "" = regular
+      isEpley: formula === 'yes',
+      ownerEmail
+    });
   }
   return lib;
 }
