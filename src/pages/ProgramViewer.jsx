@@ -127,7 +127,6 @@ export default function ProgramViewer() {
     } else if (timerActive && timeLeft === 0) {
       setTimerActive(false);
       try {
-        // Crisp digital watch beep
         const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
         audio.play();
       } catch (e) {
@@ -346,7 +345,6 @@ export default function ProgramViewer() {
     return groups;
   }, [selectedProgram, programData, libraryData]);
 
-  // SINGLE LOGBOOK FETCH FOR TARGET CALCS
   useEffect(() => {
     if (!athleteName || !workoutGroups.length || !libraryData.length) return;
     
@@ -425,7 +423,6 @@ export default function ProgramViewer() {
     setSaveSuccess(false);
     setShowProgramMedia(false);
     
-    // Auto-detect the most common rest time for this program
     const restTimes = [];
     programData.slice(1).forEach(row => {
       if (String(row[0] || '').trim() === progName) {
@@ -532,7 +529,7 @@ export default function ProgramViewer() {
   }
 
   return (
-    <div className="pv-container" style={{ paddingBottom: timerVisible ? '100px' : '20px' }}>
+    <div className="pv-container">
       <style>{`
         .pv-input-kg::-webkit-outer-spin-button,
         .pv-input-kg::-webkit-inner-spin-button {
@@ -545,32 +542,7 @@ export default function ProgramViewer() {
           text-align: center;
         }
         
-        /* ULTRA-SLEEK FLOATING TIMER (Glassmorphism) */
-        .pv-floating-timer {
-          position: fixed;
-          bottom: 24px;
-          left: 50%;
-          transform: translateX(-50%);
-          background: rgba(15, 23, 42, 0.85); /* Deep slate with opacity */
-          backdrop-filter: blur(12px); /* Apple-style blur */
-          -webkit-backdrop-filter: blur(12px);
-          border: 1px solid rgba(255, 255, 255, 0.1);
-          padding: 8px 16px;
-          border-radius: 99px; /* Perfect pill shape */
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
-          z-index: 9999;
-          transition: all 0.3s ease;
-        }
-        
-        /* Subtle glow when running */
-        .pv-floating-timer.is-active {
-          box-shadow: 0 8px 32px rgba(0, 142, 211, 0.2);
-          border-color: rgba(0, 142, 211, 0.3);
-        }
-
+        /* SLEEK TIMER INNER STYLES */
         .pv-timer-clock {
           font-family: 'SF Pro Display', -apple-system, monospace;
           font-size: 22px;
@@ -622,7 +594,7 @@ export default function ProgramViewer() {
         }
 
         .pv-timer-play.is-playing {
-          background-color: #ef4444; /* Red for pause */
+          background-color: #ef4444; 
           box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
         }
         .pv-timer-play.is-playing:hover {
@@ -637,45 +609,63 @@ export default function ProgramViewer() {
         }
       `}</style>
 
-      {/* FLOATING TIMER UI */}
-      {timerVisible && (
-        <div className={`pv-floating-timer ${timerActive ? 'is-active' : ''}`}>
-          {/* Close Button */}
-          <button className="pv-timer-btn" onClick={() => { setTimerVisible(false); setTimerActive(false); }} title="Close Timer">
-            <X size={18} />
-          </button>
-          
-          <div className="pv-timer-divider"></div>
-          
-          {/* Nudge -15s */}
-          <button className="pv-timer-btn" onClick={() => adjustTimer(-15)} title="-15s">
-            <Minus size={16} />
-          </button>
-          
-          {/* Clock */}
-          <div className={`pv-timer-clock ${timerActive ? 'is-active-text' : ''} ${timeLeft <= 10 && timeLeft > 0 && timerActive ? 'urgent' : ''}`}>
-            {formatTime(timeLeft)}
-          </div>
-          
-          {/* Nudge +15s */}
-          <button className="pv-timer-btn" onClick={() => adjustTimer(15)} title="+15s">
-            <Plus size={16} />
-          </button>
-          
-          <div className="pv-timer-divider"></div>
-          
-          {/* Play/Pause Primary Action */}
-          <button className={`pv-timer-btn pv-timer-play ${timerActive ? 'is-playing' : ''}`} onClick={() => setTimerActive(!timerActive)}>
-            {timerActive ? <Pause size={18} /> : <Play size={18} style={{ marginLeft: '2px' }} />}
-          </button>
-        </div>
-      )}
-
       <div className="pv-body">
+        
+        {/* FIX: STICKY WRAPPER. This perfectly glues the timer to the top of the screen when scrolling down! */}
+        {timerVisible && (
+          <div style={{
+            position: 'sticky',
+            top: '16px', // Sticks 16px from the top of the viewport
+            zIndex: 9999,
+            display: 'flex',
+            justifyContent: 'center',
+            marginBottom: '16px',
+            pointerEvents: 'none' // Allows clicking behind the invisible sticky wrapper
+          }}>
+            <div style={{
+              pointerEvents: 'auto', // Re-enable clicks on the actual pill
+              backgroundColor: 'rgba(15, 23, 42, 0.85)',
+              backdropFilter: 'blur(12px)',
+              WebkitBackdropFilter: 'blur(12px)',
+              border: `1px solid ${timerActive ? 'rgba(0, 142, 211, 0.3)' : 'rgba(255, 255, 255, 0.1)'}`,
+              padding: '8px 16px',
+              borderRadius: '99px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px',
+              boxShadow: timerActive ? '0 8px 32px rgba(0, 142, 211, 0.2)' : '0 8px 32px rgba(0, 0, 0, 0.25)',
+              transition: 'all 0.3s ease'
+            }}>
+              <button className="pv-timer-btn" onClick={() => { setTimerVisible(false); setTimerActive(false); }} title="Close Timer">
+                <X size={18} />
+              </button>
+              
+              <div className="pv-timer-divider"></div>
+              
+              <button className="pv-timer-btn" onClick={() => adjustTimer(-15)} title="-15s">
+                <Minus size={16} />
+              </button>
+              
+              <div className={`pv-timer-clock ${timerActive ? 'is-active-text' : ''} ${timeLeft <= 10 && timeLeft > 0 && timerActive ? 'urgent' : ''}`}>
+                {formatTime(timeLeft)}
+              </div>
+              
+              <button className="pv-timer-btn" onClick={() => adjustTimer(15)} title="+15s">
+                <Plus size={16} />
+              </button>
+              
+              <div className="pv-timer-divider"></div>
+              
+              <button className={`pv-timer-btn pv-timer-play ${timerActive ? 'is-playing' : ''}`} onClick={() => setTimerActive(!timerActive)}>
+                {timerActive ? <Pause size={18} /> : <Play size={18} style={{ marginLeft: '2px' }} />}
+              </button>
+            </div>
+          </div>
+        )}
+
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
           <h2 style={{ fontSize: '24px', color: '#008ed3', fontWeight: '700', margin: 0 }}>Today's Workout</h2>
           
-          {/* CLEAN TOGGLE BUTTON */}
           <button 
             onClick={() => setTimerVisible(!timerVisible)}
             style={{ 

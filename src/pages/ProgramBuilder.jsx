@@ -1,10 +1,12 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { Plus, Save, ArrowUp, ArrowDown, Trash2, Hammer, CheckCircle, X, Library as LibIcon } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
-import { fetchAllData, saveFullProgram, updateProgram, getMediaType } from '../api';
+// FIX: Imported the lightning fast pipes instead of fetchAllData
+import { fetchPrograms, fetchLibrary, saveFullProgram, updateProgram, getMediaType } from '../api';
 import './program-builder.css';
 import HelpButton from '../components/HelpButton';
 
+// Upgraded MediaPlayer to handle static images cleanly without breaking
 function MediaPlayer({ url, compact = false }) {
   if (!url) return null;
   const isImg = url.toLowerCase().includes('.png') || url.toLowerCase().includes('.jpg') || url.toLowerCase().includes('.jpeg');
@@ -27,7 +29,6 @@ export default function ProgramBuilder() {
   const { userEmail: coachEmail, isLoading: authLoading } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [athletes, setAthletes] = useState([]);
   const [programs, setPrograms] = useState([]);
   const [library, setLibrary] = useState([]);
   const [toast, setToast] = useState(null);
@@ -48,39 +49,42 @@ export default function ProgramBuilder() {
   }, [draft]);
 
   async function loadData() {
-    const cached = localStorage.getItem('fp_builder_data');
+    // Cache-first for instant data population if available
+    const cached = localStorage.getItem('fp_builder_data_v2');
     if (cached) {
       try {
         const parsed = JSON.parse(cached);
-        setAthletes(parsed.athletes || []);
         setPrograms(parsed.programs || []);
         setLibrary(parsed.library || []);
         setLoading(false);
-        refreshData(); // Silently update cache in background
+        refreshData();
         return;
       } catch {}
     }
 
-    // SILENT AUTO-RETRY LOGIC: Try up to 3 times to get the data if the DB drops connection
+    // SILENT AUTO-RETRY LOGIC (The Shock Absorber)
     let attempts = 0;
     let success = false;
 
     while (attempts < 3 && !success) {
       try {
-        const allData = await fetchAllData();
-        if (allData.error) throw new Error(allData.error); 
+        // FIX: Using the fast pipes instead of the heavy fetchAllData
+        const [progRes, libRes] = await Promise.all([
+          fetchPrograms(),
+          fetchLibrary()
+        ]);
         
-        setAthletes(allData.athletes || []);
-        setPrograms(allData.programs || []);
-        setLibrary(allData.library || []);
+        if (progRes.error) throw new Error(progRes.error); 
+        
+        setPrograms(progRes.programs || []);
+        setLibrary(libRes.library || []);
         setLoading(false);
         setError(null);
         success = true;
         
-        localStorage.setItem('fp_builder_data', JSON.stringify({
-          athletes: allData.athletes,
-          programs: allData.programs,
-          library: allData.library,
+        localStorage.setItem('fp_builder_data_v2', JSON.stringify({
+          programs: progRes.programs,
+          library: libRes.library,
           cachedAt: new Date().toISOString()
         }));
       } catch (err) {
@@ -89,7 +93,6 @@ export default function ProgramBuilder() {
           setError('Database connection is weak right now. Please refresh the page.');
           setLoading(false);
         } else {
-          // Wait 2 seconds before trying again to let the server breathe
           await new Promise(resolve => setTimeout(resolve, 2000));
         }
       }
@@ -98,15 +101,17 @@ export default function ProgramBuilder() {
 
   async function refreshData() {
     try {
-      const allData = await fetchAllData();
-      if (!allData.error) {
-        setAthletes(allData.athletes || []);
-        setPrograms(allData.programs || []);
-        setLibrary(allData.library || []);
-        localStorage.setItem('fp_builder_data', JSON.stringify({
-          athletes: allData.athletes,
-          programs: allData.programs,
-          library: allData.library,
+      const [progRes, libRes] = await Promise.all([
+        fetchPrograms(),
+        fetchLibrary()
+      ]);
+      
+      if (!progRes.error && !libRes.error) {
+        setPrograms(progRes.programs || []);
+        setLibrary(libRes.library || []);
+        localStorage.setItem('fp_builder_data_v2', JSON.stringify({
+          programs: progRes.programs,
+          library: libRes.library,
           cachedAt: new Date().toISOString()
         }));
       }
@@ -115,6 +120,7 @@ export default function ProgramBuilder() {
 
   const exerciseList = useMemo(() => {
     if (!library.length) return [];
+    
     const names = library.slice(1)
       .filter(row => {
         const owner = String(row[5] || '').trim();
@@ -124,6 +130,7 @@ export default function ProgramBuilder() {
       })
       .map(r => String(r[0] || '').trim())
       .filter(Boolean);
+      
     return [...new Set(names)].sort();
   }, [library, coachEmail]);
 
@@ -169,23 +176,48 @@ export default function ProgramBuilder() {
     setDraft(draft.filter((_, idx) => idx !== i));
   }
 
+  // FIX: Implemented correct "Save As" and "Edit" logic
   async function handleSaveProgram() {
     if (!form.name) { showToast('Program Name is required.', true); return; }
     if (draft.length === 0) { showToast('Draft is empty. Add movements first.', true); return; }
     setSaving(true);
+    
     const rows = draft.map(i => [form.name, form.category, i.phase, i.exercise, i.sets, i.reps, i.intensity, i.tempo, i.rest, form.notes, form.privacyLevel, coachEmail, mediaUrl]);
+    
     try {
-      const targetName = loadProgramName ? loadProgramName : form.name;
-      const res = await updateProgram(targetName, rows);
+      let res;
+      
+      // Scenario 1: They loaded a program, but CHANGED the name (Save As / Duplicate)
+      if (loadProgramName && loadProgramName !== form.name) {
+        // Prevent accidental duplicates if they typed a name that already exists
+        if (uniqueProgramNames.includes(form.name)) {
+          res = await updateProgram(form.name, rows); 
+        } else {
+          res = await saveFullProgram(rows); // Create brand new! Leaves old program untouched.
+        }
+      } 
+      // Scenario 2: Standard Editing or Creating from scratch
+      else {
+        if (uniqueProgramNames.includes(form.name)) {
+          res = await updateProgram(form.name, rows); // Overwrite existing
+        } else {
+          res = await saveFullProgram(rows); // Create brand new
+        }
+      }
+
       if (res.status === 'Success') {
-        showToast(`Program saved!`);
+        showToast(loadProgramName && loadProgramName !== form.name ? 'Saved as new program!' : 'Program saved!');
         setDraft([]);
         setForm(f => ({ ...f, name: '', notes: '', privacyLevel: 'PRIVATE' }));
         setLoadProgramName('');
         setMediaUrl('');
         await refreshData();
-      } else { showToast('Save failed', true); }
-    } catch (err) { showToast('Network error', true); }
+      } else { 
+        showToast('Save failed', true); 
+      }
+    } catch (err) { 
+      showToast('Network error', true); 
+    }
     setSaving(false);
   }
 
@@ -217,7 +249,7 @@ export default function ProgramBuilder() {
     }));
     setDraft(loadedDraft);
     setMediaUrl(loadedMediaUrl);
-    showToast(`Loaded "${loadProgramName}" (${loadedDraft.length} movements). Edit and save — will overwrite if name matches.`);
+    showToast(`Loaded "${loadProgramName}". Change the name to "Save As" a new program, or keep the name to edit.`);
   }
 
   const phaseColors = { 'Warm Up': '#fd7e14', 'Work Block': '#22c55e', 'Cool Down': '#ef4444' };
@@ -242,13 +274,13 @@ export default function ProgramBuilder() {
                   className="pb-select" 
                   value={loadProgramName} 
                   onChange={e => setLoadProgramName(e.target.value)}
-                  disabled={loading}
+                  disabled={loading} 
                 >
                   {loading ? (
                     <option value="">— Loading your programs... —</option>
                   ) : (
                     <>
-                      <option value="">— Select a program to edit —</option>
+                      <option value="">— Select a program to load —</option>
                       {uniqueProgramNames.map(p => <option key={p} value={p}>{p}</option>)}
                     </>
                   )}
@@ -433,4 +465,5 @@ export default function ProgramBuilder() {
     </div>
   );
 }
+
 
