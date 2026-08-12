@@ -1,8 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Search, Trash2, UserPlus, CheckCircle, X, Layers, Dumbbell, FolderClosed, Lock, Globe, Eye } from 'lucide-react';
+import { Search, Trash2, UserPlus, CheckCircle, X, Layers, Dumbbell, Activity, Lock, Globe } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
-import { fetchAllData, deleteProgram, updateAssignment, assignProgramBulk } from '../api';
+import { fetchAllData, deleteProgram, assignProgramBulk } from '../api';
 import './program-library.css';
 
 export default function ProgramLibrary() {
@@ -28,7 +28,6 @@ export default function ProgramLibrary() {
   }, []);
 
   async function loadData() {
-    // Cache-first for instant load
     const cached = localStorage.getItem('fp_library_data');
     if (cached) {
       try {
@@ -36,12 +35,11 @@ export default function ProgramLibrary() {
         setProgramData(parsed.programs || []);
         setAthletesData(parsed.athletes || []);
         setLoading(false);
-        refreshData(); // Silently update in background
+        refreshData(); 
         return;
       } catch {}
     }
 
-    // SILENT AUTO-RETRY LOGIC (The Shock Absorber)
     let attempts = 0;
     let success = false;
 
@@ -67,14 +65,12 @@ export default function ProgramLibrary() {
           setError('Database connection is weak right now. Please refresh the page.');
           setLoading(false);
         } else {
-          // Wait 2 seconds before trying again
           await new Promise(resolve => setTimeout(resolve, 2000));
         }
       }
     }
   }
 
-  // Safe background refresher that won't break the UI if it fails
   async function refreshData() {
     try {
       const allData = await fetchAllData();
@@ -87,28 +83,8 @@ export default function ProgramLibrary() {
           timestamp: Date.now()
         }));
       }
-    } catch {} // Fail silently in background
+    } catch {} 
   }
-
-  const athleteNames = useMemo(() => {
-    if (!athletesData.length) return [];
-    const headers = athletesData[0] || [];
-    let roleCol = -1;
-    for (let i = 0; i < headers.length; i++) {
-      if (String(headers[i] || '').trim().toLowerCase() === 'role') { roleCol = i; break; }
-    }
-    return athletesData.slice(1)
-      .filter(row => {
-        if (roleCol !== -1) {
-          const role = String(row[roleCol] || '').trim().toLowerCase();
-          return role !== 'coach';
-        }
-        return true;
-      })
-      .map(row => String(row[0] || '').trim())
-      .filter(Boolean)
-      .sort();
-  }, [athletesData]);
 
   const athleteOptions = useMemo(() => {
     if (!athletesData.length) return [];
@@ -145,21 +121,41 @@ export default function ProgramLibrary() {
     return [...new Set(names)].sort();
   }, [programData, userEmail]);
 
+  // FIX: Updated logic to calculate Work Block Volume and extract exact Category Name
   const programs = useMemo(() => {
     if (!programData.length) return [];
     const map = {};
     programData.slice(1).forEach(row => {
       const name = String(row[0] || '').trim();
       if (!name) return;
+      
       if (!map[name]) {
-        map[name] = { name, categories: new Set(), exercises: new Set(), phases: new Set(), rows: [], privacyLevel: '', ownerEmail: '' };
+        map[name] = { 
+          name, 
+          categoryName: '', 
+          exercises: new Set(), 
+          workVolume: 0, 
+          rows: [], 
+          privacyLevel: '', 
+          ownerEmail: '' 
+        };
       }
+      
       const cat = String(row[1] || '').trim();
       const phase = String(row[2] || '').trim() || 'Work Block';
       const ex = String(row[3] || '').trim();
-      if (cat) map[name].categories.add(cat);
+      const sets = parseInt(String(row[4] || '').trim()) || 1;
+      const reps = parseInt(String(row[5] || '').trim()) || 1;
+      
+      // Grab the first category name we find
+      if (cat && !map[name].categoryName) map[name].categoryName = cat;
       if (ex) map[name].exercises.add(ex);
-      map[name].phases.add(phase);
+      
+      // Only multiply and add volume if it is in the Work Block
+      if (phase.toLowerCase() === 'work block' || phase.toLowerCase() === 'workblock') {
+        map[name].workVolume += (sets * reps);
+      }
+      
       map[name].rows.push(row);
       const privacy = String(row[10] || '').trim().toUpperCase();
       const owner = String(row[11] || '').trim();
@@ -382,15 +378,19 @@ export default function ProgramLibrary() {
                 <div className="pl-program-header" onClick={() => toggleExpand(program.name)}>
                   <div>
                     <div className="pl-program-name">{program.name}</div>
+                    
+                    {/* FIX: New UI Tokens (Category Name, Exercise Count, Rep Volume, Privacy) */}
                     <div className="pl-program-meta">
-                      <span className="pl-meta-badge"><Layers size={10} /> {program.categories.size} categor{program.categories.size === 1 ? 'y' : 'ies'}</span>
+                      {program.categoryName && (
+                        <span className="pl-meta-badge"><Layers size={10} /> {program.categoryName}</span>
+                      )}
                       <span className="pl-meta-badge"><Dumbbell size={10} /> {program.exercises.size} exercises</span>
-                      <span className="pl-meta-badge"><FolderClosed size={10} /> {program.phases.size} phases</span>
+                      <span className="pl-meta-badge"><Activity size={10} /> {program.workVolume} rep volume</span>
                       {renderPrivacyBadge(program)}
                     </div>
+
                   </div>
                   <div className="pl-actions" onClick={e => e.stopPropagation()}>
-                    {/* Only show Delete button for owned programs */}
                     {program.ownerEmail === userEmail && (
                       <button className="pl-delete-btn" onClick={() => handleDelete(program.name)} disabled={deleting === program.name}>
                         <Trash2 size={14} /> <span className="pl-delete-text">{deleting === program.name ? "..." : "Delete"}</span>
@@ -409,7 +409,6 @@ export default function ProgramLibrary() {
         )}
       </div>
 
-      {/* Bulk Assign Modal */}
       {assignModalOpen && (
         <div className="pl-assign-modal" onClick={() => setAssignModalOpen(false)}>
           <div className="pl-assign-content" onClick={e => e.stopPropagation()}>
