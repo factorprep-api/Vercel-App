@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Play, Pause, Square, Plus, Trash2, Save, Activity, Coffee, Volume2, VolumeX, ArrowLeft, ArrowUp, ArrowDown } from 'lucide-react';
+import { Play, Pause, Square, Plus, Trash2, Save, Activity, Coffee, Volume2, VolumeX, ArrowLeft, ArrowUp, ArrowDown, X} from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 
 // Audio URLs
