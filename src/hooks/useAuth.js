@@ -12,7 +12,8 @@ export function useAuth() {
   async function fetchRoleFromSheets(email) {
     try {
       const result = await getAthleteByEmail(email);
-      if (result.status === 'Success') {
+      
+      if (result && result.status === 'Success') {
         const cached = {
           name: result.athleteName,
           email,
@@ -26,7 +27,8 @@ export function useAuth() {
         setAthleteData(cached);
         setAthleteName(result.athleteName || email.split('@')[0]);
         return result;
-      } else {
+      } else if (result && result.status === 'NotFound') {
+        // Only default to Athlete if Google explicitly confirms they are not in the database
         const cached = { name: email.split('@')[0], email, role: 'athlete', rowIndex: null, headers: [], rowData: [] };
         localStorage.setItem('fp_athlete_data', JSON.stringify(cached));
         setRole('athlete');
@@ -34,11 +36,11 @@ export function useAuth() {
         setAthleteName(email.split('@')[0]);
         return null;
       }
+      // If it's just a network error, do NOT overwrite the cache or downgrade them!
+      return null;
     } catch (e) {
       console.error('Role fetch failed:', e);
-      setRole('athlete');
-      setAthleteData({ name: email.split('@')[0], email, role: 'athlete' });
-      setAthleteName(email.split('@')[0]);
+      // Fail safely. Do not downgrade to athlete on a timeout.
       return null;
     }
   }

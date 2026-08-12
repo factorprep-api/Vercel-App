@@ -37,13 +37,15 @@ function ProtectedRoute({ allowedRoles, children }) {
 export default function App() {
   const { isAuthenticated, isLoading, role } = useAuth();
 
-  if (isLoading) {
+  // THIS IS THE LOCK: It forces the app to wait here until it KNOWS you are a coach
+  if (isLoading || (isAuthenticated && !role)) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', fontFamily: '"Roboto Flex", sans-serif' }}>
-        <p>Loading...</p>
+        <p>Verifying permissions...</p>
       </div>
     );
   }
+
 
   return (
     <Router>
