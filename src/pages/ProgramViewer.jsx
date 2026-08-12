@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Play, ChevronDown, ChevronUp, Video, Image as ImageIcon, Save, CheckCircle, MessageSquare, UserPlus, Globe } from 'lucide-react';
+import { Play, ChevronDown, ChevronUp, Video, Image as ImageIcon, Save, CheckCircle, MessageSquare, UserPlus, Globe, Timer, Pause, RotateCcw, Plus, Minus, X } from 'lucide-react';
 import { getYouTubeId } from '../utils/helpers';
 import { useAuth } from '../hooks/useAuth';
 import { fetchAllData, getAthleteByEmail, saveSession, getMediaType, getLatestMaxes, fetchLogbookByAthlete } from '../api';
@@ -104,9 +104,51 @@ export default function ProgramViewer() {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [showProgramMedia, setShowProgramMedia] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  
+  // ==========================================
+  // SLEEK FLOATING TIMER STATE
+  // ==========================================
+  const [timerExpanded, setTimerExpanded] = useState(false);
+  const [timerActive, setTimerActive] = useState(false);
+  const [timeLeft, setTimeLeft] = useState(90); 
+  
   const { userEmail, isLoading: authLoading } = useAuth();
   const navigate = useNavigate();
 
+  // ==========================================
+  // TIMER LOGIC & AUDIO
+  // ==========================================
+  useEffect(() => {
+    let interval = null;
+    if (timerActive && timeLeft > 0) {
+      interval = setInterval(() => {
+        setTimeLeft((prev) => prev - 1);
+      }, 1000);
+    } else if (timerActive && timeLeft === 0) {
+      setTimerActive(false);
+      try {
+        const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+        audio.play();
+      } catch (e) {
+        console.log('Audio playback blocked by browser');
+      }
+    }
+    return () => clearInterval(interval);
+  }, [timerActive, timeLeft]);
+
+  const formatTime = (seconds) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  };
+
+  const adjustTimer = (amount) => {
+    setTimeLeft((prev) => Math.max(0, prev + amount));
+  };
+  
+  // ==========================================
+  // DATA LOADING
+  // ==========================================
   useEffect(() => { if (userEmail) loadData(true); }, [userEmail]);
 
   async function loadData(useCache = false) {
@@ -135,7 +177,6 @@ export default function ProgramViewer() {
         } catch {}
       }
       
-      // FIX: Installed the 3-attempt Shock Absorber for athletes with bad cell service!
       let attempts = 0;
       let success = false;
       let allData = null;
@@ -381,6 +422,31 @@ export default function ProgramViewer() {
     setInputValues({});
     setSaveSuccess(false);
     setShowProgramMedia(false);
+    
+    const restTimes = [];
+    programData.slice(1).forEach(row => {
+      if (String(row[0] || '').trim() === progName) {
+        const rest = String(row[8] || '').trim();
+        if (rest) restTimes.push(rest);
+      }
+    });
+    if (restTimes.length > 0) {
+      const counts = {};
+      let maxCount = 0;
+      let mostCommon = '90s';
+      restTimes.forEach(rt => {
+        counts[rt] = (counts[rt] || 0) + 1;
+        if (counts[rt] > maxCount) { maxCount = counts[rt]; mostCommon = rt; }
+      });
+      const secMatch = mostCommon.match(/(\d+)/);
+      if (secMatch) {
+        let secs = parseInt(secMatch[1], 10);
+        if (mostCommon.toLowerCase().includes('m')) secs *= 60;
+        setTimeLeft(secs);
+      }
+    } else {
+      setTimeLeft(90);
+    }
   }
 
   function toggleMedia(groupId) {
@@ -463,7 +529,7 @@ export default function ProgramViewer() {
   }
 
   return (
-    <div className="pv-container">
+    <div className="pv-container" style={{ paddingBottom: '100px' }}>
       <style>{`
         .pv-input-kg::-webkit-outer-spin-button,
         .pv-input-kg::-webkit-inner-spin-button {
@@ -475,11 +541,149 @@ export default function ProgramViewer() {
           width: 65px !important;
           text-align: center;
         }
+        
+        /* BOTTOM FLOATING ACTION BUTTON (FAB) STYLES */
+        .pv-floating-fab {
+          position: fixed;
+          bottom: 24px;
+          left: 50%;
+          transform: translateX(-50%);
+          background: rgba(15, 23, 42, 0.9);
+          backdrop-filter: blur(12px);
+          -webkit-backdrop-filter: blur(12px);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          padding: 8px 16px;
+          border-radius: 99px;
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+          z-index: 9999;
+          transition: all 0.3s ease;
+        }
+        
+        .pv-floating-fab.is-active {
+          box-shadow: 0 8px 32px rgba(0, 142, 211, 0.2);
+          border-color: rgba(0, 142, 211, 0.3);
+        }
+
+        .pv-fab-collapsed {
+          padding: 10px 24px;
+          color: #f8fafc;
+          font-size: 15px;
+          font-weight: 600;
+          cursor: pointer;
+          border: none;
+          background: transparent;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+        
+        .pv-fab-collapsed:hover {
+          color: #38bdf8;
+        }
+
+        .pv-timer-clock {
+          font-family: 'SF Pro Display', -apple-system, monospace;
+          font-size: 22px;
+          font-weight: 600;
+          min-width: 65px;
+          text-align: center;
+          color: #f8fafc;
+          letter-spacing: 0.5px;
+          transition: color 0.3s ease;
+        }
+        
+        .pv-timer-clock.is-active-text { color: #38bdf8; }
+        .pv-timer-clock.urgent { color: #ef4444; animation: pulse 1s infinite; }
+        
+        @keyframes pulse {
+          0% { opacity: 1; }
+          50% { opacity: 0.5; }
+          100% { opacity: 1; }
+        }
+        
+        .pv-timer-btn {
+          background: none;
+          border: none;
+          color: #94a3b8;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 6px;
+          border-radius: 50%;
+          transition: all 0.2s;
+        }
+        
+        .pv-timer-btn:hover {
+          color: #ffffff;
+          background-color: rgba(255, 255, 255, 0.1);
+        }
+        
+        .pv-timer-play {
+          background-color: #008ed3;
+          color: white;
+          padding: 10px;
+          box-shadow: 0 4px 12px rgba(0, 142, 211, 0.3);
+        }
+        
+        .pv-timer-play:hover {
+          background-color: #0077b5;
+          transform: scale(1.05);
+        }
+
+        .pv-timer-play.is-playing {
+          background-color: #ef4444; 
+          box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+        }
+        .pv-timer-play.is-playing:hover {
+          background-color: #dc2626;
+        }
+        
+        .pv-timer-divider {
+          width: 1px;
+          height: 24px;
+          background-color: rgba(255, 255, 255, 0.15);
+          margin: 0 2px;
+        }
       `}</style>
 
+      {/* FIX: BOTTOM FLOATING ACTION BUTTON */}
+      <div className={`pv-floating-fab ${timerActive ? 'is-active' : ''}`}>
+        {timerExpanded ? (
+          <>
+            <button className="pv-timer-btn" onClick={() => { setTimerExpanded(false); setTimerActive(false); }} title="Close Timer">
+              <X size={18} />
+            </button>
+            <div className="pv-timer-divider"></div>
+            <button className="pv-timer-btn" onClick={() => adjustTimer(-15)} title="-15s">
+              <Minus size={16} />
+            </button>
+            <div className={`pv-timer-clock ${timerActive ? 'is-active-text' : ''} ${timeLeft <= 10 && timeLeft > 0 && timerActive ? 'urgent' : ''}`}>
+              {formatTime(timeLeft)}
+            </div>
+            <button className="pv-timer-btn" onClick={() => adjustTimer(15)} title="+15s">
+              <Plus size={16} />
+            </button>
+            <div className="pv-timer-divider"></div>
+            <button className={`pv-timer-btn pv-timer-play ${timerActive ? 'is-playing' : ''}`} onClick={() => setTimerActive(!timerActive)}>
+              {timerActive ? <Pause size={18} /> : <Play size={18} style={{ marginLeft: '2px' }} />}
+            </button>
+          </>
+        ) : (
+          <button className="pv-fab-collapsed" onClick={() => setTimerExpanded(true)}>
+            <Timer size={20} color="#38bdf8" /> <span>Rest Timer</span>
+          </button>
+        )}
+      </div>
+
       <div className="pv-body">
+        {/* Clean Header - No squished buttons! */}
         <h2 style={{ fontSize: '24px', color: '#008ed3', marginBottom: '16px', fontWeight: '700' }}>Today's Workout</h2>
-        {athleteName && <p style={{ color: '#666', fontSize: '15px', marginBottom: '20px' }}>Welcome, {athleteName}</p>}
+        
+        {athleteName && <p style={{ color: '#666', fontSize: '15px', marginBottom: '20px', marginTop: '-8px' }}>Welcome, {athleteName}</p>}
 
         <div className="pv-search-box">
           <input type="text" placeholder="Search programs..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />

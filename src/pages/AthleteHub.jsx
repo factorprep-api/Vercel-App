@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
-import { ClipboardList, TrendingUp, Dumbbell } from 'lucide-react';
+// IMPORTED TIMER ICON
+import { ClipboardList, TrendingUp, Dumbbell, Timer } from 'lucide-react';
 
 export default function AthleteHub() {
   const navigate = useNavigate();
@@ -15,11 +16,13 @@ export default function AthleteHub() {
   const cards = [
     { title: 'My Programs', desc: 'View assigned workouts', icon: ClipboardList, path: '/program-viewer', color: '#008ed3', bgImage: '/program-view-card.png' },
     { title: 'My Progress', desc: 'Track your workouts', icon: TrendingUp, path: '/progress', color: '#2e7d32', bgImage: '/my-progress-card.png' },
-    { title: 'Exercise Library', desc: 'Browse exercises with videos', icon: Dumbbell, path: '/exercise-library', color: '#d3ca17', bgImage: '/exercise-library-card-v2.png' }
+    { title: 'Exercise Library', desc: 'Browse exercises with videos', icon: Dumbbell, path: '/exercise-library', color: '#d3ca17', bgImage: '/exercise-library-card-v2.png' },
+    // ADDED NEW INTERVAL TIMER CARD
+    { title: 'Interval Timer', desc: 'Custom work/rest intervals', icon: Timer, path: '/interval-timer', color: '#ef4444', bgImage: '/interval-timer-card.png' }
   ];
 
   return (
-    <div style={{ fontFamily: '"Roboto Flex", sans-serif', padding: '4px', backgroundColor: '#f8fafc' }}>
+    <div style={{ fontFamily: '"Roboto Flex", sans-serif', padding: '4px', backgroundColor: '#f8fafc', minHeight: 'calc(100vh - 60px)' }}>
       <div className="hub-title-wrapper" style={{ textAlign: 'center', paddingTop: '4px' }}>
         <h1 className="hub-title-mobile" style={{ fontSize: '22px', color: '#333', marginBottom: '4px', margin: '0', marginTop: '0' }}>Athlete Hub</h1>
         {athleteName && <p className="hub-welcome" style={{ color: '#666', fontSize: '15px' }}>Welcome, {athleteName}</p>}
@@ -79,3 +82,4 @@ export default function AthleteHub() {
     </div>
   );
 }
+
