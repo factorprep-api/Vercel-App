@@ -147,7 +147,7 @@ export default function ProgramViewer() {
   };
   
   // ==========================================
-  // DATA LOADING (With Shock Absorber)
+  // DATA LOADING
   // ==========================================
   useEffect(() => { if (userEmail) loadData(true); }, [userEmail]);
 
@@ -542,7 +542,7 @@ export default function ProgramViewer() {
           text-align: center;
         }
         
-        /* SLEEK TIMER INNER STYLES */
+        /* DYNAMIC ISLAND TIMER STYLES */
         .pv-timer-clock {
           font-family: 'SF Pro Display', -apple-system, monospace;
           font-size: 22px;
@@ -607,23 +607,52 @@ export default function ProgramViewer() {
           background-color: rgba(255, 255, 255, 0.15);
           margin: 0 2px;
         }
+
+        .pv-timer-collapsed {
+          pointer-events: auto;
+          background: rgba(15, 23, 42, 0.85);
+          backdrop-filter: blur(12px);
+          -webkit-backdrop-filter: blur(12px);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          padding: 8px 20px;
+          border-radius: 99px;
+          color: #f8fafc;
+          font-size: 14px;
+          font-weight: 600;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+          transition: all 0.3s ease;
+        }
+
+        .pv-timer-collapsed:hover {
+          background: rgba(30, 41, 59, 0.95);
+          border-color: rgba(56, 189, 248, 0.4);
+          box-shadow: 0 8px 24px rgba(0, 142, 211, 0.25);
+        }
       `}</style>
 
       <div className="pv-body">
         
-        {/* FIX: STICKY WRAPPER. This perfectly glues the timer to the top of the screen when scrolling down! */}
-        {timerVisible && (
-          <div style={{
-            position: 'sticky',
-            top: '16px', // Sticks 16px from the top of the viewport
-            zIndex: 9999,
-            display: 'flex',
-            justifyContent: 'center',
-            marginBottom: '16px',
-            pointerEvents: 'none' // Allows clicking behind the invisible sticky wrapper
-          }}>
+        {/* FIX: THE DYNAMIC ISLAND WRAPPER */}
+        {/* Rendered unconditionally so it's always ready to catch the user at top: 16px */}
+        <div style={{
+          position: 'sticky',
+          top: '16px', 
+          zIndex: 9999,
+          display: 'flex',
+          justifyContent: 'center',
+          height: 0, // Doesn't push the actual workout content down
+          overflow: 'visible',
+          pointerEvents: 'none' // Allows clicking "through" the invisible background
+        }}>
+          
+          {timerVisible ? (
+            /* EXPANDED TIMER PILL */
             <div style={{
-              pointerEvents: 'auto', // Re-enable clicks on the actual pill
+              pointerEvents: 'auto',
               backgroundColor: 'rgba(15, 23, 42, 0.85)',
               backdropFilter: 'blur(12px)',
               WebkitBackdropFilter: 'blur(12px)',
@@ -660,25 +689,21 @@ export default function ProgramViewer() {
                 {timerActive ? <Pause size={18} /> : <Play size={18} style={{ marginLeft: '2px' }} />}
               </button>
             </div>
-          </div>
-        )}
+          ) : (
+            /* COLLAPSED BUTTON PILL */
+            <button 
+              className="pv-timer-collapsed"
+              onClick={() => setTimerVisible(true)}
+            >
+              <Timer size={16} color="#38bdf8" /> Rest Timer
+            </button>
+          )}
 
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+        </div>
+
+        {/* Adjusted margin to account for the floating island above it */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', marginTop: '48px' }}>
           <h2 style={{ fontSize: '24px', color: '#008ed3', fontWeight: '700', margin: 0 }}>Today's Workout</h2>
-          
-          <button 
-            onClick={() => setTimerVisible(!timerVisible)}
-            style={{ 
-              display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: 'transparent',
-              border: '1px solid #cbd5e1', padding: '6px 14px', borderRadius: '20px', 
-              color: '#475569', fontSize: '13px', fontWeight: '600', cursor: 'pointer',
-              transition: 'all 0.2s', boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
-            }}
-            onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#f8fafc'; e.currentTarget.style.borderColor = '#008ed3'; e.currentTarget.style.color = '#008ed3'; }}
-            onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.borderColor = '#cbd5e1'; e.currentTarget.style.color = '#475569'; }}
-          >
-            <Timer size={15} /> {timerVisible ? 'Hide Timer' : 'Rest Timer'}
-          </button>
         </div>
         
         {athleteName && <p style={{ color: '#666', fontSize: '15px', marginBottom: '20px', marginTop: '-8px' }}>Welcome, {athleteName}</p>}
