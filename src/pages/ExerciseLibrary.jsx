@@ -77,22 +77,22 @@ export default function ExerciseLibrary({ viewMode: propViewMode = 'athlete' }) 
   
   const { role, userEmail, isLoading: authLoading } = useAuth();
 
-  // FIX 1: Read the developer's URL parameter to get the Mode Switch
   const queryParams = new URLSearchParams(window.location.search);
   const urlViewMode = queryParams.get('viewMode');
   const viewMode = urlViewMode || propViewMode;
 
-  // Debounce search effect
   useEffect(() => {
     const t = setTimeout(() => setDebouncedQuery(searchQuery), 300);
     return () => clearTimeout(t);
   }, [searchQuery]);
 
-   useEffect(() => {
-    let isMounted = true;
+  // FIX: Completely stripped out the 8-second AbortController kill switch!
+  useEffect(() => {
+    if (authLoading) return;
+
+    let isMounted = true; 
 
     (async () => {
-      // 1. Fetch assigned coach
       if (userEmail) {
         try {
           const athleteResult = await getAthleteByEmail(userEmail);
@@ -103,26 +103,24 @@ export default function ExerciseLibrary({ viewMode: propViewMode = 'athlete' }) 
         } catch (err) {}
       }
 
-      // 2. Fetch library data
       const cached = localStorage.getItem('fp_exercise_library');
       if (cached && isMounted) {
         try {
           const parsed = JSON.parse(cached);
           setFullLibrary(parsed);
           setLoading(false);
-          // Refresh in background WITHOUT the 8-second kill switch
+          // Refresh in background without aborting
           try {
-            const lib = await fetchExerciseLibrary();
+            const lib = await fetchExerciseLibrary(); 
             if (isMounted) {
               setFullLibrary(lib);
               localStorage.setItem('fp_exercise_library', JSON.stringify(lib));
             }
           } catch (err) {}
-          return;
+          return; 
         } catch {}
       }
       
-      // No cache - fetch fresh WITHOUT the 8-second kill switch
       try {
         const lib = await fetchExerciseLibrary();
         if (isMounted) {
@@ -137,60 +135,13 @@ export default function ExerciseLibrary({ viewMode: propViewMode = 'athlete' }) 
     })();
 
     return () => { isMounted = false; };
-  }, [userEmail]);
-
-
-      // 2. Fetch the library data
-      const cached = localStorage.getItem('fp_exercise_library');
-      if (cached && isMounted) {
-        try {
-          const parsed = JSON.parse(cached);
-          setFullLibrary(parsed);
-          setLoading(false);
-          // Refresh in background
-          try {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 8000);
-            const lib = await fetchExerciseLibrary({ signal: controller.signal });
-            clearTimeout(timeoutId);
-            if (isMounted) {
-              setFullLibrary(lib);
-              localStorage.setItem('fp_exercise_library', JSON.stringify(lib));
-            }
-          } catch (err) {
-            console.warn("Background refresh failed:", err.message);
-          }
-          return; // If cache worked, stop here.
-        } catch {}
-      }
-      
-      // No cache - fetch fresh
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 8000);
-        const lib = await fetchExerciseLibrary({ signal: controller.signal });
-        clearTimeout(timeoutId);
-        if (isMounted) {
-          setFullLibrary(lib);
-          localStorage.setItem('fp_exercise_library', JSON.stringify(lib));
-        }
-      } catch {
-        if (isMounted) setError(true);
-      } finally {
-        if (isMounted) setLoading(false);
-      }
-    })();
-
-    return () => { isMounted = false; }; // Cleanup function
   }, [userEmail, authLoading]);
 
-  // Only true if the logged-in user actually owns the exercise
   function isCoachOwned(exercise) {
     if (!exercise.ownerEmail || !userEmail) return false;
     return exercise.ownerEmail.toLowerCase() === userEmail.toLowerCase();
   }
 
-  // Show badge if owned by logged-in user OR their assigned coach
   function renderCoachBadge(exercise) {
     if (!exercise.ownerEmail) return null;
     const isMine = userEmail && exercise.ownerEmail.toLowerCase() === userEmail.toLowerCase();
