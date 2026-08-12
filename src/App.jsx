@@ -26,8 +26,10 @@ function ProtectedRoute({ allowedRoles, children }) {
   const { isAuthenticated, isLoading, role } = useAuth();
   
   if (isLoading) return <LoadingFallback />;
-  if (!isAuthenticated) return <Navigate to="/login" />;
-  if (!allowedRoles.includes(role)) return <Navigate to="/" />;
+  
+  // FIX: Added 'replace' to prevent back-button traps
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  if (!allowedRoles.includes(role)) return <Navigate to="/" replace />;
   
   return <AppShell>{children}</AppShell>;
 }
@@ -52,7 +54,8 @@ export default function App() {
               <Login />
             </Suspense>
           ) : (
-            <Navigate to="/" />
+            // FIX: Added 'replace'
+            <Navigate to="/" replace />
           )
         } />
         
@@ -64,7 +67,8 @@ export default function App() {
               </Suspense>
             </AppShell>
           ) : (
-            <Navigate to="/login" />
+             // FIX: Added 'replace'
+            <Navigate to="/login" replace />
           )
         } />
         <Route path="/athlete-hub" element={
@@ -124,3 +128,4 @@ export default function App() {
     </Router>
   );
 }
+
