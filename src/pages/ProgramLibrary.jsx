@@ -28,37 +28,66 @@ export default function ProgramLibrary() {
   }, []);
 
   async function loadData() {
-    try {
-      // Cache-first: check localStorage for instant load
-      const cached = localStorage.getItem('fp_library_data');
-      if (cached) {
-        try {
-          const parsed = JSON.parse(cached);
-          setProgramData(parsed.programs || []);
-          setAthletesData(parsed.athletes || []);
-          setLoading(false);
-        } catch {}
-      }
-      
-      // Fetch fresh data in background
-      const allData = await fetchAllData();
-      if (allData.error) { setError(allData.error); setLoading(false); return; }
-      setProgramData(allData.programs);
-      setAthletesData(allData.athletes);
-      setLoading(false);
-      
-      // Update cache with fresh data
-      if (allData.programs && allData.athletes) {
+    // Cache-first for instant load
+    const cached = localStorage.getItem('fp_library_data');
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        setProgramData(parsed.programs || []);
+        setAthletesData(parsed.athletes || []);
+        setLoading(false);
+        refreshData(); // Silently update in background
+        return;
+      } catch {}
+    }
+
+    // SILENT AUTO-RETRY LOGIC (The Shock Absorber)
+    let attempts = 0;
+    let success = false;
+
+    while (attempts < 3 && !success) {
+      try {
+        const allData = await fetchAllData();
+        if (allData.error) throw new Error(allData.error); 
+        
+        setProgramData(allData.programs || []);
+        setAthletesData(allData.athletes || []);
+        setLoading(false);
+        setError(null);
+        success = true;
+        
         localStorage.setItem('fp_library_data', JSON.stringify({
-          programs: allData.programs,
-          athletes: allData.athletes,
+          programs: allData.programs || [],
+          athletes: allData.athletes || [],
+          timestamp: Date.now()
+        }));
+      } catch (err) {
+        attempts++;
+        if (attempts >= 3) {
+          setError('Database connection is weak right now. Please refresh the page.');
+          setLoading(false);
+        } else {
+          // Wait 2 seconds before trying again
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      }
+    }
+  }
+
+  // Safe background refresher that won't break the UI if it fails
+  async function refreshData() {
+    try {
+      const allData = await fetchAllData();
+      if (!allData.error) {
+        setProgramData(allData.programs || []);
+        setAthletesData(allData.athletes || []);
+        localStorage.setItem('fp_library_data', JSON.stringify({
+          programs: allData.programs || [],
+          athletes: allData.athletes || [],
           timestamp: Date.now()
         }));
       }
-    } catch (err) {
-      setError('Failed to load programs. Please refresh.');
-      setLoading(false);
-    }
+    } catch {} // Fail silently in background
   }
 
   const athleteNames = useMemo(() => {
@@ -301,7 +330,7 @@ export default function ProgramLibrary() {
     return (
       <div className="pl-container">
         <div className="pl-body">
-          <p className="pl-placeholder">Loading...</p>
+          <p className="pl-placeholder">Authenticating...</p>
         </div>
       </div>
     );
@@ -450,3 +479,4 @@ export default function ProgramLibrary() {
     </div>
   );
 }
+
