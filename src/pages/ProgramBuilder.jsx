@@ -5,7 +5,6 @@ import { fetchAllData, saveFullProgram, updateProgram, getMediaType } from '../a
 import './program-builder.css';
 import HelpButton from '../components/HelpButton';
 
-// Upgraded MediaPlayer to handle static images cleanly without breaking
 function MediaPlayer({ url, compact = false }) {
   if (!url) return null;
   const isImg = url.toLowerCase().includes('.png') || url.toLowerCase().includes('.jpg') || url.toLowerCase().includes('.jpeg');
@@ -42,14 +41,13 @@ export default function ProgramBuilder() {
   const draftRef = useRef(null);
 
   useEffect(() => { loadData(); }, []);
-    useEffect(() => { 
+  useEffect(() => { 
     if (draftRef.current) {
       draftRef.current.scrollTo({ top: draftRef.current.scrollHeight, behavior: 'smooth' });
     } 
   }, [draft]);
 
   async function loadData() {
-    // Cache-first for instant data population if available
     const cached = localStorage.getItem('fp_builder_data');
     if (cached) {
       try {
@@ -58,29 +56,43 @@ export default function ProgramBuilder() {
         setPrograms(parsed.programs || []);
         setLibrary(parsed.library || []);
         setLoading(false);
-        // Refresh in background
-        refreshData();
+        refreshData(); // Silently update cache in background
         return;
       } catch {}
     }
 
-    // No cache — fetch fresh in the background while UI is visible
-    try {
-      const allData = await fetchAllData();
-      if (allData.error) { setError(allData.error); setLoading(false); return; }
-      setAthletes(allData.athletes || []);
-      setPrograms(allData.programs || []);
-      setLibrary(allData.library || []);
-      setLoading(false);
-      // Cache for next load
-      localStorage.setItem('fp_builder_data', JSON.stringify({
-        athletes: allData.athletes,
-        programs: allData.programs,
-        library: allData.library,
-        cachedAt: new Date().toISOString()
-      }));
-    } catch (err) {
-      setError('Failed to load data.'); setLoading(false);
+    // SILENT AUTO-RETRY LOGIC: Try up to 3 times to get the data if the DB drops connection
+    let attempts = 0;
+    let success = false;
+
+    while (attempts < 3 && !success) {
+      try {
+        const allData = await fetchAllData();
+        if (allData.error) throw new Error(allData.error); 
+        
+        setAthletes(allData.athletes || []);
+        setPrograms(allData.programs || []);
+        setLibrary(allData.library || []);
+        setLoading(false);
+        setError(null);
+        success = true;
+        
+        localStorage.setItem('fp_builder_data', JSON.stringify({
+          athletes: allData.athletes,
+          programs: allData.programs,
+          library: allData.library,
+          cachedAt: new Date().toISOString()
+        }));
+      } catch (err) {
+        attempts++;
+        if (attempts >= 3) {
+          setError('Database connection is weak right now. Please refresh the page.');
+          setLoading(false);
+        } else {
+          // Wait 2 seconds before trying again to let the server breathe
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      }
     }
   }
 
@@ -101,20 +113,17 @@ export default function ProgramBuilder() {
     } catch {}
   }
 
-  // Make sure the autocomplete search box filters out other coaches' private plays!
   const exerciseList = useMemo(() => {
     if (!library.length) return [];
-    
     const names = library.slice(1)
       .filter(row => {
         const owner = String(row[5] || '').trim();
-        if (!owner) return true; // It's a standard/global exercise, allow it
-        if (!coachEmail) return false; // Not logged in, block private stuff
-        return owner.toLowerCase() === coachEmail.toLowerCase(); // Only allow if YOU own it
+        if (!owner) return true; 
+        if (!coachEmail) return false; 
+        return owner.toLowerCase() === coachEmail.toLowerCase(); 
       })
       .map(r => String(r[0] || '').trim())
       .filter(Boolean);
-      
     return [...new Set(names)].sort();
   }, [library, coachEmail]);
 
@@ -220,10 +229,8 @@ export default function ProgramBuilder() {
     <div className="pb-wrapper">
       <h2 style={{ fontSize: '24px', color: '#008ed3', marginBottom: '16px', fontWeight: '700' }}>Program Builder</h2>
       
-      {/* Show an error at the top if the background fetch completely fails */}
       {error && <p style={{ color: '#dc3545', marginBottom: '16px', fontWeight: 'bold' }}>{error}</p>}
       
-      {/* UI Shell is now ALWAYS visible, regardless of loading state */}
       <div className="pb-panel-container">
         <div className="pb-left">
           
@@ -235,7 +242,7 @@ export default function ProgramBuilder() {
                   className="pb-select" 
                   value={loadProgramName} 
                   onChange={e => setLoadProgramName(e.target.value)}
-                  disabled={loading} // Lock dropdown while plumbing loads
+                  disabled={loading}
                 >
                   {loading ? (
                     <option value="">— Loading your programs... —</option>
@@ -370,7 +377,6 @@ export default function ProgramBuilder() {
         </div>
       </div>
 
-      {/* Media Overlay stays exactly the same */}
       {showMediaInput && (
         <div className="pb-media-modal-overlay" onClick={() => setShowMediaInput(false)}>
           <div className="pb-media-modal" onClick={e => e.stopPropagation()}>
@@ -427,3 +433,4 @@ export default function ProgramBuilder() {
     </div>
   );
 }
+
