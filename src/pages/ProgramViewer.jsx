@@ -108,7 +108,7 @@ export default function ProgramViewer() {
   // ==========================================
   // SLEEK FLOATING TIMER STATE
   // ==========================================
-  const [timerVisible, setTimerVisible] = useState(false);
+  const [timerExpanded, setTimerExpanded] = useState(false);
   const [timerActive, setTimerActive] = useState(false);
   const [timeLeft, setTimeLeft] = useState(90); 
   
@@ -529,7 +529,7 @@ export default function ProgramViewer() {
   }
 
   return (
-    <div className="pv-container">
+    <div className="pv-container" style={{ paddingBottom: '100px' }}>
       <style>{`
         .pv-input-kg::-webkit-outer-spin-button,
         .pv-input-kg::-webkit-inner-spin-button {
@@ -542,7 +542,48 @@ export default function ProgramViewer() {
           text-align: center;
         }
         
-        /* DYNAMIC ISLAND TIMER STYLES */
+        /* BOTTOM FLOATING ACTION BUTTON (FAB) STYLES */
+        .pv-floating-fab {
+          position: fixed;
+          bottom: 24px;
+          left: 50%;
+          transform: translateX(-50%);
+          background: rgba(15, 23, 42, 0.9);
+          backdrop-filter: blur(12px);
+          -webkit-backdrop-filter: blur(12px);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          padding: 8px 16px;
+          border-radius: 99px;
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+          z-index: 9999;
+          transition: all 0.3s ease;
+        }
+        
+        .pv-floating-fab.is-active {
+          box-shadow: 0 8px 32px rgba(0, 142, 211, 0.2);
+          border-color: rgba(0, 142, 211, 0.3);
+        }
+
+        .pv-fab-collapsed {
+          padding: 10px 24px;
+          color: #f8fafc;
+          font-size: 15px;
+          font-weight: 600;
+          cursor: pointer;
+          border: none;
+          background: transparent;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+        
+        .pv-fab-collapsed:hover {
+          color: #38bdf8;
+        }
+
         .pv-timer-clock {
           font-family: 'SF Pro Display', -apple-system, monospace;
           font-size: 22px;
@@ -607,104 +648,40 @@ export default function ProgramViewer() {
           background-color: rgba(255, 255, 255, 0.15);
           margin: 0 2px;
         }
-
-        .pv-timer-collapsed {
-          pointer-events: auto;
-          background: rgba(15, 23, 42, 0.85);
-          backdrop-filter: blur(12px);
-          -webkit-backdrop-filter: blur(12px);
-          border: 1px solid rgba(255, 255, 255, 0.1);
-          padding: 8px 20px;
-          border-radius: 99px;
-          color: #f8fafc;
-          font-size: 14px;
-          font-weight: 600;
-          cursor: pointer;
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
-          transition: all 0.3s ease;
-        }
-
-        .pv-timer-collapsed:hover {
-          background: rgba(30, 41, 59, 0.95);
-          border-color: rgba(56, 189, 248, 0.4);
-          box-shadow: 0 8px 24px rgba(0, 142, 211, 0.25);
-        }
       `}</style>
 
-      <div className="pv-body">
-        
-        {/* FIX: THE DYNAMIC ISLAND WRAPPER */}
-        {/* Rendered unconditionally so it's always ready to catch the user at top: 16px */}
-        <div style={{
-          position: 'sticky',
-          top: '16px', 
-          zIndex: 9999,
-          display: 'flex',
-          justifyContent: 'center',
-          height: 0, // Doesn't push the actual workout content down
-          overflow: 'visible',
-          pointerEvents: 'none' // Allows clicking "through" the invisible background
-        }}>
-          
-          {timerVisible ? (
-            /* EXPANDED TIMER PILL */
-            <div style={{
-              pointerEvents: 'auto',
-              backgroundColor: 'rgba(15, 23, 42, 0.85)',
-              backdropFilter: 'blur(12px)',
-              WebkitBackdropFilter: 'blur(12px)',
-              border: `1px solid ${timerActive ? 'rgba(0, 142, 211, 0.3)' : 'rgba(255, 255, 255, 0.1)'}`,
-              padding: '8px 16px',
-              borderRadius: '99px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '12px',
-              boxShadow: timerActive ? '0 8px 32px rgba(0, 142, 211, 0.2)' : '0 8px 32px rgba(0, 0, 0, 0.25)',
-              transition: 'all 0.3s ease'
-            }}>
-              <button className="pv-timer-btn" onClick={() => { setTimerVisible(false); setTimerActive(false); }} title="Close Timer">
-                <X size={18} />
-              </button>
-              
-              <div className="pv-timer-divider"></div>
-              
-              <button className="pv-timer-btn" onClick={() => adjustTimer(-15)} title="-15s">
-                <Minus size={16} />
-              </button>
-              
-              <div className={`pv-timer-clock ${timerActive ? 'is-active-text' : ''} ${timeLeft <= 10 && timeLeft > 0 && timerActive ? 'urgent' : ''}`}>
-                {formatTime(timeLeft)}
-              </div>
-              
-              <button className="pv-timer-btn" onClick={() => adjustTimer(15)} title="+15s">
-                <Plus size={16} />
-              </button>
-              
-              <div className="pv-timer-divider"></div>
-              
-              <button className={`pv-timer-btn pv-timer-play ${timerActive ? 'is-playing' : ''}`} onClick={() => setTimerActive(!timerActive)}>
-                {timerActive ? <Pause size={18} /> : <Play size={18} style={{ marginLeft: '2px' }} />}
-              </button>
-            </div>
-          ) : (
-            /* COLLAPSED BUTTON PILL */
-            <button 
-              className="pv-timer-collapsed"
-              onClick={() => setTimerVisible(true)}
-            >
-              <Timer size={16} color="#38bdf8" /> Rest Timer
+      {/* FIX: BOTTOM FLOATING ACTION BUTTON */}
+      <div className={`pv-floating-fab ${timerActive ? 'is-active' : ''}`}>
+        {timerExpanded ? (
+          <>
+            <button className="pv-timer-btn" onClick={() => { setTimerExpanded(false); setTimerActive(false); }} title="Close Timer">
+              <X size={18} />
             </button>
-          )}
+            <div className="pv-timer-divider"></div>
+            <button className="pv-timer-btn" onClick={() => adjustTimer(-15)} title="-15s">
+              <Minus size={16} />
+            </button>
+            <div className={`pv-timer-clock ${timerActive ? 'is-active-text' : ''} ${timeLeft <= 10 && timeLeft > 0 && timerActive ? 'urgent' : ''}`}>
+              {formatTime(timeLeft)}
+            </div>
+            <button className="pv-timer-btn" onClick={() => adjustTimer(15)} title="+15s">
+              <Plus size={16} />
+            </button>
+            <div className="pv-timer-divider"></div>
+            <button className={`pv-timer-btn pv-timer-play ${timerActive ? 'is-playing' : ''}`} onClick={() => setTimerActive(!timerActive)}>
+              {timerActive ? <Pause size={18} /> : <Play size={18} style={{ marginLeft: '2px' }} />}
+            </button>
+          </>
+        ) : (
+          <button className="pv-fab-collapsed" onClick={() => setTimerExpanded(true)}>
+            <Timer size={20} color="#38bdf8" /> <span>Rest Timer</span>
+          </button>
+        )}
+      </div>
 
-        </div>
-
-        {/* Adjusted margin to account for the floating island above it */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', marginTop: '48px' }}>
-          <h2 style={{ fontSize: '24px', color: '#008ed3', fontWeight: '700', margin: 0 }}>Today's Workout</h2>
-        </div>
+      <div className="pv-body">
+        {/* Clean Header - No squished buttons! */}
+        <h2 style={{ fontSize: '24px', color: '#008ed3', marginBottom: '16px', fontWeight: '700' }}>Today's Workout</h2>
         
         {athleteName && <p style={{ color: '#666', fontSize: '15px', marginBottom: '20px', marginTop: '-8px' }}>Welcome, {athleteName}</p>}
 
