@@ -1,5 +1,8 @@
 const GOOGLE_SCRIPT_API_URL = "https://script.google.com/macros/s/AKfycbzIBfOpFxgmTYWlFDuKPVSx30tXJRlyWhhvZVBqkAO_nKeF1GfGTFVvTolLr-CBpoHl8A/exec";
 
+// ==========================================
+// THE MASSIVE PIPE (Legacy - Phase out soon)
+// ==========================================
 export const fetchAllData = async () => {
   try {
     let response = await fetch(`${GOOGLE_SCRIPT_API_URL}?action=getFullData`);
@@ -15,6 +18,42 @@ export const fetchAllData = async () => {
   }
 };
 
+// ==========================================
+// NEW LIGHTWEIGHT PIPES (Stage 1)
+// ==========================================
+export const fetchAthletes = async () => {
+  try {
+    let response = await fetch(`${GOOGLE_SCRIPT_API_URL}?action=getAthletes`);
+    let json = await response.json();
+    return { athletes: json.athletes || [], error: null };
+  } catch (error) {
+    return { athletes: [], error: "Failed to connect to database" };
+  }
+};
+
+export const fetchPrograms = async () => {
+  try {
+    let response = await fetch(`${GOOGLE_SCRIPT_API_URL}?action=getPrograms`);
+    let json = await response.json();
+    return { programs: json.programs || [], error: null };
+  } catch (error) {
+    return { programs: [], error: "Failed to connect to database" };
+  }
+};
+
+export const fetchLibrary = async () => {
+  try {
+    let response = await fetch(`${GOOGLE_SCRIPT_API_URL}?action=getLibrary`);
+    let json = await response.json();
+    return { library: json.library || [], error: null };
+  } catch (error) {
+    return { library: [], error: "Failed to connect to database" };
+  }
+};
+
+// ==========================================
+// EXISTING ENDPOINTS
+// ==========================================
 export const fetchLogbookByAthlete = async (athleteName) => {
   try {
     let url = `${GOOGLE_SCRIPT_API_URL}?action=getLogbookByAthlete&athlete=${encodeURIComponent(athleteName)}`;
@@ -26,7 +65,6 @@ export const fetchLogbookByAthlete = async (athleteName) => {
   }
 };
 
-// NEW ENDPOINT — Get latest maxes from Athlete_Maxes sheet
 export const getLatestMaxes = async (athleteName) => {
   try {
     let url = `${GOOGLE_SCRIPT_API_URL}?action=getLatestMaxes&athlete=${encodeURIComponent(athleteName)}`;
@@ -37,7 +75,6 @@ export const getLatestMaxes = async (athleteName) => {
   }
 };
 
-// NEW ENDPOINT — Get last logged weight for specific exercise
 export const getLastLoggedWeight = async (athleteName, exerciseName) => {
   try {
     let url = `${GOOGLE_SCRIPT_API_URL}?action=getLastLoggedWeight&athlete=${encodeURIComponent(athleteName)}&exercise=${encodeURIComponent(exerciseName)}`;
@@ -81,25 +118,28 @@ export const saveSession = async (payload) => {
   }
 };
 
-// FIXED — Corrected column mapping (Formula at [3], removed multiplier, starts at index 0)
+// FIX: Now uses the lightweight "getLibrary" pipe instead of downloading everything!
 export async function fetchExerciseLibrary(options = {}) {
-  const response = await fetch(`${GOOGLE_SCRIPT_API_URL}?action=getFullData`, options);
+  const response = await fetch(`${GOOGLE_SCRIPT_API_URL}?action=getLibrary`, options);
   const json = await response.json();
   const lib = [];
-  // loadMergedLibrary strips headers, so start at index 0 (not 1)
-  for (let i = 0; i < json.library.length; i++) {
-    const row = json.library[i];
+  const rawLibrary = json.library || [];
+  
+  for (let i = 0; i < rawLibrary.length; i++) {
+    const row = rawLibrary[i];
     const name = String(row[0] || '').trim();
     const url = String(row[1] || '').trim();
     const muscle = (row[2] && String(row[2]).trim()) ? String(row[2]).trim() : 'Other';
     const formula = (row[3] && String(row[3]).trim()) ? String(row[3]).trim().toLowerCase() : '';
     const ownerEmail = (row[5] && String(row[5]).trim()) ? String(row[5]).trim() : '';
+    
     if (!name) continue;
+    
     lib.push({
       name,
       muscle,
       rawUrl: url,
-      formula,          // "yes" = Epley exercise, "" = regular
+      formula,
       isEpley: formula === 'yes',
       ownerEmail
     });
@@ -246,3 +286,4 @@ export function parseProgramsFromRaw(rawPrograms, coachEmail) {
   }
   return programs;
 }
+
