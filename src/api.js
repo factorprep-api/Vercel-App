@@ -1,11 +1,11 @@
 const GOOGLE_SCRIPT_API_URL = "https://script.google.com/macros/s/AKfycbzIBfOpFxgmTYWlFDuKPVSx30tXJRlyWhhvZVBqkAO_nKeF1GfGTFVvTolLr-CBpoHl8A/exec";
 
 // ==========================================
-// THE MASSIVE PIPE (Legacy - Phase out soon)
+// MASSIVE PIPE (Legacy)
 // ==========================================
 export const fetchAllData = async () => {
   try {
-    let response = await fetch(`${GOOGLE_SCRIPT_API_URL}?action=getFullData`);
+    let response = await fetch(`${GOOGLE_SCRIPT_API_URL}?action=getFullData&t=${Date.now()}`);
     let json = await response.json();
     return {
       athletes: json.athletes || [],
@@ -19,11 +19,11 @@ export const fetchAllData = async () => {
 };
 
 // ==========================================
-// NEW LIGHTWEIGHT PIPES (Stage 1)
+// LIGHTWEIGHT PIPES
 // ==========================================
 export const fetchAthletes = async () => {
   try {
-    let response = await fetch(`${GOOGLE_SCRIPT_API_URL}?action=getAthletes`);
+    let response = await fetch(`${GOOGLE_SCRIPT_API_URL}?action=getAthletes&t=${Date.now()}`);
     let json = await response.json();
     return { athletes: json.athletes || [], error: null };
   } catch (error) {
@@ -33,7 +33,7 @@ export const fetchAthletes = async () => {
 
 export const fetchPrograms = async () => {
   try {
-    let response = await fetch(`${GOOGLE_SCRIPT_API_URL}?action=getPrograms`);
+    let response = await fetch(`${GOOGLE_SCRIPT_API_URL}?action=getPrograms&t=${Date.now()}`);
     let json = await response.json();
     return { programs: json.programs || [], error: null };
   } catch (error) {
@@ -43,7 +43,7 @@ export const fetchPrograms = async () => {
 
 export const fetchLibrary = async () => {
   try {
-    let response = await fetch(`${GOOGLE_SCRIPT_API_URL}?action=getLibrary`);
+    let response = await fetch(`${GOOGLE_SCRIPT_API_URL}?action=getLibrary&t=${Date.now()}`);
     let json = await response.json();
     return { library: json.library || [], error: null };
   } catch (error) {
@@ -56,7 +56,7 @@ export const fetchLibrary = async () => {
 // ==========================================
 export const fetchLogbookByAthlete = async (athleteName) => {
   try {
-    let url = `${GOOGLE_SCRIPT_API_URL}?action=getLogbookByAthlete&athlete=${encodeURIComponent(athleteName)}`;
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=getLogbookByAthlete&athlete=${encodeURIComponent(athleteName)}&t=${Date.now()}`;
     let resp = await fetch(url);
     let json = await resp.json();
     return json;
@@ -67,7 +67,7 @@ export const fetchLogbookByAthlete = async (athleteName) => {
 
 export const getLatestMaxes = async (athleteName) => {
   try {
-    let url = `${GOOGLE_SCRIPT_API_URL}?action=getLatestMaxes&athlete=${encodeURIComponent(athleteName)}`;
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=getLatestMaxes&athlete=${encodeURIComponent(athleteName)}&t=${Date.now()}`;
     let resp = await fetch(url);
     return await resp.json();
   } catch (err) {
@@ -77,7 +77,7 @@ export const getLatestMaxes = async (athleteName) => {
 
 export const getLastLoggedWeight = async (athleteName, exerciseName) => {
   try {
-    let url = `${GOOGLE_SCRIPT_API_URL}?action=getLastLoggedWeight&athlete=${encodeURIComponent(athleteName)}&exercise=${encodeURIComponent(exerciseName)}`;
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=getLastLoggedWeight&athlete=${encodeURIComponent(athleteName)}&exercise=${encodeURIComponent(exerciseName)}&t=${Date.now()}`;
     let resp = await fetch(url);
     return await resp.json();
   } catch (err) {
@@ -87,7 +87,7 @@ export const getLastLoggedWeight = async (athleteName, exerciseName) => {
 
 export const createAthlete = async ({ email, name }) => {
   try {
-    let url = `${GOOGLE_SCRIPT_API_URL}?action=createAthlete&email=${encodeURIComponent(email)}&name=${encodeURIComponent(name)}`;
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=createAthlete&email=${encodeURIComponent(email)}&name=${encodeURIComponent(name)}&t=${Date.now()}`;
     let resp = await fetch(url);
     let json = await resp.json();
     return json;
@@ -98,7 +98,7 @@ export const createAthlete = async ({ email, name }) => {
 
 export const getAthleteByEmail = async (email) => {
   try {
-    let url = `${GOOGLE_SCRIPT_API_URL}?action=getAthleteByEmail&email=${encodeURIComponent(email)}`;
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=getAthleteByEmail&email=${encodeURIComponent(email)}&t=${Date.now()}`;
     let resp = await fetch(url);
     let json = await resp.json();
     return json;
@@ -109,7 +109,7 @@ export const getAthleteByEmail = async (email) => {
 
 export const saveSession = async (payload) => {
   try {
-    let url = `${GOOGLE_SCRIPT_API_URL}?action=saveEntireSession&data=${encodeURIComponent(JSON.stringify(payload))}`;
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=saveEntireSession&data=${encodeURIComponent(JSON.stringify(payload))}&t=${Date.now()}`;
     let resp = await fetch(url);
     let json = await resp.json();
     return json;
@@ -118,9 +118,8 @@ export const saveSession = async (payload) => {
   }
 };
 
-// FIX: Now uses the lightweight "getLibrary" pipe instead of downloading everything!
 export async function fetchExerciseLibrary(options = {}) {
-  const response = await fetch(`${GOOGLE_SCRIPT_API_URL}?action=getLibrary`, options);
+  const response = await fetch(`${GOOGLE_SCRIPT_API_URL}?action=getLibrary&t=${Date.now()}`, options);
   const json = await response.json();
   const lib = [];
   const rawLibrary = json.library || [];
@@ -149,7 +148,7 @@ export async function fetchExerciseLibrary(options = {}) {
 
 export const deleteProgram = async (programName) => {
   try {
-    let url = `${GOOGLE_SCRIPT_API_URL}?action=deleteProgram&pName=${encodeURIComponent(programName)}`;
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=deleteProgram&pName=${encodeURIComponent(programName)}&t=${Date.now()}`;
     let resp = await fetch(url);
     let json = await resp.json();
     return json;
@@ -160,7 +159,7 @@ export const deleteProgram = async (programName) => {
 
 export const updateAssignment = async (athleteName, assignment) => {
   try {
-    let url = `${GOOGLE_SCRIPT_API_URL}?action=updateAssignment&aName=${encodeURIComponent(athleteName)}&assignment=${encodeURIComponent(assignment)}`;
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=updateAssignment&aName=${encodeURIComponent(athleteName)}&assignment=${encodeURIComponent(assignment)}&t=${Date.now()}`;
     let resp = await fetch(url);
     let json = await resp.json();
     return json;
@@ -171,7 +170,7 @@ export const updateAssignment = async (athleteName, assignment) => {
 
 export const saveFullProgram = async (programRows) => {
   try {
-    let url = `${GOOGLE_SCRIPT_API_URL}?action=saveFullProgram&programData=${encodeURIComponent(JSON.stringify(programRows))}`;
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=saveFullProgram&programData=${encodeURIComponent(JSON.stringify(programRows))}&t=${Date.now()}`;
     let resp = await fetch(url);
     let json = await resp.json();
     return json;
@@ -183,7 +182,7 @@ export const saveFullProgram = async (programRows) => {
 export const assignProgramBulk = async (athleteRows, programAssignment, columnId) => {
   try {
     let payload = JSON.stringify({ athleteRows, programAssignment, columnId });
-    let url = `${GOOGLE_SCRIPT_API_URL}?action=assignProgram&data=${encodeURIComponent(payload)}`;
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=assignProgram&data=${encodeURIComponent(payload)}&t=${Date.now()}`;
     let resp = await fetch(url);
     let json = await resp.json();
     return json;
@@ -194,7 +193,7 @@ export const assignProgramBulk = async (athleteRows, programAssignment, columnId
 
 export const addExerciseToLibrary = async (exerciseData) => {
   try {
-    let url = `${GOOGLE_SCRIPT_API_URL}?action=addExercise&data=${encodeURIComponent(JSON.stringify(exerciseData))}`;
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=addExercise&data=${encodeURIComponent(JSON.stringify(exerciseData))}&t=${Date.now()}`;
     let resp = await fetch(url);
     let json = await resp.json();
     return json;
@@ -205,7 +204,7 @@ export const addExerciseToLibrary = async (exerciseData) => {
 
 export const deleteExerciseFromLibrary = async (exerciseName) => {
   try {
-    let url = `${GOOGLE_SCRIPT_API_URL}?action=deleteExercise&exName=${encodeURIComponent(exerciseName)}`;
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=deleteExercise&exName=${encodeURIComponent(exerciseName)}&t=${Date.now()}`;
     let resp = await fetch(url);
     let json = await resp.json();
     return json;
@@ -216,7 +215,7 @@ export const deleteExerciseFromLibrary = async (exerciseName) => {
 
 export const updateExerciseInLibrary = async (exerciseData) => {
   try {
-    let url = `${GOOGLE_SCRIPT_API_URL}?action=updateExercise&data=${encodeURIComponent(JSON.stringify(exerciseData))}`;
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=updateExercise&data=${encodeURIComponent(JSON.stringify(exerciseData))}&t=${Date.now()}`;
     let resp = await fetch(url);
     let json = await resp.json();
     return json;
@@ -227,7 +226,7 @@ export const updateExerciseInLibrary = async (exerciseData) => {
 
 export const fetchHelpVideos = async () => {
   try {
-    let url = `${GOOGLE_SCRIPT_API_URL}?action=getHelpVideos`;
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=getHelpVideos&t=${Date.now()}`;
     let resp = await fetch(url);
     let json = await resp.json();
     return json.data || {};
@@ -238,7 +237,7 @@ export const fetchHelpVideos = async () => {
 
 export const updateProgram = async (oldName, programRows) => {
   try {
-    let url = `${GOOGLE_SCRIPT_API_URL}?action=updateProgram&oldName=${encodeURIComponent(oldName)}&programData=${encodeURIComponent(JSON.stringify(programRows))}`;
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=updateProgram&oldName=${encodeURIComponent(oldName)}&programData=${encodeURIComponent(JSON.stringify(programRows))}&t=${Date.now()}`;
     let resp = await fetch(url);
     return await resp.json();
   } catch (err) {
@@ -286,4 +285,3 @@ export function parseProgramsFromRaw(rawPrograms, coachEmail) {
   }
   return programs;
 }
-
