@@ -15,6 +15,7 @@ const ProgramLibrary = lazy(() => import('./pages/ProgramLibrary'));
 const Shop = lazy(() => import('./pages/Shop'));
 const Whiteboard = lazy(() => import('./pages/Whiteboard'));
 const CoachResults = lazy(() => import('./pages/CoachResults'));
+const IntervalTimer = lazy(() => import('./pages/IntervalTimer')); // NEW: Interval Timer
 
 const LoadingFallback = () => (
   <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', fontFamily: '"Roboto Flex", sans-serif' }}>
@@ -27,7 +28,6 @@ function ProtectedRoute({ allowedRoles, children }) {
   
   if (isLoading) return <LoadingFallback />;
   
-  // FIX: Added 'replace' to prevent back-button traps
   if (!isAuthenticated) return <Navigate to="/login" replace />;
   if (!allowedRoles.includes(role)) return <Navigate to="/" replace />;
   
@@ -37,7 +37,7 @@ function ProtectedRoute({ allowedRoles, children }) {
 export default function App() {
   const { isAuthenticated, isLoading, role } = useAuth();
 
-  // THIS IS THE LOCK: It forces the app to wait here until it KNOWS you are a coach
+  // The Lock: Forces app to wait until role is verified
   if (isLoading || (isAuthenticated && !role)) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', fontFamily: '"Roboto Flex", sans-serif' }}>
@@ -45,7 +45,6 @@ export default function App() {
       </div>
     );
   }
-
 
   return (
     <Router>
@@ -56,7 +55,6 @@ export default function App() {
               <Login />
             </Suspense>
           ) : (
-            // FIX: Added 'replace'
             <Navigate to="/" replace />
           )
         } />
@@ -69,10 +67,10 @@ export default function App() {
               </Suspense>
             </AppShell>
           ) : (
-             // FIX: Added 'replace'
             <Navigate to="/login" replace />
           )
         } />
+        
         <Route path="/athlete-hub" element={
           <ProtectedRoute allowedRoles={['athlete', 'coach']}>
             <Suspense fallback={<LoadingFallback />}><AthleteHub /></Suspense>
@@ -124,6 +122,13 @@ export default function App() {
         <Route path="/coach-results" element={
           <ProtectedRoute allowedRoles={['coach']}>
             <Suspense fallback={<LoadingFallback />}><CoachResults /></Suspense>
+          </ProtectedRoute>
+        } />
+
+        {/* NEW ROUTE: Interval Timer */}
+        <Route path="/interval-timer" element={
+          <ProtectedRoute allowedRoles={['athlete', 'coach']}>
+            <Suspense fallback={<LoadingFallback />}><IntervalTimer /></Suspense>
           </ProtectedRoute>
         } />
       </Routes>
