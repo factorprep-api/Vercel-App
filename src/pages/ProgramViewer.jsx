@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Play, ChevronDown, ChevronUp, Video, Image as ImageIcon, Save, CheckCircle, MessageSquare, UserPlus, Globe } from 'lucide-react';
 import { getYouTubeId } from '../utils/helpers';
 import { useAuth } from '../hooks/useAuth';
-import { fetchAllData, getAthleteByEmail, saveSession, getMediaType, getLatestMaxes, getLastLoggedWeight } from '../api';
+import { fetchAllData, getAthleteByEmail, saveSession, getMediaType, getLatestMaxes, fetchLogbookByAthlete } from '../api';
 import HelpButton from '../components/HelpButton';
 import './program-viewer.css';
 
@@ -34,21 +34,18 @@ function extractMediaUrl(rawVid) {
   return '';
 }
 
-// Calculate target load using pre-fetched maxes
 function calculateTargetLoad(libraryData, athleteMaxes, lastWeights, exerciseName, reps, intensity) {
   if (!intensity || isNaN(parseFloat(intensity)) || parseFloat(intensity) <= 0) return 'Auto';
 
   const safeReps = parseFloat(reps) || 1;
   const intensityDecimal = parseFloat(intensity) / 100;
 
-  // Find exercise in library to check Formula column (index 3)
   const exInfo = libraryData.find(ex => normalizeString(ex[0]) === normalizeString(exerciseName));
   const isFormula = exInfo && String(exInfo[3] || '').trim().toLowerCase() === 'yes';
 
   let oneRM = 0;
 
   if (isFormula) {
-    // Epley exercise — look up latest 1RM (maxes has format { oneRM: number })
     const maxEntry = athleteMaxes[normalizeString(exerciseName)];
     if (maxEntry && typeof maxEntry === 'object' && maxEntry.oneRM > 0) {
       oneRM = maxEntry.oneRM;
@@ -58,7 +55,6 @@ function calculateTargetLoad(libraryData, athleteMaxes, lastWeights, exerciseNam
       return 'First time';
     }
   } else {
-    // Non-Epley — try last logged weight
     const lastEntry = lastWeights[normalizeString(exerciseName)];
     if (lastEntry && lastEntry.weight) {
       const lastWt = parseFloat(lastEntry.weight);
@@ -289,12 +285,14 @@ export default function ProgramViewer() {
     return groups;
   }, [selectedProgram, programData, libraryData]);
 
+  // FIX: Eliminated the network jam by fetching the logbook ONCE instead of looping 8 times!
   useEffect(() => {
     if (!athleteName || !workoutGroups.length || !libraryData.length) return;
     
     let cancelled = false;
     
     async function fetchAndCalcTargets() {
+      // 1. Fetch maxes
       const maxesResp = await getLatestMaxes(athleteName);
       const athleteMaxes = {};
       if (maxesResp.status === 'Success' && maxesResp.maxes) {
@@ -303,19 +301,27 @@ export default function ProgramViewer() {
         });
       }
       
+      // 2. Fetch the ENTIRE logbook ONCE
       const lastWeights = {};
-      const uniqueExercises = [...new Set(workoutGroups.map(g => g.name))];
-      await Promise.all(uniqueExercises.map(async exName => {
-        try {
-          const lastLogged = await getLastLoggedWeight(athleteName, exName);
-          if (!cancelled && lastLogged.status === 'Success') {
-            lastWeights[normalizeString(exName)] = {
-              weight: lastLogged.weight || 0,
-              reps: lastLogged.reps || 0
-            };
-          }
-        } catch (e) {}
-      }));
+      try {
+        const logbookResp = await fetchLogbookByAthlete(athleteName);
+        if (!cancelled && logbookResp.status === 'Success' && logbookResp.data) {
+           const logData = logbookResp.data; 
+           const uniqueExercises = [...new Set(workoutGroups.map(g => g.name))];
+           
+           uniqueExercises.forEach(exName => {
+             const normEx = normalizeString(exName);
+             // logData is sorted newest-first, so .find() grabs the absolute latest weight
+             const found = logData.find(entry => normalizeString(entry.ex) === normEx);
+             if (found) {
+               lastWeights[normEx] = {
+                 weight: found.wt || 0,
+                 reps: found.reps || 0
+               };
+             }
+           });
+        }
+      } catch (e) {}
       
       if (cancelled) return;
       
@@ -407,11 +413,9 @@ export default function ProgramViewer() {
       return;
     }
     const payload = { athlete: athleteName, prog: loggedProgStr, sets: setsToLog };
-    console.log('=== SAVE PAYLOAD ===', JSON.stringify(payload));
-    console.log('=== PAYLOAD LENGTH ===', JSON.stringify(payload).length, 'bytes');
+    
     try {
       const res = await saveSession(payload);
-      console.log('=== SAVE RESPONSE ===', res);
       if (res.status === 'Success') { setSaveSuccess(true); setTimeout(() => navigate('/athlete-hub'), 2000); } else { alert('Save failed: ' + (res.message || 'Unknown error')); }
     } catch (err) {
       alert('Network error. Please try again.');
@@ -445,7 +449,6 @@ export default function ProgramViewer() {
 
   return (
     <div className="pv-container">
-      {/* INJECTED STYLE FIX: Removes arrows from the kg input and sets standard width */}
       <style>{`
         .pv-input-kg::-webkit-outer-spin-button,
         .pv-input-kg::-webkit-inner-spin-button {
@@ -600,7 +603,6 @@ export default function ProgramViewer() {
                           <div className="pv-inputs">
                             <div className="pv-input-group">
                               <span className="pv-input-label">kg</span>
-                              {/* ADDED 'pv-input-kg' CLASS HERE to trigger the style block above */}
                               <input type="number" className="pv-input pv-input-kg" placeholder={targetNum || '--'} value={input.wt || ''} onChange={e => handleInputChange(group.id, idx, 'wt', e.target.value)} />
                             </div>
                             <div className="pv-input-group">
@@ -636,3 +638,4 @@ export default function ProgramViewer() {
     </div>
   );
 }
+

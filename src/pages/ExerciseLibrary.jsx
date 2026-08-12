@@ -86,52 +86,48 @@ export default function ExerciseLibrary({ viewMode: propViewMode = 'athlete' }) 
     return () => clearTimeout(t);
   }, [searchQuery]);
 
-  // FIX: Completely stripped out the 8-second AbortController kill switch!
+  // FIX: Unblocked the cache! It now renders the videos instantly and does the DB checks silently in the background
   useEffect(() => {
     if (authLoading) return;
-
     let isMounted = true; 
 
     (async () => {
-      if (userEmail) {
-        try {
-          const athleteResult = await getAthleteByEmail(userEmail);
-          if (athleteResult && athleteResult.status === 'Success' && isMounted) {
-            const coachE = athleteResult.coachEmail || athleteResult.coach || '';
-            setAssignedCoachEmail(coachE);
-          }
-        } catch (err) {}
-      }
-
+      // 1. INSTANTLY CHECK CACHE FIRST
       const cached = localStorage.getItem('fp_exercise_library');
       if (cached && isMounted) {
         try {
-          const parsed = JSON.parse(cached);
-          setFullLibrary(parsed);
+          setFullLibrary(JSON.parse(cached));
           setLoading(false);
-          // Refresh in background without aborting
-          try {
-            const lib = await fetchExerciseLibrary(); 
-            if (isMounted) {
-              setFullLibrary(lib);
-              localStorage.setItem('fp_exercise_library', JSON.stringify(lib));
-            }
-          } catch (err) {}
-          return; 
         } catch {}
       }
       
-      try {
-        const lib = await fetchExerciseLibrary();
-        if (isMounted) {
-          setFullLibrary(lib);
-          localStorage.setItem('fp_exercise_library', JSON.stringify(lib));
-        }
-      } catch {
-        if (isMounted) setError(true);
-      } finally {
-        if (isMounted) setLoading(false);
+      // 2. RUN NETWORK TASKS IN BACKGROUND PARALLEL
+      const fetchTasks = [];
+
+      if (userEmail) {
+        fetchTasks.push(
+          getAthleteByEmail(userEmail).then(athleteResult => {
+            if (athleteResult && athleteResult.status === 'Success' && isMounted) {
+              setAssignedCoachEmail(athleteResult.coachEmail || athleteResult.coach || '');
+            }
+          }).catch(() => {})
+        );
       }
+
+      fetchTasks.push(
+        fetchExerciseLibrary().then(lib => {
+          if (isMounted) {
+            setFullLibrary(lib);
+            localStorage.setItem('fp_exercise_library', JSON.stringify(lib));
+            setLoading(false);
+          }
+        }).catch(() => {
+          if (isMounted && !cached) setError(true);
+          if (isMounted) setLoading(false);
+        })
+      );
+
+      await Promise.all(fetchTasks);
     })();
 
     return () => { isMounted = false; };
@@ -546,4 +542,5 @@ function AddExerciseModal({ userEmail, existingCategories, onClose, onSuccess })
     </div>
   );
 }
+
 
