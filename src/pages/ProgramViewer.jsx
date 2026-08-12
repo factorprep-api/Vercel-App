@@ -135,8 +135,27 @@ export default function ProgramViewer() {
         } catch {}
       }
       
-      const allData = await fetchAllData();
-      if (allData.error) { setError(allData.error); setLoading(false); return; }
+      // FIX: Installed the 3-attempt Shock Absorber for athletes with bad cell service!
+      let attempts = 0;
+      let success = false;
+      let allData = null;
+
+      while (attempts < 3 && !success) {
+        try {
+          allData = await fetchAllData();
+          if (allData.error) throw new Error(allData.error);
+          success = true;
+        } catch (err) {
+          attempts++;
+          if (attempts >= 3) {
+            setError('Database connection is weak right now. Please refresh.');
+            setLoading(false);
+            return;
+          }
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      }
+
       setAthletesData(allData.athletes);
       setProgramData(allData.programs);
       setLibraryData(allData.library);
@@ -285,14 +304,12 @@ export default function ProgramViewer() {
     return groups;
   }, [selectedProgram, programData, libraryData]);
 
-  // FIX: Eliminated the network jam by fetching the logbook ONCE instead of looping 8 times!
   useEffect(() => {
     if (!athleteName || !workoutGroups.length || !libraryData.length) return;
     
     let cancelled = false;
     
     async function fetchAndCalcTargets() {
-      // 1. Fetch maxes
       const maxesResp = await getLatestMaxes(athleteName);
       const athleteMaxes = {};
       if (maxesResp.status === 'Success' && maxesResp.maxes) {
@@ -301,7 +318,6 @@ export default function ProgramViewer() {
         });
       }
       
-      // 2. Fetch the ENTIRE logbook ONCE
       const lastWeights = {};
       try {
         const logbookResp = await fetchLogbookByAthlete(athleteName);
@@ -311,7 +327,6 @@ export default function ProgramViewer() {
            
            uniqueExercises.forEach(exName => {
              const normEx = normalizeString(exName);
-             // logData is sorted newest-first, so .find() grabs the absolute latest weight
              const found = logData.find(entry => normalizeString(entry.ex) === normEx);
              if (found) {
                lastWeights[normEx] = {
@@ -638,4 +653,5 @@ export default function ProgramViewer() {
     </div>
   );
 }
+
 
