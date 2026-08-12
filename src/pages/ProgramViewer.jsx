@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Play, ChevronDown, ChevronUp, Video, Image as ImageIcon, Save, CheckCircle, MessageSquare, UserPlus, Globe } from 'lucide-react';
+import { Play, ChevronDown, ChevronUp, Video, Image as ImageIcon, Save, CheckCircle, MessageSquare, UserPlus, Globe, Timer, Pause, RotateCcw, Plus, Minus, X } from 'lucide-react';
 import { getYouTubeId } from '../utils/helpers';
 import { useAuth } from '../hooks/useAuth';
 import { fetchAllData, getAthleteByEmail, saveSession, getMediaType, getLatestMaxes, fetchLogbookByAthlete } from '../api';
@@ -104,9 +104,52 @@ export default function ProgramViewer() {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [showProgramMedia, setShowProgramMedia] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  
+  // ==========================================
+  // SLEEK FLOATING TIMER STATE
+  // ==========================================
+  const [timerVisible, setTimerVisible] = useState(false);
+  const [timerActive, setTimerActive] = useState(false);
+  const [timeLeft, setTimeLeft] = useState(90); 
+  
   const { userEmail, isLoading: authLoading } = useAuth();
   const navigate = useNavigate();
 
+  // ==========================================
+  // TIMER LOGIC & AUDIO
+  // ==========================================
+  useEffect(() => {
+    let interval = null;
+    if (timerActive && timeLeft > 0) {
+      interval = setInterval(() => {
+        setTimeLeft((prev) => prev - 1);
+      }, 1000);
+    } else if (timerActive && timeLeft === 0) {
+      setTimerActive(false);
+      try {
+        // Crisp digital watch beep
+        const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+        audio.play();
+      } catch (e) {
+        console.log('Audio playback blocked by browser');
+      }
+    }
+    return () => clearInterval(interval);
+  }, [timerActive, timeLeft]);
+
+  const formatTime = (seconds) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  };
+
+  const adjustTimer = (amount) => {
+    setTimeLeft((prev) => Math.max(0, prev + amount));
+  };
+  
+  // ==========================================
+  // DATA LOADING (With Shock Absorber)
+  // ==========================================
   useEffect(() => { if (userEmail) loadData(true); }, [userEmail]);
 
   async function loadData(useCache = false) {
@@ -135,7 +178,6 @@ export default function ProgramViewer() {
         } catch {}
       }
       
-      // FIX: Installed the 3-attempt Shock Absorber for athletes with bad cell service!
       let attempts = 0;
       let success = false;
       let allData = null;
@@ -304,6 +346,7 @@ export default function ProgramViewer() {
     return groups;
   }, [selectedProgram, programData, libraryData]);
 
+  // SINGLE LOGBOOK FETCH FOR TARGET CALCS
   useEffect(() => {
     if (!athleteName || !workoutGroups.length || !libraryData.length) return;
     
@@ -381,6 +424,32 @@ export default function ProgramViewer() {
     setInputValues({});
     setSaveSuccess(false);
     setShowProgramMedia(false);
+    
+    // Auto-detect the most common rest time for this program
+    const restTimes = [];
+    programData.slice(1).forEach(row => {
+      if (String(row[0] || '').trim() === progName) {
+        const rest = String(row[8] || '').trim();
+        if (rest) restTimes.push(rest);
+      }
+    });
+    if (restTimes.length > 0) {
+      const counts = {};
+      let maxCount = 0;
+      let mostCommon = '90s';
+      restTimes.forEach(rt => {
+        counts[rt] = (counts[rt] || 0) + 1;
+        if (counts[rt] > maxCount) { maxCount = counts[rt]; mostCommon = rt; }
+      });
+      const secMatch = mostCommon.match(/(\d+)/);
+      if (secMatch) {
+        let secs = parseInt(secMatch[1], 10);
+        if (mostCommon.toLowerCase().includes('m')) secs *= 60;
+        setTimeLeft(secs);
+      }
+    } else {
+      setTimeLeft(90);
+    }
   }
 
   function toggleMedia(groupId) {
@@ -463,7 +532,7 @@ export default function ProgramViewer() {
   }
 
   return (
-    <div className="pv-container">
+    <div className="pv-container" style={{ paddingBottom: timerVisible ? '100px' : '20px' }}>
       <style>{`
         .pv-input-kg::-webkit-outer-spin-button,
         .pv-input-kg::-webkit-inner-spin-button {
@@ -475,11 +544,154 @@ export default function ProgramViewer() {
           width: 65px !important;
           text-align: center;
         }
+        
+        /* ULTRA-SLEEK FLOATING TIMER (Glassmorphism) */
+        .pv-floating-timer {
+          position: fixed;
+          bottom: 24px;
+          left: 50%;
+          transform: translateX(-50%);
+          background: rgba(15, 23, 42, 0.85); /* Deep slate with opacity */
+          backdrop-filter: blur(12px); /* Apple-style blur */
+          -webkit-backdrop-filter: blur(12px);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          padding: 8px 16px;
+          border-radius: 99px; /* Perfect pill shape */
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+          z-index: 9999;
+          transition: all 0.3s ease;
+        }
+        
+        /* Subtle glow when running */
+        .pv-floating-timer.is-active {
+          box-shadow: 0 8px 32px rgba(0, 142, 211, 0.2);
+          border-color: rgba(0, 142, 211, 0.3);
+        }
+
+        .pv-timer-clock {
+          font-family: 'SF Pro Display', -apple-system, monospace;
+          font-size: 22px;
+          font-weight: 600;
+          min-width: 65px;
+          text-align: center;
+          color: #f8fafc;
+          letter-spacing: 0.5px;
+          transition: color 0.3s ease;
+        }
+        
+        .pv-timer-clock.is-active-text { color: #38bdf8; }
+        .pv-timer-clock.urgent { color: #ef4444; animation: pulse 1s infinite; }
+        
+        @keyframes pulse {
+          0% { opacity: 1; }
+          50% { opacity: 0.5; }
+          100% { opacity: 1; }
+        }
+        
+        .pv-timer-btn {
+          background: none;
+          border: none;
+          color: #94a3b8;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 6px;
+          border-radius: 50%;
+          transition: all 0.2s;
+        }
+        
+        .pv-timer-btn:hover {
+          color: #ffffff;
+          background-color: rgba(255, 255, 255, 0.1);
+        }
+        
+        .pv-timer-play {
+          background-color: #008ed3;
+          color: white;
+          padding: 10px;
+          box-shadow: 0 4px 12px rgba(0, 142, 211, 0.3);
+        }
+        
+        .pv-timer-play:hover {
+          background-color: #0077b5;
+          transform: scale(1.05);
+        }
+
+        .pv-timer-play.is-playing {
+          background-color: #ef4444; /* Red for pause */
+          box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+        }
+        .pv-timer-play.is-playing:hover {
+          background-color: #dc2626;
+        }
+        
+        .pv-timer-divider {
+          width: 1px;
+          height: 24px;
+          background-color: rgba(255, 255, 255, 0.15);
+          margin: 0 2px;
+        }
       `}</style>
 
+      {/* FLOATING TIMER UI */}
+      {timerVisible && (
+        <div className={`pv-floating-timer ${timerActive ? 'is-active' : ''}`}>
+          {/* Close Button */}
+          <button className="pv-timer-btn" onClick={() => { setTimerVisible(false); setTimerActive(false); }} title="Close Timer">
+            <X size={18} />
+          </button>
+          
+          <div className="pv-timer-divider"></div>
+          
+          {/* Nudge -15s */}
+          <button className="pv-timer-btn" onClick={() => adjustTimer(-15)} title="-15s">
+            <Minus size={16} />
+          </button>
+          
+          {/* Clock */}
+          <div className={`pv-timer-clock ${timerActive ? 'is-active-text' : ''} ${timeLeft <= 10 && timeLeft > 0 && timerActive ? 'urgent' : ''}`}>
+            {formatTime(timeLeft)}
+          </div>
+          
+          {/* Nudge +15s */}
+          <button className="pv-timer-btn" onClick={() => adjustTimer(15)} title="+15s">
+            <Plus size={16} />
+          </button>
+          
+          <div className="pv-timer-divider"></div>
+          
+          {/* Play/Pause Primary Action */}
+          <button className={`pv-timer-btn pv-timer-play ${timerActive ? 'is-playing' : ''}`} onClick={() => setTimerActive(!timerActive)}>
+            {timerActive ? <Pause size={18} /> : <Play size={18} style={{ marginLeft: '2px' }} />}
+          </button>
+        </div>
+      )}
+
       <div className="pv-body">
-        <h2 style={{ fontSize: '24px', color: '#008ed3', marginBottom: '16px', fontWeight: '700' }}>Today's Workout</h2>
-        {athleteName && <p style={{ color: '#666', fontSize: '15px', marginBottom: '20px' }}>Welcome, {athleteName}</p>}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+          <h2 style={{ fontSize: '24px', color: '#008ed3', fontWeight: '700', margin: 0 }}>Today's Workout</h2>
+          
+          {/* CLEAN TOGGLE BUTTON */}
+          <button 
+            onClick={() => setTimerVisible(!timerVisible)}
+            style={{ 
+              display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: 'transparent',
+              border: '1px solid #cbd5e1', padding: '6px 14px', borderRadius: '20px', 
+              color: '#475569', fontSize: '13px', fontWeight: '600', cursor: 'pointer',
+              transition: 'all 0.2s', boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+            }}
+            onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#f8fafc'; e.currentTarget.style.borderColor = '#008ed3'; e.currentTarget.style.color = '#008ed3'; }}
+            onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.borderColor = '#cbd5e1'; e.currentTarget.style.color = '#475569'; }}
+          >
+            <Timer size={15} /> {timerVisible ? 'Hide Timer' : 'Rest Timer'}
+          </button>
+        </div>
+        
+        {athleteName && <p style={{ color: '#666', fontSize: '15px', marginBottom: '20px', marginTop: '-8px' }}>Welcome, {athleteName}</p>}
 
         <div className="pv-search-box">
           <input type="text" placeholder="Search programs..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
