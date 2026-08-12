@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { Stage, Layer, Line, Rect, Circle, Arrow, Text, Group } from 'react-konva';
 import HelpButton from '../components/HelpButton';
@@ -17,7 +17,6 @@ const CANVAS_WIDTH = 1200;
 const CANVAS_HEIGHT = 700;
 
 const DRAWING_TOOLS = ['select', 'line', 'arrow', 'rect', 'circle', 'text', 'player', 'cone'];
-const DRILL_TYPES = ['Offensive Play', 'Defensive Setup', 'Warm-up', 'Skill Drill', 'Conditioning', 'Game Situation'];
 const CONE_COLORS = ['#fbbf24', '#ef4444', '#22c55e', '#3b82f6', '#a855f7'];
 
 const FIELD_TEMPLATES = [
@@ -97,7 +96,8 @@ function BlankCanvasBorder() {
 }
 
 function Whiteboard() {
-  const { userEmail: coachEmail, isLoading: authLoading, role } = useAuth();
+  // Added athleteName to get the Coach's name for the custom category
+  const { userEmail: coachEmail, isLoading: authLoading, role, athleteName } = useAuth();
   const [error, setError] = useState(null);
   const stageRef = useRef(null);
 
@@ -119,9 +119,32 @@ function Whiteboard() {
 
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [exerciseTitle, setExerciseTitle] = useState('');
-  const [exerciseNotes, setExerciseNotes] = useState('');
-  const [drillType, setDrillType] = useState('Offensive Play');
   const [saving, setSaving] = useState(false);
+
+  // CATEGORY LOGIC
+  const [existingCategories, setExistingCategories] = useState([]);
+  const [selectedCategory, setSelectedCategory] = useState('');
+  
+  const coachCategoryName = athleteName ? `${athleteName} Exercises` : 'Coach Exercises';
+
+  useEffect(() => {
+    // Extract unique categories from the exercise library cache
+    const cached = localStorage.getItem('fp_exercise_library');
+    if (cached) {
+      try {
+        const lib = JSON.parse(cached);
+        const cats = new Set();
+        lib.forEach(ex => { if (ex.muscle) cats.add(ex.muscle); });
+        setExistingCategories([...cats]);
+      } catch (e) {}
+    }
+  }, []);
+
+  const categoryOptions = useMemo(() => {
+    // Combine standard defaults, the coach's custom name, and the library DB
+    const baseCats = new Set(['Coach Drills', coachCategoryName, ...existingCategories]);
+    return [...baseCats].sort();
+  }, [existingCategories, coachCategoryName]);
 
   useEffect(() => {
     if (stageRef.current?.container()) {
@@ -259,20 +282,17 @@ function Whiteboard() {
     setSaving(true);
     setError(null);
     try {
-      // 1. Get high quality canvas image and convert to Blob
       const base64Data = stageRef.current.toDataURL({ pixelRatio: 2 });
       const base64Response = await fetch(base64Data);
       const imageBlob = await base64Response.blob();
 
-      // 2. Setup Bunny Credentials (SECURE)
       const BUNNY_STORAGE_ZONE = "app-master-videos"; 
-      const BUNNY_API_KEY = import.meta.env.VITE_BUNNY_API_KEY; // <--- This hides it from GitHub!
+      const BUNNY_API_KEY = import.meta.env.VITE_BUNNY_API_KEY; 
       const BUNNY_PULL_ZONE = "https://factorprep-videos.b-cdn.net/"; 
       
       const fileName = `whiteboard-${Date.now()}.png`;
       const uploadUrl = `https://storage.bunnycdn.com/${BUNNY_STORAGE_ZONE}/whiteboards/${fileName}`;
 
-      // 3. Upload to Bunny.net
       const bunnyResponse = await fetch(uploadUrl, {
         method: 'PUT',
         headers: {
@@ -285,20 +305,18 @@ function Whiteboard() {
       if (!bunnyResponse.ok) throw new Error('Failed to upload image to Bunny.net');
       const finalImageUrl = `${BUNNY_PULL_ZONE}whiteboards/${fileName}`;
 
-      // 4. Save to Google Sheets cleanly
+      // Notes removed, muscle bound to selected category or default coach category
       await addExerciseToLibrary({ 
         name: exerciseTitle, 
         video: finalImageUrl, 
-        muscle: drillType,
+        muscle: selectedCategory || coachCategoryName,
         baseLift: currentTemplate, 
         multiplier: 1, 
-        ownerEmail: coachEmail, 
-        txtNotes: exerciseNotes 
+        ownerEmail: coachEmail 
       });
 
       setShowSaveModal(false);
       setExerciseTitle('');
-      setExerciseNotes(''); 
       localStorage.removeItem('fp_exercise_library');
       alert('Drill saved securely to your private library!');
     } catch (err) { 
@@ -440,18 +458,13 @@ function Whiteboard() {
               <input type="text" value={exerciseTitle} onChange={(e) => setExerciseTitle(e.target.value)} placeholder="e.g., Zone Defense Formation" style={{ width: '100%', padding: '10px', border: `1px solid ${DESIGN.bodyGray}`, borderRadius: '4px', fontFamily: '"Roboto Flex", sans-serif', fontSize: '14px', boxSizing: 'border-box' }} autoFocus />
             </div>
             
-            <div style={{ marginBottom: '15px' }}>
-              <label style={{ display: 'block', marginBottom: '5px', fontWeight: '600', color: DESIGN.darkText }}>Drill Type</label>
-              <select value={drillType} onChange={(e) => setDrillType(e.target.value)} style={{ width: '100%', padding: '10px', border: `1px solid ${DESIGN.bodyGray}`, borderRadius: '4px', fontFamily: '"Roboto Flex", sans-serif', fontSize: '14px', boxSizing: 'border-box' }}>
-                {DRILL_TYPES.map((dt) => (
-                  <option key={dt} value={dt}>{dt}</option>
+            <div style={{ marginBottom: '25px' }}>
+              <label style={{ display: 'block', marginBottom: '5px', fontWeight: '600', color: DESIGN.darkText }}>Muscle / Category</label>
+              <select value={selectedCategory || coachCategoryName} onChange={(e) => setSelectedCategory(e.target.value)} style={{ width: '100%', padding: '10px', border: `1px solid ${DESIGN.bodyGray}`, borderRadius: '4px', fontFamily: '"Roboto Flex", sans-serif', fontSize: '14px', boxSizing: 'border-box' }}>
+                {categoryOptions.map((cat) => (
+                  <option key={cat} value={cat}>{cat}</option>
                 ))}
               </select>
-            </div>
-            
-            <div style={{ marginBottom: '20px' }}>
-              <label style={{ display: 'block', marginBottom: '5px', fontWeight: '600', color: DESIGN.darkText }}>Notes</label>
-              <textarea value={exerciseNotes} onChange={(e) => setExerciseNotes(e.target.value)} placeholder="Describe the drill setup, objectives, or instructions..." rows={4} style={{ width: '100%', padding: '10px', border: `1px solid ${DESIGN.bodyGray}`, borderRadius: '4px', fontFamily: '"Roboto Flex", sans-serif', fontSize: '14px', resize: 'vertical', boxSizing: 'border-box' }} />
             </div>
             
             <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>

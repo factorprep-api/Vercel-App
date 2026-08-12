@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Search, Trash2, UserPlus, CheckCircle, X, Layers, Dumbbell, FolderClosed, Lock, Globe, Eye } from 'lucide-react';
+import { Search, Trash2, UserPlus, CheckCircle, X, Layers, Dumbbell, Activity, Lock, Globe } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
-import { fetchAllData, deleteProgram, updateAssignment, assignProgramBulk } from '../api';
+// FIX: Actually imported the new fast pipes so the app doesn't crash!
+import { fetchPrograms, fetchAthletes, deleteProgram, assignProgramBulk } from '../api';
 import './program-library.css';
 
 export default function ProgramLibrary() {
@@ -28,58 +29,71 @@ export default function ProgramLibrary() {
   }, []);
 
   async function loadData() {
-    try {
-      // Cache-first: check localStorage for instant load
-      const cached = localStorage.getItem('fp_library_data');
-      if (cached) {
-        try {
-          const parsed = JSON.parse(cached);
-          setProgramData(parsed.programs || []);
-          setAthletesData(parsed.athletes || []);
-          setLoading(false);
-        } catch {}
-      }
-      
-      // Fetch fresh data in background
-      const allData = await fetchAllData();
-      if (allData.error) { setError(allData.error); setLoading(false); return; }
-      setProgramData(allData.programs);
-      setAthletesData(allData.athletes);
-      setLoading(false);
-      
-      // Update cache with fresh data
-      if (allData.programs && allData.athletes) {
+    const cached = localStorage.getItem('fp_library_data');
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        setProgramData(parsed.programs || []);
+        setAthletesData(parsed.athletes || []);
+        setLoading(false);
+        refreshData(); 
+        return;
+      } catch {}
+    }
+
+    let attempts = 0;
+    let success = false;
+
+    while (attempts < 3 && !success) {
+      try {
+        const [progRes, athRes] = await Promise.all([
+          fetchPrograms(),
+          fetchAthletes()
+        ]);
+        
+        if (progRes.error) throw new Error(progRes.error); 
+        
+        setProgramData(progRes.programs || []);
+        setAthletesData(athRes.athletes || []);
+        setLoading(false);
+        setError(null);
+        success = true;
+        
         localStorage.setItem('fp_library_data', JSON.stringify({
-          programs: allData.programs,
-          athletes: allData.athletes,
+          programs: progRes.programs || [],
+          athletes: athRes.athletes || [],
           timestamp: Date.now()
         }));
+      } catch (err) {
+        attempts++;
+        if (attempts >= 3) {
+          setError('Database connection is weak right now. Please refresh the page.');
+          setLoading(false);
+        } else {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
       }
-    } catch (err) {
-      setError('Failed to load programs. Please refresh.');
-      setLoading(false);
     }
   }
 
-  const athleteNames = useMemo(() => {
-    if (!athletesData.length) return [];
-    const headers = athletesData[0] || [];
-    let roleCol = -1;
-    for (let i = 0; i < headers.length; i++) {
-      if (String(headers[i] || '').trim().toLowerCase() === 'role') { roleCol = i; break; }
-    }
-    return athletesData.slice(1)
-      .filter(row => {
-        if (roleCol !== -1) {
-          const role = String(row[roleCol] || '').trim().toLowerCase();
-          return role !== 'coach';
-        }
-        return true;
-      })
-      .map(row => String(row[0] || '').trim())
-      .filter(Boolean)
-      .sort();
-  }, [athletesData]);
+  async function refreshData() {
+    try {
+      const [progRes, athRes] = await Promise.all([
+        fetchPrograms(),
+        fetchAthletes()
+      ]);
+      
+      if (!progRes.error && !athRes.error) {
+        setProgramData(progRes.programs || []);
+        setAthletesData(athRes.athletes || []);
+        localStorage.setItem('fp_library_data', JSON.stringify({
+          programs: progRes.programs || [],
+          athletes: athRes.athletes || [],
+          timestamp: Date.now()
+        }));
+      }
+    } catch {} 
+  }
 
   const athleteOptions = useMemo(() => {
     if (!athletesData.length) return [];
@@ -122,15 +136,32 @@ export default function ProgramLibrary() {
     programData.slice(1).forEach(row => {
       const name = String(row[0] || '').trim();
       if (!name) return;
+      
       if (!map[name]) {
-        map[name] = { name, categories: new Set(), exercises: new Set(), phases: new Set(), rows: [], privacyLevel: '', ownerEmail: '' };
+        map[name] = { 
+          name, 
+          categoryName: '', 
+          exercises: new Set(), 
+          workVolume: 0, 
+          rows: [], 
+          privacyLevel: '', 
+          ownerEmail: '' 
+        };
       }
+      
       const cat = String(row[1] || '').trim();
       const phase = String(row[2] || '').trim() || 'Work Block';
       const ex = String(row[3] || '').trim();
-      if (cat) map[name].categories.add(cat);
+      const sets = parseInt(String(row[4] || '').trim()) || 1;
+      const reps = parseInt(String(row[5] || '').trim()) || 1;
+      
+      if (cat && !map[name].categoryName) map[name].categoryName = cat;
       if (ex) map[name].exercises.add(ex);
-      map[name].phases.add(phase);
+      
+      if (phase.toLowerCase() === 'work block' || phase.toLowerCase() === 'workblock') {
+        map[name].workVolume += (sets * reps);
+      }
+      
       map[name].rows.push(row);
       const privacy = String(row[10] || '').trim().toUpperCase();
       const owner = String(row[11] || '').trim();
@@ -301,7 +332,7 @@ export default function ProgramLibrary() {
     return (
       <div className="pl-container">
         <div className="pl-body">
-          <p className="pl-placeholder">Loading...</p>
+          <p className="pl-placeholder">Authenticating...</p>
         </div>
       </div>
     );
@@ -353,15 +384,18 @@ export default function ProgramLibrary() {
                 <div className="pl-program-header" onClick={() => toggleExpand(program.name)}>
                   <div>
                     <div className="pl-program-name">{program.name}</div>
+                    
                     <div className="pl-program-meta">
-                      <span className="pl-meta-badge"><Layers size={10} /> {program.categories.size} categor{program.categories.size === 1 ? 'y' : 'ies'}</span>
+                      {program.categoryName && (
+                        <span className="pl-meta-badge"><Layers size={10} /> {program.categoryName}</span>
+                      )}
                       <span className="pl-meta-badge"><Dumbbell size={10} /> {program.exercises.size} exercises</span>
-                      <span className="pl-meta-badge"><FolderClosed size={10} /> {program.phases.size} phases</span>
+                      <span className="pl-meta-badge"><Activity size={10} /> {program.workVolume} rep volume</span>
                       {renderPrivacyBadge(program)}
                     </div>
+
                   </div>
                   <div className="pl-actions" onClick={e => e.stopPropagation()}>
-                    {/* Only show Delete button for owned programs */}
                     {program.ownerEmail === userEmail && (
                       <button className="pl-delete-btn" onClick={() => handleDelete(program.name)} disabled={deleting === program.name}>
                         <Trash2 size={14} /> <span className="pl-delete-text">{deleting === program.name ? "..." : "Delete"}</span>
@@ -380,7 +414,6 @@ export default function ProgramLibrary() {
         )}
       </div>
 
-      {/* Bulk Assign Modal */}
       {assignModalOpen && (
         <div className="pl-assign-modal" onClick={() => setAssignModalOpen(false)}>
           <div className="pl-assign-content" onClick={e => e.stopPropagation()}>
@@ -450,3 +483,4 @@ export default function ProgramLibrary() {
     </div>
   );
 }
+

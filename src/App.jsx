@@ -26,8 +26,10 @@ function ProtectedRoute({ allowedRoles, children }) {
   const { isAuthenticated, isLoading, role } = useAuth();
   
   if (isLoading) return <LoadingFallback />;
-  if (!isAuthenticated) return <Navigate to="/login" />;
-  if (!allowedRoles.includes(role)) return <Navigate to="/" />;
+  
+  // FIX: Added 'replace' to prevent back-button traps
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  if (!allowedRoles.includes(role)) return <Navigate to="/" replace />;
   
   return <AppShell>{children}</AppShell>;
 }
@@ -35,13 +37,15 @@ function ProtectedRoute({ allowedRoles, children }) {
 export default function App() {
   const { isAuthenticated, isLoading, role } = useAuth();
 
-  if (isLoading) {
+  // THIS IS THE LOCK: It forces the app to wait here until it KNOWS you are a coach
+  if (isLoading || (isAuthenticated && !role)) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', fontFamily: '"Roboto Flex", sans-serif' }}>
-        <p>Loading...</p>
+        <p>Verifying permissions...</p>
       </div>
     );
   }
+
 
   return (
     <Router>
@@ -52,7 +56,8 @@ export default function App() {
               <Login />
             </Suspense>
           ) : (
-            <Navigate to="/" />
+            // FIX: Added 'replace'
+            <Navigate to="/" replace />
           )
         } />
         
@@ -64,7 +69,8 @@ export default function App() {
               </Suspense>
             </AppShell>
           ) : (
-            <Navigate to="/login" />
+             // FIX: Added 'replace'
+            <Navigate to="/login" replace />
           )
         } />
         <Route path="/athlete-hub" element={
@@ -124,3 +130,4 @@ export default function App() {
     </Router>
   );
 }
+

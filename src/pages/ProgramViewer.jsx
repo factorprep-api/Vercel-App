@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Play, ChevronDown, ChevronUp, Video, Image as ImageIcon, Save, CheckCircle, MessageSquare, UserPlus, Globe } from 'lucide-react';
 import { getYouTubeId } from '../utils/helpers';
 import { useAuth } from '../hooks/useAuth';
-import { fetchAllData, getAthleteByEmail, saveSession, getMediaType, getLatestMaxes, getLastLoggedWeight } from '../api';
+import { fetchAllData, getAthleteByEmail, saveSession, getMediaType, getLatestMaxes, fetchLogbookByAthlete } from '../api';
 import HelpButton from '../components/HelpButton';
 import './program-viewer.css';
 
@@ -34,35 +34,27 @@ function extractMediaUrl(rawVid) {
   return '';
 }
 
-// Calculate target load using pre-fetched maxes
-// libraryData = merged library array, each item = [name, video, muscle, formula, '', owner, notes]
-// athleteMaxes = { 'Exercise Name': { oneRM: number } } from getLatestMaxes (maxes field, not data)
-// lastWeights = { 'exercise_key': { weight: number, reps: number } } from getLastLoggedWeight
 function calculateTargetLoad(libraryData, athleteMaxes, lastWeights, exerciseName, reps, intensity) {
   if (!intensity || isNaN(parseFloat(intensity)) || parseFloat(intensity) <= 0) return 'Auto';
 
   const safeReps = parseFloat(reps) || 1;
   const intensityDecimal = parseFloat(intensity) / 100;
 
-  // Find exercise in library to check Formula column (index 3)
   const exInfo = libraryData.find(ex => normalizeString(ex[0]) === normalizeString(exerciseName));
   const isFormula = exInfo && String(exInfo[3] || '').trim().toLowerCase() === 'yes';
 
   let oneRM = 0;
 
   if (isFormula) {
-    // Epley exercise — look up latest 1RM (maxes has format { oneRM: number })
     const maxEntry = athleteMaxes[normalizeString(exerciseName)];
     if (maxEntry && typeof maxEntry === 'object' && maxEntry.oneRM > 0) {
       oneRM = maxEntry.oneRM;
     } else if (maxEntry && typeof maxEntry === 'number' && maxEntry > 0) {
-      // Handle case where maxes might be directly a number
       oneRM = maxEntry;
     } else {
       return 'First time';
     }
   } else {
-    // Non-Epley — try last logged weight
     const lastEntry = lastWeights[normalizeString(exerciseName)];
     if (lastEntry && lastEntry.weight) {
       const lastWt = parseFloat(lastEntry.weight);
@@ -143,8 +135,27 @@ export default function ProgramViewer() {
         } catch {}
       }
       
-      const allData = await fetchAllData();
-      if (allData.error) { setError(allData.error); setLoading(false); return; }
+      // FIX: Installed the 3-attempt Shock Absorber for athletes with bad cell service!
+      let attempts = 0;
+      let success = false;
+      let allData = null;
+
+      while (attempts < 3 && !success) {
+        try {
+          allData = await fetchAllData();
+          if (allData.error) throw new Error(allData.error);
+          success = true;
+        } catch (err) {
+          attempts++;
+          if (attempts >= 3) {
+            setError('Database connection is weak right now. Please refresh.');
+            setLoading(false);
+            return;
+          }
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      }
+
       setAthletesData(allData.athletes);
       setProgramData(allData.programs);
       setLibraryData(allData.library);
@@ -293,42 +304,42 @@ export default function ProgramViewer() {
     return groups;
   }, [selectedProgram, programData, libraryData]);
 
-  // Fetch maxes and calculate targets when athleteName or workoutGroups change
   useEffect(() => {
     if (!athleteName || !workoutGroups.length || !libraryData.length) return;
     
     let cancelled = false;
     
     async function fetchAndCalcTargets() {
-      // Fetch latest maxes — NOTE: maxesResp has 'maxes' field, not 'data'
       const maxesResp = await getLatestMaxes(athleteName);
       const athleteMaxes = {};
       if (maxesResp.status === 'Success' && maxesResp.maxes) {
-        // maxesResp.maxes format: { 'Exercise Name': oneRM_value }
         Object.keys(maxesResp.maxes).forEach(key => {
           athleteMaxes[normalizeString(key)] = { oneRM: maxesResp.maxes[key] };
         });
       }
       
-      // Fetch last logged weights for all exercises in program
       const lastWeights = {};
-      const uniqueExercises = [...new Set(workoutGroups.map(g => g.name))];
-      await Promise.all(uniqueExercises.map(async exName => {
-        try {
-          const lastLogged = await getLastLoggedWeight(athleteName, exName);
-          if (!cancelled && lastLogged.status === 'Success') {
-            // lastLogged has format: { weight, reps, intensity, date, program, exercise }
-            lastWeights[normalizeString(exName)] = {
-              weight: lastLogged.weight || 0,
-              reps: lastLogged.reps || 0
-            };
-          }
-        } catch (e) {}
-      }));
+      try {
+        const logbookResp = await fetchLogbookByAthlete(athleteName);
+        if (!cancelled && logbookResp.status === 'Success' && logbookResp.data) {
+           const logData = logbookResp.data; 
+           const uniqueExercises = [...new Set(workoutGroups.map(g => g.name))];
+           
+           uniqueExercises.forEach(exName => {
+             const normEx = normalizeString(exName);
+             const found = logData.find(entry => normalizeString(entry.ex) === normEx);
+             if (found) {
+               lastWeights[normEx] = {
+                 weight: found.wt || 0,
+                 reps: found.reps || 0
+               };
+             }
+           });
+        }
+      } catch (e) {}
       
       if (cancelled) return;
       
-      // Pre-calculate all targets
       const calcs = {};
       workoutGroups.forEach(group => {
         group.details.forEach((set, idx) => {
@@ -417,11 +428,9 @@ export default function ProgramViewer() {
       return;
     }
     const payload = { athlete: athleteName, prog: loggedProgStr, sets: setsToLog };
-    console.log('=== SAVE PAYLOAD ===', JSON.stringify(payload));
-    console.log('=== PAYLOAD LENGTH ===', JSON.stringify(payload).length, 'bytes');
+    
     try {
       const res = await saveSession(payload);
-      console.log('=== SAVE RESPONSE ===', res);
       if (res.status === 'Success') { setSaveSuccess(true); setTimeout(() => navigate('/athlete-hub'), 2000); } else { alert('Save failed: ' + (res.message || 'Unknown error')); }
     } catch (err) {
       alert('Network error. Please try again.');
@@ -455,6 +464,19 @@ export default function ProgramViewer() {
 
   return (
     <div className="pv-container">
+      <style>{`
+        .pv-input-kg::-webkit-outer-spin-button,
+        .pv-input-kg::-webkit-inner-spin-button {
+          -webkit-appearance: none;
+          margin: 0;
+        }
+        .pv-input-kg {
+          -moz-appearance: textfield;
+          width: 65px !important;
+          text-align: center;
+        }
+      `}</style>
+
       <div className="pv-body">
         <h2 style={{ fontSize: '24px', color: '#008ed3', marginBottom: '16px', fontWeight: '700' }}>Today's Workout</h2>
         {athleteName && <p style={{ color: '#666', fontSize: '15px', marginBottom: '20px' }}>Welcome, {athleteName}</p>}
@@ -596,7 +618,7 @@ export default function ProgramViewer() {
                           <div className="pv-inputs">
                             <div className="pv-input-group">
                               <span className="pv-input-label">kg</span>
-                              <input type="number" className="pv-input" placeholder={targetNum || '--'} value={input.wt || ''} onChange={e => handleInputChange(group.id, idx, 'wt', e.target.value)} />
+                              <input type="number" className="pv-input pv-input-kg" placeholder={targetNum || '--'} value={input.wt || ''} onChange={e => handleInputChange(group.id, idx, 'wt', e.target.value)} />
                             </div>
                             <div className="pv-input-group">
                               <span className="pv-input-label">reps</span>
@@ -631,3 +653,5 @@ export default function ProgramViewer() {
     </div>
   );
 }
+
+

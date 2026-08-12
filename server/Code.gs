@@ -195,6 +195,25 @@ function doGet(e) {
     return ContentService.createTextOutput(JSON.stringify(allData)).setMimeType(ContentService.MimeType.JSON);
   }
 
+  // ==========================================
+  // NEW STAGE 2 DEDICATED PIPES
+  // ==========================================
+  if (action === "getAthletes") {
+    var athletesData = getSafeSheetData(sheetApp, "Athletes");
+    return ContentService.createTextOutput(JSON.stringify({ athletes: athletesData })).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  if (action === "getPrograms") {
+    var programsData = getSafeSheetData(sheetApp, "Programs");
+    return ContentService.createTextOutput(JSON.stringify({ programs: programsData })).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  if (action === "getLibrary") {
+    var libraryData = loadMergedLibrary(sheetApp);
+    return ContentService.createTextOutput(JSON.stringify({ library: libraryData })).setMimeType(ContentService.MimeType.JSON);
+  }
+  // ==========================================
+
   if (action === "updateProgram") {
     var sheet = sheetApp.getSheetByName("Programs");
     if (!sheet) { return ContentService.createTextOutput(JSON.stringify({ status: "Error", message: "Programs sheet not found" })).setMimeType(ContentService.MimeType.JSON); }
@@ -398,7 +417,7 @@ function doGet(e) {
     return ContentService.createTextOutput(JSON.stringify({ status: "Success", created: created, skipped: skipped, note: created.length > 0 ? "New sheets created successfully" : "All required sheets already exist" })).setMimeType(ContentService.MimeType.JSON);
   }
 
-  return ContentService.createTextOutput(JSON.stringify({ status: "API is running", availableActions: ["getFullData", "getAthleteByName", "getAthleteByEmail", "createAthlete", "getLogbookByAthlete", "getLatestMaxes", "getLastLoggedWeight", "updateProgram", "saveEntireSession", "saveFullProgram", "deleteProgram", "addAthlete", "deleteAthlete", "updateAssignment", "assignProgram", "addExercise", "initSheets"], version: "6.0-epley" })).setMimeType(ContentService.MimeType.JSON);
+  return ContentService.createTextOutput(JSON.stringify({ status: "API is running", availableActions: ["getFullData", "getAthletes", "getPrograms", "getLibrary", "getAthleteByName", "getAthleteByEmail", "createAthlete", "getLogbookByAthlete", "getLatestMaxes", "getLastLoggedWeight", "updateProgram", "saveEntireSession", "saveFullProgram", "deleteProgram", "addAthlete", "deleteAthlete", "updateAssignment", "assignProgram", "addExercise", "initSheets"], version: "6.0-epley-split" })).setMimeType(ContentService.MimeType.JSON);
 }
 
 function validateRequiredSheets(sheetApp) {

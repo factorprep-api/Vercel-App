@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { Play, Search, X, Pencil, Trash2, Plus } from 'lucide-react';
 import { getYouTubeId, normalizeVideoUrl } from '../utils/helpers';
 import { useAuth } from '../hooks/useAuth';
-import { fetchExerciseLibrary, deleteExerciseFromLibrary, updateExerciseInLibrary, addExerciseToLibrary } from '../api.js';
+import { fetchExerciseLibrary, deleteExerciseFromLibrary, updateExerciseInLibrary, addExerciseToLibrary, getAthleteByEmail } from '../api.js';
 import './exercise-library.css';
 import HelpButton from '../components/HelpButton';
 
@@ -57,7 +57,7 @@ function PageButtons({ currentPage, totalPages, onChange }) {
   return <>{buttons}</>;
 }
 
-export default function ExerciseLibrary() {
+export default function ExerciseLibrary({ viewMode: propViewMode = 'athlete' }) {
   const [fullLibrary, setFullLibrary] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -67,67 +67,88 @@ export default function ExerciseLibrary() {
   const [modalVideo, setModalVideo] = useState(null);
   const [viewFilter, setViewFilter] = useState('all');
   const [toast, setToast] = useState(null);
+  
+  // Edit State
   const [editing, setEditing] = useState(null);
   const [editName, setEditName] = useState('');
   const [editVideo, setEditVideo] = useState('');
   const [editMuscle, setEditMuscle] = useState('');
+  const [editFormula, setEditFormula] = useState(''); // NEW: Replaces baseLift/multiplier
+  
   const [deleting, setDeleting] = useState(null);
-  const { role, userEmail: coachEmail, isLoading: authLoading } = useAuth();
   const [adding, setAdding] = useState(false);
+  const [assignedCoachEmail, setAssignedCoachEmail] = useState('');
+  
+  // FIX: Destructured athleteName so we can pass it to the Add modal
+  const { role, userEmail, athleteName, isLoading: authLoading } = useAuth();
 
-  // Debounce search effect
+  const queryParams = new URLSearchParams(window.location.search);
+  const urlViewMode = queryParams.get('viewMode');
+  const viewMode = urlViewMode || propViewMode;
+
   useEffect(() => {
     const t = setTimeout(() => setDebouncedQuery(searchQuery), 300);
     return () => clearTimeout(t);
   }, [searchQuery]);
 
   useEffect(() => {
+    if (authLoading) return;
+    let isMounted = true; 
+
     (async () => {
-      // Try cache first
       const cached = localStorage.getItem('fp_exercise_library');
-      if (cached) {
+      if (cached && isMounted) {
         try {
-          const parsed = JSON.parse(cached);
-          setFullLibrary(parsed);
+          setFullLibrary(JSON.parse(cached));
           setLoading(false);
-          // Refresh in background
-          try {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 8000);
-            const lib = await fetchExerciseLibrary({ signal: controller.signal });
-            clearTimeout(timeoutId);
-            setFullLibrary(lib);
-            localStorage.setItem('fp_exercise_library', JSON.stringify(lib));
-          } catch (err) {
-            console.warn("Background refresh failed:", err.message);
-          }
-          return;
         } catch {}
       }
-      // No cache - fetch fresh
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 8000);
-        const lib = await fetchExerciseLibrary({ signal: controller.signal });
-        clearTimeout(timeoutId);
-        setFullLibrary(lib);
-        localStorage.setItem('fp_exercise_library', JSON.stringify(lib));
-      } catch {
-        setError(true);
-      } finally {
-        setLoading(false);
+      
+      const fetchTasks = [];
+
+      if (userEmail) {
+        fetchTasks.push(
+          getAthleteByEmail(userEmail).then(athleteResult => {
+            if (athleteResult && athleteResult.status === 'Success' && isMounted) {
+              setAssignedCoachEmail(athleteResult.coachEmail || athleteResult.coach || '');
+            }
+          }).catch(() => {})
+        );
       }
+
+      fetchTasks.push(
+        fetchExerciseLibrary().then(lib => {
+          if (isMounted) {
+            setFullLibrary(lib);
+            localStorage.setItem('fp_exercise_library', JSON.stringify(lib));
+            setLoading(false);
+          }
+        }).catch(() => {
+          if (isMounted && !cached) setError(true);
+          if (isMounted) setLoading(false);
+        })
+      );
+
+      await Promise.all(fetchTasks);
     })();
-  }, []);
+
+    return () => { isMounted = false; };
+  }, [userEmail, authLoading]);
 
   function isCoachOwned(exercise) {
-    if (!exercise.ownerEmail || !coachEmail) return false;
-    return exercise.ownerEmail.toLowerCase() === coachEmail.toLowerCase();
+    if (!exercise.ownerEmail || !userEmail) return false;
+    return exercise.ownerEmail.toLowerCase() === userEmail.toLowerCase();
   }
 
   function renderCoachBadge(exercise) {
-    if (!isCoachOwned(exercise)) return null;
-    return <span className="exlib-coach-badge">• Coach</span>;
+    if (!exercise.ownerEmail) return null;
+    const isMine = userEmail && exercise.ownerEmail.toLowerCase() === userEmail.toLowerCase();
+    const isMyCoach = assignedCoachEmail && exercise.ownerEmail.toLowerCase() === assignedCoachEmail.toLowerCase();
+    
+    if (isMine || isMyCoach) {
+      return <span className="exlib-coach-badge">• Coach</span>;
+    }
+    return null;
   }
 
   function showToast(message, isError = false) {
@@ -150,6 +171,7 @@ export default function ExerciseLibrary() {
     setEditName(exercise.name);
     setEditVideo(exercise.rawUrl || '');
     setEditMuscle(exercise.muscle || '');
+    setEditFormula(exercise.formula || ''); // FIX: Load the formula state
   }
 
   async function handleEditSave() {
@@ -159,6 +181,7 @@ export default function ExerciseLibrary() {
         name: editName.trim(),
         video: editVideo.trim(),
         muscle: editMuscle.trim(),
+        formula: editFormula, // Send the new formula state
         originalName: editing.name
       });
       if (res.status === 'Success') {
@@ -198,15 +221,20 @@ export default function ExerciseLibrary() {
 
   const filteredForView = useMemo(() => {
     const allowedLibrary = fullLibrary.filter(ex => {
-      if (!ex.ownerEmail) return true;
-      if (!coachEmail) return false;
-      return ex.ownerEmail.toLowerCase() === coachEmail.toLowerCase();
+      if (!ex.ownerEmail) return true; 
+      if (!userEmail) return false;
+      
+      const isMine = ex.ownerEmail.toLowerCase() === userEmail.toLowerCase();
+      const isMyCoach = assignedCoachEmail && ex.ownerEmail.toLowerCase() === assignedCoachEmail.toLowerCase();
+      
+      return isMine || isMyCoach;
     });
+
     if (viewFilter === 'my') {
       return allowedLibrary.filter(ex => isCoachOwned(ex));
     }
     return allowedLibrary;
-  }, [fullLibrary, viewFilter, coachEmail]);
+  }, [fullLibrary, viewFilter, userEmail, assignedCoachEmail]);
 
   const groupedLibrary = useMemo(() => buildGrouped(filteredForView), [filteredForView]);
 
@@ -233,8 +261,18 @@ export default function ExerciseLibrary() {
   const closeModal = () => setModalVideo(null);
 
   const viewFilters = [
-    ...(role === 'coach' ? [{ id: 'all', label: 'All Exercises' }, { id: 'my', label: 'My Exercises' }] : [])
+    ...(role === 'coach' && viewMode === 'coach' ? [{ id: 'all', label: 'All Exercises' }, { id: 'my', label: 'My Exercises' }] : [])
   ];
+
+  if (authLoading) {
+    return (
+      <div className="exlib-container">
+        <div className="exlib-body">
+          <p className="exlib-placeholder">Authenticating...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -246,22 +284,13 @@ export default function ExerciseLibrary() {
     );
   }
 
-  if (authLoading || !role) {
-    return (
-      <div className="exlib-container">
-        <div className="exlib-body">
-          <p className="exlib-placeholder">Loading your role...</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="exlib-container">
       <div className="exlib-body">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
           <h2 style={{ fontSize: '24px', color: '#008ed3', fontWeight: '700', margin: 0 }}>Exercise Library</h2>
-          {role === 'coach' && (
+          
+          {role === 'coach' && viewMode === 'coach' && (
             <button className="exlib-add-btn" onClick={() => setAdding(true)}>
               <Plus size={16} /> Add Exercise
             </button>
@@ -318,7 +347,7 @@ export default function ExerciseLibrary() {
 
                       {!isImg && <Play className="exlib-play-icon" size={32} fill="currentColor" stroke="none" />}
 
-                      {owned && (
+                      {owned && viewMode === 'coach' && (
                         <div className="exlib-owner-actions" onClick={e => e.stopPropagation()}>
                           <button className="exlib-edit-btn" onClick={() => openEditModal(ex)} title="Edit">
                             <Pencil size={14} />
@@ -352,7 +381,8 @@ export default function ExerciseLibrary() {
 
       {adding && (
         <AddExerciseModal
-          coachEmail={coachEmail}
+          userEmail={userEmail}
+          athleteName={athleteName}
           existingCategories={existingCategories}
           onClose={() => setAdding(false)}
           onSuccess={async () => {
@@ -363,7 +393,6 @@ export default function ExerciseLibrary() {
         />
       )}
 
-      {/* ── VIDEO / IMAGE MODAL - FIXED ── */}
       {modalVideo && (() => {
         const isImage =
           modalVideo.url.toLowerCase().includes('.png') ||
@@ -432,6 +461,15 @@ export default function ExerciseLibrary() {
               <input className="exlib-edit-input" value={editVideo} onChange={e => setEditVideo(e.target.value)} />
             </div>
 
+            {/* FIX: Replaced BaseLift/Multiplier with Yes/No Dropdown in Edit Mode too! */}
+            <div className="exlib-edit-field">
+              <label className="exlib-edit-label">Enable 1RM Calculation (Epley Formula):</label>
+              <select className="exlib-edit-input" value={editFormula} onChange={e => setEditFormula(e.target.value)}>
+                <option value="">No (Standard Exercise)</option>
+                <option value="yes">Yes (Calculate 1RM targets)</option>
+              </select>
+            </div>
+
             <button className="exlib-edit-save-btn" onClick={handleEditSave}>Save Changes</button>
           </div>
         </div>
@@ -449,26 +487,35 @@ export default function ExerciseLibrary() {
   );
 }
 
-function AddExerciseModal({ coachEmail, existingCategories, onClose, onSuccess }) {
+// FIX: Completely rebuilt the modal props and logic
+function AddExerciseModal({ userEmail, athleteName, existingCategories, onClose, onSuccess }) {
+  // Dynamically default to the Coach's name, just like the Drill Designer
+  const coachCategoryName = athleteName ? `${athleteName} Exercises` : 'Coach Exercises';
+
   const [name, setName] = useState('');
   const [video, setVideo] = useState('');
-  const [muscle, setMuscle] = useState('Coach Exercises');
-  const [baseLift, setBaseLift] = useState('');
-  const [multiplier, setMultiplier] = useState('');
+  const [muscle, setMuscle] = useState(coachCategoryName);
+  
+  // FIX: Replaced baseLift and multiplier with a single formula state
+  const [isFormula, setIsFormula] = useState(''); // "" or "yes"
   const [saving, setSaving] = useState(false);
+
+  const categoryOptions = useMemo(() => {
+    const baseCats = new Set([coachCategoryName, ...existingCategories]);
+    return [...baseCats].sort();
+  }, [existingCategories, coachCategoryName]);
 
   async function handleSave() {
     if (!name.trim()) { alert('Exercise name is required.'); return; }
-    if (!coachEmail) { alert('Not authenticated. Please sign in again.'); return; }
+    if (!userEmail) { alert('Not authenticated. Please sign in again.'); return; }
     setSaving(true);
     try {
       const res = await addExerciseToLibrary({
         name: name.trim(),
         video: video.trim(),
-        muscle: muscle.trim() || 'Coach Exercises',
-        baseLift: baseLift.trim(),
-        multiplier: multiplier ? parseFloat(multiplier) : 1.0,
-        ownerEmail: coachEmail
+        muscle: muscle.trim() || coachCategoryName,
+        formula: isFormula, // Pass "yes" or "" directly to api.js
+        ownerEmail: userEmail
       });
       if (res.status === 'Success') {
         await onSuccess();
@@ -486,31 +533,35 @@ function AddExerciseModal({ coachEmail, existingCategories, onClose, onSuccess }
       <div className="exlib-add-modal" onClick={e => e.stopPropagation()}>
         <button className="exlib-close-btn" onClick={onClose}><X size={24} /></button>
         <h3 className="exlib-add-title">Add New Exercise</h3>
+        
         <div className="exlib-add-field">
           <label className="exlib-add-label">Exercise Name (Required):</label>
           <input className="exlib-add-input" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Goblet Squat" />
         </div>
+        
         <div className="exlib-add-field">
           <label className="exlib-add-label">Video URL:</label>
           <input className="exlib-add-input" value={video} onChange={e => setVideo(e.target.value)} placeholder="YouTube or MP4 link" />
         </div>
+        
         <div className="exlib-add-field">
           <label className="exlib-add-label">Muscle / Category:</label>
           <input className="exlib-add-input" list="exlib-muscle-list" value={muscle} onChange={e => setMuscle(e.target.value)} placeholder="e.g. Chest" />
           <datalist id="exlib-muscle-list">
-            <option value="Coach Exercises" />
-            {existingCategories.map(cat => <option key={cat} value={cat} />)}
+            {categoryOptions.map(cat => <option key={cat} value={cat} />)}
           </datalist>
-          <p style={{ fontSize: 11, color: '#888', margin: '4px 0 0 0' }}>Defaults to "Coach Exercises". Type or select existing categories.</p>
+          <p style={{ fontSize: 11, color: '#888', margin: '4px 0 0 0' }}>Defaults to "{coachCategoryName}". Type or select existing categories.</p>
         </div>
+        
+        {/* FIX: New Dropdown replacing BaseLift/Multiplier */}
         <div className="exlib-add-field">
-          <label className="exlib-add-label">Base Lift (Optional):</label>
-          <input className="exlib-add-input" value={baseLift} onChange={e => setBaseLift(e.target.value)} placeholder="e.g. Back Squat" />
+          <label className="exlib-add-label">Enable 1RM Calculation (Epley Formula):</label>
+          <select className="exlib-add-input" value={isFormula} onChange={e => setIsFormula(e.target.value)}>
+            <option value="">No (Standard Exercise)</option>
+            <option value="yes">Yes (Calculate 1RM targets)</option>
+          </select>
         </div>
-        <div className="exlib-add-field">
-          <label className="exlib-add-label">Multiplier (Optional):</label>
-          <input type="number" step="0.1" className="exlib-add-input" value={multiplier} onChange={e => setMultiplier(e.target.value)} placeholder="1.0" />
-        </div>
+        
         <button className="exlib-add-save-btn" onClick={handleSave} disabled={saving}>
           {saving ? 'Adding...' : 'Add Exercise'}
         </button>
@@ -518,3 +569,4 @@ function AddExerciseModal({ coachEmail, existingCategories, onClose, onSuccess }
     </div>
   );
 }
+
