@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
-// FIX: Imported our new fast pipe 'fetchAthletes'
 import { fetchAthletes, fetchLogbookByAthlete } from '../api.js';
 
 const COLORS = {
@@ -167,22 +166,29 @@ export default function CoachResults() {
     }
 
     try {
-      // FIX: Use the fast pipe instead of fetchAllData
       const athRes = await fetchAthletes();
       const rawAthletes = athRes.athletes || [];
       
-      // FIX: The Translator - Converts the raw Google Sheets grid into usable labeled objects!
       let athleteList = [];
       if (rawAthletes.length > 1) {
-        const headers = rawAthletes[0];
-        const nameIdx = headers.findIndex(h => String(h).toLowerCase() === 'name');
+        // FIX: Aggressively trim headers to prevent invisible space bugs
+        const headers = rawAthletes[0].map(h => String(h).trim());
+        const roleColIdx = headers.findIndex(h => h.toLowerCase() === 'role');
         
         athleteList = rawAthletes.slice(1).map(row => {
           const obj = {};
-          headers.forEach((h, i) => { obj[h] = row[i]; });
-          obj.name = nameIdx > -1 ? String(row[nameIdx]).trim() : '';
+          headers.forEach((h, i) => { 
+            obj[h] = row[i]; 
+          });
+          // FIX: Hardcode Column A (index 0) as the name to guarantee a match
+          obj.name = String(row[0] || '').trim();
+          
+          // FIX: Check role so we don't list Coaches in the athlete dropdown
+          const roleData = roleColIdx > -1 ? String(row[roleColIdx] || '').trim().toLowerCase() : 'athlete';
+          obj.isCoach = roleData === 'coach';
+          
           return obj;
-        }).filter(a => a.name); // Drop empty rows
+        }).filter(a => a.name && !a.isCoach); // Drop empties and coaches
       }
 
       const maxesByName = {};
@@ -918,3 +924,4 @@ const styles = {
     backgroundColor: COLORS.white, color: COLORS.red, fontSize: '13px', cursor: 'pointer', fontWeight: '600',
   },
 };
+
