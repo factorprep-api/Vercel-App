@@ -88,14 +88,11 @@ export default function ExerciseLibrary({ viewMode: propViewMode = 'athlete' }) 
     return () => clearTimeout(t);
   }, [searchQuery]);
 
-  useEffect(() => {
-    // FIX 2: Stop the race condition. Wait until authentication is finished!
-    if (authLoading) return;
-
-    let isMounted = true; // Safety guard to prevent double-loading
+   useEffect(() => {
+    let isMounted = true;
 
     (async () => {
-      // 1. Fetch the user's assigned coach if logged in
+      // 1. Fetch assigned coach
       if (userEmail) {
         try {
           const athleteResult = await getAthleteByEmail(userEmail);
@@ -103,10 +100,45 @@ export default function ExerciseLibrary({ viewMode: propViewMode = 'athlete' }) 
             const coachE = athleteResult.coachEmail || athleteResult.coach || '';
             setAssignedCoachEmail(coachE);
           }
-        } catch (err) {
-          console.warn("Failed to fetch assigned coach", err);
-        }
+        } catch (err) {}
       }
+
+      // 2. Fetch library data
+      const cached = localStorage.getItem('fp_exercise_library');
+      if (cached && isMounted) {
+        try {
+          const parsed = JSON.parse(cached);
+          setFullLibrary(parsed);
+          setLoading(false);
+          // Refresh in background WITHOUT the 8-second kill switch
+          try {
+            const lib = await fetchExerciseLibrary();
+            if (isMounted) {
+              setFullLibrary(lib);
+              localStorage.setItem('fp_exercise_library', JSON.stringify(lib));
+            }
+          } catch (err) {}
+          return;
+        } catch {}
+      }
+      
+      // No cache - fetch fresh WITHOUT the 8-second kill switch
+      try {
+        const lib = await fetchExerciseLibrary();
+        if (isMounted) {
+          setFullLibrary(lib);
+          localStorage.setItem('fp_exercise_library', JSON.stringify(lib));
+        }
+      } catch {
+        if (isMounted) setError(true);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    })();
+
+    return () => { isMounted = false; };
+  }, [userEmail]);
+
 
       // 2. Fetch the library data
       const cached = localStorage.getItem('fp_exercise_library');
