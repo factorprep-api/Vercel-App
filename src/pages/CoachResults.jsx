@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
-import { fetchAllData, fetchLogbookByAthlete } from '../api.js';
+// FIX: Imported our new fast pipe 'fetchAthletes'
+import { fetchAthletes, fetchLogbookByAthlete } from '../api.js';
 
 const COLORS = {
   primaryBlue: '#008ed3',
@@ -14,17 +15,15 @@ const COLORS = {
   green: '#16a34a',
   red: '#dc2626',
   amber: '#d97706',
-  // Intensity zone colors (monochrome blue ramp)
-  zone1: '#bae0ef', // <70%
-  zone2: '#7cc0e3', // 70-80%
-  zone3: '#3da0d7', // 80-85%
-  zone4: '#008ed3', // 85-90%
-  zone5: '#005d8a', // 90%+
+  zone1: '#bae0ef', 
+  zone2: '#7cc0e3', 
+  zone3: '#3da0d7', 
+  zone4: '#008ed3', 
+  zone5: '#005d8a', 
 };
 
 const CACHE_KEY = 'fp_coach_results_v2';
 
-// ── CORE Lift Definitions (exact sheet column names) ───────────────
 const CORE_LIFTS = {
   backSquat: 'Back Squat With Barbell - (CORE)',
   deadlift: 'Deadlift With Barbell.v (CORE)',
@@ -36,7 +35,6 @@ const CORE_LIFTS = {
 
 const CORE_KEYS = ['backSquat', 'deadlift', 'benchPress', 'shoulderPress', 'barbellRow', 'latPulldown'];
 
-// Hardcoded multipliers (athlete PB × multiplier = estimated max for this exercise)
 const MULTIPLIER_EXERCISES = {
   'Front Squat': 'backSquat',
   'Overhead Squat': 'backSquat',
@@ -63,7 +61,6 @@ const MULTIPLIERS = {
   'Chin-Up': 0.75,
 };
 
-// ── Helper Functions ───────────────────────────────────────────────
 function getIntensityZone(pct) {
   const num = parseFloat(pct);
   if (isNaN(num)) return null;
@@ -79,8 +76,7 @@ const ZONE_COLORS = [COLORS.zone1, COLORS.zone2, COLORS.zone3, COLORS.zone4, COL
 
 function normalizeExerciseName(exercise) {
   if (!exercise) return '';
-  const normalized = exercise.toLowerCase().replace(/[.-]/g, '').replace(/\s+/g, ' ').trim();
-  return normalized;
+  return exercise.toLowerCase().replace(/[.-]/g, '').replace(/\s+/g, ' ').trim();
 }
 
 function findCoreMatch(exercise) {
@@ -101,10 +97,8 @@ function calcSetVolume(entry, maxesByAthlete = {}) {
   const reps = parseInt(entry.reps) || 0;
   const pct = parseFloat(entry.percentIntensity || entry.intensity || 0) / 100;
   
-  // Try to get weight from multiple possible fields
   let weightPerRep = parseFloat(entry.weight) || 0;
   
-  // If weight not logged, calculate from % intensity × 1RM
   if (!weightPerRep && pct) {
     const exercise = entry.exercise || '';
     const athleteName = entry.name || '';
@@ -112,10 +106,8 @@ function calcSetVolume(entry, maxesByAthlete = {}) {
     
     let oneRM = 0;
     if (coreKey && maxesByAthlete[athleteName]?.[coreKey]) {
-      // Core lift — use saved max directly
       oneRM = maxesByAthlete[athleteName][coreKey];
     } else if (MULTIPLIER_EXERCISES[exercise]) {
-      // Multiplier lift — derive from related CORE
       const coreKey = MULTIPLIER_EXERCISES[exercise];
       const baseMax = maxesByAthlete[athleteName]?.[coreKey] || 0;
       oneRM = baseMax * (MULTIPLIERS[exercise] || 0.9);
@@ -153,7 +145,6 @@ export default function CoachResults() {
   const [error, setError] = useState(null);
   const [showLogbook, setShowLogbook] = useState(false);
 
-  // ── Load Data (cache-first + background refresh) ─────────────────
   useEffect(() => {
     if (!coachEmail) return;
     loadData();
@@ -176,10 +167,24 @@ export default function CoachResults() {
     }
 
     try {
-      const allData = await fetchAllData();
-      const athleteList = allData.athletes || [];
+      // FIX: Use the fast pipe instead of fetchAllData
+      const athRes = await fetchAthletes();
+      const rawAthletes = athRes.athletes || [];
+      
+      // FIX: The Translator - Converts the raw Google Sheets grid into usable labeled objects!
+      let athleteList = [];
+      if (rawAthletes.length > 1) {
+        const headers = rawAthletes[0];
+        const nameIdx = headers.findIndex(h => String(h).toLowerCase() === 'name');
+        
+        athleteList = rawAthletes.slice(1).map(row => {
+          const obj = {};
+          headers.forEach((h, i) => { obj[h] = row[i]; });
+          obj.name = nameIdx > -1 ? String(row[nameIdx]).trim() : '';
+          return obj;
+        }).filter(a => a.name); // Drop empty rows
+      }
 
-      // Map maxes by athlete name for volume calculation
       const maxesByName = {};
       athleteList.forEach(a => {
         maxesByName[a.name] = {
@@ -222,7 +227,6 @@ export default function CoachResults() {
     }
   }
 
-  // ── Refetch logbook when athlete changes ─────────────────────────
   useEffect(() => {
     if (!coachEmail || !selectedAthlete) return;
     refreshLogbook();
@@ -239,7 +243,6 @@ export default function CoachResults() {
     }
   }
 
-  // ── Filtered logbook ─────────────────────────────────────────────
   const filteredLogbook = useMemo(() => {
     let entries = logbook;
     if (selectedAthlete !== 'all') {
@@ -258,13 +261,11 @@ export default function CoachResults() {
     return entries;
   }, [logbook, selectedAthlete, dateRange]);
 
-  // ── Filtered maxes ───────────────────────────────────────────────
   const filteredMaxes = useMemo(() => {
     if (selectedAthlete === 'all') return maxes;
     return maxes.filter((m) => m.name === selectedAthlete);
   }, [maxes, selectedAthlete]);
 
-  // ── Build maxes-by-name lookup ───────────────────────────────────
   const maxesByAthlete = useMemo(() => {
     const map = {};
     filteredMaxes.forEach(a => {
@@ -280,7 +281,6 @@ export default function CoachResults() {
     return map;
   }, [filteredMaxes]);
 
-  // ── Summary metrics ──────────────────────────────────────────────
   const summary = useMemo(() => {
     const entries = filteredLogbook;
     if (!entries.length) return { totalVolume: 0, sessions: 0, volAt85: 0, avgPerWeek: 0, weeksCovered: 0, zoneVolumes: [0,0,0,0,0] };
@@ -314,7 +314,6 @@ export default function CoachResults() {
     };
   }, [filteredLogbook, maxesByAthlete]);
 
-  // ── Weekly frequency data ────────────────────────────────────────
   const weeklyFrequency = useMemo(() => {
     const weekMap = {};
     filteredLogbook.forEach((e) => {
@@ -328,22 +327,18 @@ export default function CoachResults() {
       .map((w) => ({ ...w, sessionCount: w.sessions.size }));
   }, [filteredLogbook, maxesByAthlete]);
 
-  // ── Max deltas ───────────────────────────────────────────────────
   const maxDeltas = useMemo(() => {
     return filteredMaxes.map((a) => {
       const deltas = {};
       CORE_KEYS.forEach((key) => {
         const colName = CORE_LIFTS[key];
         const current = parseFloat(a[colName]) || 0;
-        // Previous max is typically stored as prev[key] or we compare to last week's snapshot
-        // For now, assume no previous data until we implement history tracking
         deltas[key] = null;
       });
       return { name: a.name, deltas };
     });
   }, [filteredMaxes]);
 
-  // ── Progression data (estimated 1RM over time per CORE lift) ─────
   const progressionData = useMemo(() => {
     const weekMap = {};
     filteredLogbook.forEach((e) => {
@@ -357,7 +352,6 @@ export default function CoachResults() {
         const reps = parseInt(e.reps) || 0;
         const pct = parseFloat(e.percentIntensity || e.intensity || 0) / 100;
         
-        // Estimate 1RM from working set: weight / (1 + 0.0333 × reps)
         if (sets && reps && pct) {
           const weightPerRep = parseFloat(e.weight) || (pct * (maxesByAthlete[e.name]?.[coreKey] || 0));
           if (weightPerRep) {
@@ -372,7 +366,6 @@ export default function CoachResults() {
     return Object.values(weekMap).sort((a, b) => a.week.localeCompare(b.week));
   }, [filteredLogbook, maxesByAthlete]);
 
-  // ── Athlete comparison matrix ────────────────────────────────────
   const comparisonMatrix = useMemo(() => {
     if (selectedAthlete !== 'all') return [];
     return athletes.map((a) => {
@@ -400,7 +393,6 @@ export default function CoachResults() {
     }).filter((a) => a.sessions > 0);
   }, [athletes, filteredLogbook, selectedAthlete, maxesByAthlete]);
 
-  // ── Export CSV ───────────────────────────────────────────────────
   function exportCSV() {
     const headers = ['Athlete', 'Date', 'Exercise', 'Sets', 'Reps', '% Intensity', 'Tempo', 'Rest', 'Weight(kg)', 'Set Volume(kg)'];
     const rows = filteredLogbook.map((e) => [
@@ -425,7 +417,6 @@ export default function CoachResults() {
     URL.revokeObjectURL(url);
   }
 
-  // ── Guards AFTER all hooks ───────────────────────────────────────
   if (authLoading) {
     return (
       <div style={{ ...styles.page, display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
@@ -446,7 +437,6 @@ export default function CoachResults() {
 
   return (
     <div style={{ ...styles.page, fontFamily: '"Roboto Flex", "Roboto", sans-serif' }}>
-      {/* ── Title Wrapper ─────────────────────────────────────────── */}
       <div style={styles.titleWrapper}>
         <h1 style={styles.h1}>Coach Results Dashboard</h1>
         <p style={styles.subtitle}>
@@ -454,7 +444,6 @@ export default function CoachResults() {
         </p>
       </div>
 
-      {/* ── Filters ───────────────────────────────────────────────── */}
       <div style={styles.card}>
         <div style={styles.filterRow}>
           <div style={styles.filterGroup}>
@@ -508,7 +497,6 @@ export default function CoachResults() {
         </div>
       ) : (
         <>
-          {/* ── 1. Summary Cards ────────────────────────────────────── */}
           <div style={styles.summaryGrid}>
             <div style={styles.summaryCard}>
               <span style={styles.summaryLabel}>Avg Sessions / Week</span>
@@ -535,7 +523,6 @@ export default function CoachResults() {
             </div>
           </div>
 
-          {/* ── 2. Volume at Intensity Distribution ─────────────────── */}
           <div style={styles.card}>
             <h2 style={styles.h2}>Volume at Intensity Distribution</h2>
             <p style={{ ...styles.body, marginBottom: '1rem' }}>
@@ -566,7 +553,6 @@ export default function CoachResults() {
             </div>
           </div>
 
-          {/* ── 3. Frequency Map ────────────────────────────────────── */}
           <div style={styles.card}>
             <h2 style={styles.h2}>Training Frequency</h2>
             <p style={{ ...styles.body, marginBottom: '1rem' }}>
@@ -597,7 +583,6 @@ export default function CoachResults() {
             )}
           </div>
 
-          {/* ── 4. Strength Progression ─────────────────────────────── */}
           <div style={styles.card}>
             <h2 style={styles.h2}>CORE Lift Progression Over Time</h2>
             <p style={{ ...styles.body, marginBottom: '1rem' }}>
@@ -612,7 +597,6 @@ export default function CoachResults() {
             )}
           </div>
 
-          {/* ── 5. Athlete Comparison Matrix ────────────────────────── */}
           {selectedAthlete === 'all' && comparisonMatrix.length > 0 && (
             <div style={styles.card}>
               <h2 style={styles.h2}>Athlete Comparison Matrix</h2>
@@ -660,7 +644,6 @@ export default function CoachResults() {
             </div>
           )}
 
-          {/* ── 6. Current Maxes ────────────────────────────────────── */}
           <div style={styles.card}>
             <h2 style={styles.h2}>Current CORE Lift Maxes</h2>
             {filteredMaxes.length === 0 ? (
@@ -697,7 +680,6 @@ export default function CoachResults() {
             )}
           </div>
 
-          {/* ── 7. Logbook Detail ───────────────────────────────────── */}
           <div style={styles.card}>
             <div style={styles.collapsibleHeader} onClick={() => setShowLogbook(!showLogbook)}>
               <h2 style={{ ...styles.h2, margin: 0 }}>Logbook Detail</h2>
@@ -748,7 +730,6 @@ export default function CoachResults() {
   );
 }
 
-// ── Sub-component: Progression Chart ───────────────────────────────
 function ProgressionChart({ data, weeklyData }) {
   const width = 720;
   const height = 280;
@@ -832,7 +813,6 @@ function ProgressionChart({ data, weeklyData }) {
   );
 }
 
-// ── Styles ─────────────────────────────────────────────────────────
 const styles = {
   page: {
     padding: '4px',
