@@ -160,14 +160,12 @@ export default function ProgramBuilder() {
     if (!form.exercise) { showToast('Please select an exercise.', true); return; }
     if (!form.sets || !form.reps) { showToast('Sets and Reps/Duration are required.', true); return; }
     
-    // Add the exercise with the bundled advanced metadata
     setDraft([...draft, {
       phase: form.phase, exercise: form.exercise, sets: form.sets,
       reps: form.reps, intensity: form.intensity, tempo: form.tempo, rest: form.rest,
-      advanced: JSON.parse(JSON.stringify(advanced)) // Deep copy
+      advanced: JSON.parse(JSON.stringify(advanced))
     }]);
     
-    // Reset inputs
     setForm(f => ({ ...f, exercise: '' }));
     setAdvanced(DEFAULT_ADVANCED);
     setShowAdvanced(false);
@@ -190,7 +188,6 @@ export default function ProgramBuilder() {
     if (draft.length === 0) { showToast('Draft is empty. Add movements first.', true); return; }
     setSaving(true);
     
-    // Stringify the advanced metadata packet into the 14th column (Index 13)
     const rows = draft.map(i => [
       form.name, form.category, i.phase, i.exercise, i.sets, i.reps, 
       i.intensity, i.tempo, i.rest, form.notes, form.privacyLevel, coachEmail, mediaUrl,
@@ -237,7 +234,7 @@ export default function ProgramBuilder() {
       let loadedAdvanced = DEFAULT_ADVANCED;
       try {
         if (row.length > 13 && row[13]) { loadedAdvanced = JSON.parse(String(row[13])); }
-      } catch (e) { /* Fallback to default */ }
+      } catch (e) {}
 
       return {
         phase: String(row[2] || 'Work Block').trim(),
@@ -286,7 +283,7 @@ export default function ProgramBuilder() {
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          background-color: #4f46e5; /* Deep Indigo / Slate Blue */
+          background-color: #4f46e5;
           color: white;
           font-weight: 800;
           font-size: 10px;
@@ -400,14 +397,17 @@ export default function ProgramBuilder() {
           
           <div className="pb-field-row">
             <div><label className="pb-label">Sets:</label><input type="number" className="pb-input" value={form.sets} onChange={e => setForm({...form, sets: e.target.value})} placeholder="e.g. 1" /></div>
+            
+            {/* FIXED LABEL HERE */}
             <div><label className="pb-label">Reps:</label><input className="pb-input" value={form.reps} onChange={e => setForm({...form, reps: e.target.value})} placeholder="e.g. 5" /></div>
+            
+          </div>
           <div className="pb-field-row">
             <div><label className="pb-label">% (Opt):</label><input type="number" className="pb-input" value={form.intensity} onChange={e => setForm({...form, intensity: e.target.value})} placeholder="80" /></div>
             <div><label className="pb-label">Tempo:</label><input className="pb-input" value={form.tempo} onChange={e => setForm({...form, tempo: e.target.value})} placeholder="e.g. 30X0" /></div>
             <div><label className="pb-label">Rest:</label><input className="pb-input" value={form.rest} onChange={e => setForm({...form, rest: e.target.value})} placeholder="90s" /></div>
           </div>
 
-          {/* ADVANCED OPTIONS COG */}
           <div style={{ marginTop: '12px', marginBottom: '20px' }}>
             <button 
               onClick={() => setShowAdvanced(!showAdvanced)}
@@ -480,14 +480,12 @@ export default function ProgramBuilder() {
             ) : draft.map((item, i) => (
               <div key={i} className="pb-draft-card" style={{ position: 'relative' }}>
                 
-                {/* Visual Superset Bracket */}
                 {item.advanced?.setType === 'superset' && <div className="superset-bracket"></div>}
 
                 <div className="pb-draft-info">
                   <div style={{ display: 'flex', alignItems: 'center', marginBottom: '4px' }}>
                     <span className="pb-phase-tag" style={{ background: phaseColors[item.phase] || '#008ed3', marginBottom: 0, marginRight: '8px' }}>{item.phase}</span>
                     
-                    {/* Unilateral Badges */}
                     {item.advanced?.execution === 'uni-both' && <span className="uni-dot" title="Unilateral">U</span>}
                     {item.advanced?.execution === 'uni-left' && <span className="uni-dot" title="Left Only">L</span>}
                     {item.advanced?.execution === 'uni-right' && <span className="uni-dot" title="Right Only">R</span>}
@@ -496,7 +494,6 @@ export default function ProgramBuilder() {
                   <h4 className="pb-draft-name" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                     {item.advanced?.setType === 'superset' && <span title="Superset">🔗</span>}
                     {item.exercise}
-                    {/* Drop Set Icon Fallback -> Image */}
                     {item.advanced?.setType === 'drop' && (
                       <img src="/drop-set-icon.png" alt="Drop Set 📉" style={{ width: '20px', height: '20px', marginLeft: '4px', verticalAlign: 'middle' }} onError={(e) => { e.target.style.display='none'; e.target.insertAdjacentText('afterend', '📉'); }} />
                     )}
@@ -509,7 +506,6 @@ export default function ProgramBuilder() {
                     {item.rest ? ` | Rest: ${item.rest}` : ''}
                   </p>
                   
-                  {/* Show Custom Targets if applied */}
                   {(item.advanced?.targets?.time || item.advanced?.targets?.distance) && (
                     <p style={{ fontSize: '12px', color: '#0ea5e9', fontWeight: '600', margin: '4px 0 0 0' }}>
                       Targets: {item.advanced.targets.time && `⏱️ ${item.advanced.targets.time}`} {item.advanced.targets.distance && `📏 ${item.advanced.targets.distance}`}
@@ -557,5 +553,3 @@ export default function ProgramBuilder() {
     </div>
   );
 }
-
-
