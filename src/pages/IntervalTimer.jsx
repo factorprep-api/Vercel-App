@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Play, Pause, Square, Plus, Trash2, Save, Activity, Coffee, Volume2, VolumeX, ArrowLeft, ArrowUp, ArrowDown, X, Copy, Repeat } from 'lucide-react';
+import { Play, Pause, Square, Plus, Trash2, Save, Activity, Coffee, Volume2, VolumeX, ArrowLeft, ArrowUp, ArrowDown, X, Copy, Repeat, PlusCircle } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 
 // Audio URLs
@@ -143,6 +143,22 @@ export default function IntervalTimer() {
     setActiveSequence(newSeq);
   };
 
+  // NEW: Adds just one round based on the last work/rest values entered
+  const addOneRound = () => {
+    if (activeSequence.length === 0) return;
+    
+    // Find the last 'work' and last 'rest' in the current sequence
+    const lastWork = [...activeSequence].reverse().find(s => s.type === 'work');
+    const lastRest = [...activeSequence].reverse().find(s => s.type === 'rest');
+    
+    const newSteps = [];
+    if (lastWork) newSteps.push({ id: Date.now() + Math.random(), type: 'work', duration: lastWork.duration });
+    if (lastRest) newSteps.push({ id: Date.now() + Math.random() + 1, type: 'rest', duration: lastRest.duration });
+    
+    setActiveSequence([...activeSequence, ...newSteps]);
+  };
+
+  // ORIGINAL: Doubles the entire current list
   const duplicateSequence = () => {
     if (activeSequence.length === 0) return;
     const duplicated = activeSequence.map(step => ({ ...step, id: Date.now() + Math.random() }));
@@ -289,7 +305,7 @@ export default function IntervalTimer() {
           
           {isFinished && (
             <button onClick={stopTimer} style={{ marginTop: '60px', backgroundColor: 'white', color: bgColor, border: 'none', borderRadius: '50px', padding: '20px 40px', fontSize: '24px', fontWeight: '700', cursor: 'pointer' }}>
-              BACK TO MENU
+               CLOSE TIMER
             </button>
           )}
         </div>
@@ -392,13 +408,21 @@ export default function IntervalTimer() {
               </div>
             ))}
 
-            {/* DUPLICATE BUTTON */}
-            <button 
-              onClick={duplicateSequence}
-              style={{ marginTop: '8px', padding: '12px', backgroundColor: '#f1f5f9', border: '1px dashed #cbd5e1', borderRadius: '8px', color: '#475569', fontWeight: '600', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
-            >
-              <Copy size={16} /> Duplicate Entire Sequence
-            </button>
+            {/* DUPLICATE BUTTONS */}
+            <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+              <button 
+                onClick={addOneRound}
+                style={{ flex: 1, padding: '12px', backgroundColor: '#f1f5f9', border: '1px dashed #cbd5e1', borderRadius: '8px', color: '#475569', fontWeight: '600', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
+              >
+                <PlusCircle size={16} /> +1 Round
+              </button>
+              <button 
+                onClick={duplicateSequence}
+                style={{ flex: 1, padding: '12px', backgroundColor: '#f1f5f9', border: '1px dashed #cbd5e1', borderRadius: '8px', color: '#475569', fontWeight: '600', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
+              >
+                <Copy size={16} /> x2 Duplicate All
+              </button>
+            </div>
           </div>
         )}
       </div>
