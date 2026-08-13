@@ -25,9 +25,9 @@ function MediaPlayer({ url, compact = false }) {
 }
 
 const DEFAULT_ADVANCED = {
-  execution: 'bilateral', // 'bilateral', 'uni-both', 'uni-left', 'uni-right'
-  setType: 'standard',    // 'standard', 'superset', 'drop'
-  metrics: { weight: true, reps: true, time: false, distance: false },
+  execution: 'bilateral', 
+  setType: 'standard',    
+  metrics: { weight: true, time: false, distance: false },
   targets: { time: '', distance: '' }
 };
 
@@ -49,7 +49,9 @@ export default function ProgramBuilder() {
   const [mediaUrl, setMediaUrl] = useState('');
   const [showMediaInput, setShowMediaInput] = useState(false);
   const [mediaInputDraft, setMediaInputDraft] = useState('');
+  
   const draftRef = useRef(null);
+  const setsInputRef = useRef(null); // Used to snap focus and close datalist
 
   useEffect(() => { loadData(); }, []);
   useEffect(() => { 
@@ -158,7 +160,10 @@ export default function ProgramBuilder() {
 
   function addDraftExercise() {
     if (!form.exercise) { showToast('Please select an exercise.', true); return; }
-    if (!form.sets || !form.reps) { showToast('Sets and Reps/Duration are required.', true); return; }
+    if (!form.sets) { showToast('Sets are required.', true); return; }
+    if (!form.reps && !advanced.metrics.time && !advanced.metrics.distance) { 
+      showToast('Enter Reps or select Time/Distance in Advanced Options.', true); return; 
+    }
     
     setDraft([...draft, {
       phase: form.phase, exercise: form.exercise, sets: form.sets,
@@ -166,9 +171,8 @@ export default function ProgramBuilder() {
       advanced: JSON.parse(JSON.stringify(advanced))
     }]);
     
-    setForm(f => ({ ...f, exercise: '' }));
-    setAdvanced(DEFAULT_ADVANCED);
-    setShowAdvanced(false);
+    showToast('Added! Settings kept for next exercise.');
+    // Inputs remain completely sticky!
   }
 
   function moveItem(i, dir) {
@@ -283,7 +287,7 @@ export default function ProgramBuilder() {
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          background-color: #4f46e5;
+          background-color: #334155; /* Neutral Dark Slate / Navy */
           color: white;
           font-weight: 800;
           font-size: 10px;
@@ -386,7 +390,15 @@ export default function ProgramBuilder() {
               className="pb-input"
               list="pb-exercise-list"
               value={form.exercise}
-              onChange={e => setForm({...form, exercise: e.target.value})}
+              onFocus={() => setForm({...form, exercise: ''})}
+              onChange={e => {
+                const val = e.target.value;
+                setForm({...form, exercise: val});
+                // SMART FOCUS: Close datalist instantly if valid exercise is clicked
+                if (exerciseList.includes(val)) {
+                  setTimeout(() => setsInputRef.current?.focus(), 10);
+                }
+              }}
               autoComplete="off"
               placeholder={loading ? "Loading exercise library..." : "Type to search exercises..."}
             />
@@ -396,11 +408,8 @@ export default function ProgramBuilder() {
           </div>
           
           <div className="pb-field-row">
-            <div><label className="pb-label">Sets:</label><input type="number" className="pb-input" value={form.sets} onChange={e => setForm({...form, sets: e.target.value})} placeholder="e.g. 1" /></div>
-            
-            {/* FIXED LABEL HERE */}
+            <div><label className="pb-label">Sets:</label><input ref={setsInputRef} type="number" className="pb-input" value={form.sets} onChange={e => setForm({...form, sets: e.target.value})} placeholder="e.g. 1" /></div>
             <div><label className="pb-label">Reps:</label><input className="pb-input" value={form.reps} onChange={e => setForm({...form, reps: e.target.value})} placeholder="e.g. 5" /></div>
-            
           </div>
           <div className="pb-field-row">
             <div><label className="pb-label">% (Opt):</label><input type="number" className="pb-input" value={form.intensity} onChange={e => setForm({...form, intensity: e.target.value})} placeholder="80" /></div>
@@ -442,7 +451,6 @@ export default function ProgramBuilder() {
                   <label className="pb-label" style={{ marginBottom: '8px', display: 'block' }}>Metrics to Track (What the athlete logs):</label>
                   <div style={{ display: 'flex', gap: '16px', marginBottom: '12px' }}>
                     <label style={{ fontSize: '14px', color: '#334155' }}><input type="checkbox" checked={advanced.metrics.weight} onChange={() => handleAdvancedMetricToggle('weight')} /> Weight (kg)</label>
-                    <label style={{ fontSize: '14px', color: '#334155' }}><input type="checkbox" checked={advanced.metrics.reps} onChange={() => handleAdvancedMetricToggle('reps')} /> Reps</label>
                     <label style={{ fontSize: '14px', color: '#334155' }}><input type="checkbox" checked={advanced.metrics.time} onChange={() => handleAdvancedMetricToggle('time')} /> Time</label>
                     <label style={{ fontSize: '14px', color: '#334155' }}><input type="checkbox" checked={advanced.metrics.distance} onChange={() => handleAdvancedMetricToggle('distance')} /> Distance</label>
                   </div>

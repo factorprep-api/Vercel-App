@@ -479,27 +479,26 @@ export default function ProgramViewer() {
     const setsToLog = [];
     
     workoutGroups.forEach(group => {
-      const metrics = group.advanced?.metrics || { weight: true, reps: true };
+      const metrics = group.advanced?.metrics || { weight: true };
+      const targets = group.advanced?.targets || {};
 
       group.details.forEach((set, idx) => {
         const key = group.id + '_' + idx;
         const input = inputValues[key] || {};
         
-        const target = targetCalcs[key] || '';
-        const targetNum = typeof target === 'string' && target.includes('kg') ? target.replace(' kg', '') : '';
+        const calcTarget = targetCalcs[key] || '';
+        const targetNum = typeof calcTarget === 'string' && calcTarget.includes('kg') ? calcTarget.replace(' kg', '') : '';
         
+        // Auto-Populate: If they leave it blank, we assume they hit the target!
         const wt = input.wt || (metrics.weight && targetNum ? targetNum : '');
-        const rp = input.reps || (metrics.reps ? set.reps : '');
-        const tm = input.time || '';
-        const dst = input.dist || '';
+        const rp = input.reps || set.reps || '';
+        const tm = input.time || targets.time || '';
+        const dst = input.dist || targets.distance || '';
 
-        // Only log if they filled out AT LEAST ONE relevant box
         if (!wt && !rp && !tm && !dst) return;
 
-        // Ensure database always gets a number for weight, even if 0
         const wtNum = parseFloat(wt) || 0;
         
-        // Safely bundle custom reps, time, and distance strings into the reps column
         let finalReps = [];
         if (rp) finalReps.push(`${rp}`);
         if (tm) finalReps.push(`${tm}`);
@@ -527,6 +526,7 @@ export default function ProgramViewer() {
     }
     setSaving(false);
   }
+
 
   if (loading) {
     return (
@@ -918,22 +918,23 @@ export default function ProgramViewer() {
                                 <input type="number" className="pv-input pv-input-kg" placeholder={displayTarget === 'Auto' ? '--' : displayTarget} value={input.wt || ''} onChange={e => handleInputChange(group.id, idx, 'wt', e.target.value)} />
                               </div>
                             )}
-                            {metrics.reps && (
+                            {/* Always show Reps if there is no Time or Distance */}
+                            {(!metrics.time && !metrics.distance) && (
                               <div className="pv-input-group">
                                 <span className="pv-input-label">reps</span>
-                                <input type="number" className="pv-input" placeholder={set.reps} value={input.reps || ''} onChange={e => handleInputChange(group.id, idx, 'reps', e.target.value)} />
+                                <input type="text" className="pv-input pv-input-text" placeholder={set.reps} value={input.reps || ''} onChange={e => handleInputChange(group.id, idx, 'reps', e.target.value)} />
                               </div>
                             )}
                             {metrics.time && (
                               <div className="pv-input-group">
                                 <span className="pv-input-label">time</span>
-                                <input type="text" className="pv-input pv-input-text" placeholder="e.g. 10s" value={input.time || ''} onChange={e => handleInputChange(group.id, idx, 'time', e.target.value)} />
+                                <input type="text" className="pv-input pv-input-text" placeholder={targets.time || 'e.g. 10s'} value={input.time || ''} onChange={e => handleInputChange(group.id, idx, 'time', e.target.value)} />
                               </div>
                             )}
                             {metrics.distance && (
                               <div className="pv-input-group">
                                 <span className="pv-input-label">dist</span>
-                                <input type="text" className="pv-input pv-input-text" placeholder="e.g. 60m" value={input.dist || ''} onChange={e => handleInputChange(group.id, idx, 'dist', e.target.value)} />
+                                <input type="text" className="pv-input pv-input-text" placeholder={targets.distance || 'e.g. 60m'} value={input.dist || ''} onChange={e => handleInputChange(group.id, idx, 'dist', e.target.value)} />
                               </div>
                             )}
                           </div>
