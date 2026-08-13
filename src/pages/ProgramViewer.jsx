@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Play, ChevronDown, ChevronUp, Video, Image as ImageIcon, Save, CheckCircle, MessageSquare, UserPlus, Globe, Timer, Pause, RotateCcw, Plus, Minus, X } from 'lucide-react';
@@ -112,9 +111,12 @@ export default function ProgramViewer() {
   const [showProgramMedia, setShowProgramMedia] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   
+  // Timer State
   const [timerExpanded, setTimerExpanded] = useState(false);
   const [timerActive, setTimerActive] = useState(false);
   const [timeLeft, setTimeLeft] = useState(90); 
+  const [isEditingTimer, setIsEditingTimer] = useState(false);
+  const [timerInputValue, setTimerInputValue] = useState('');
   
   const { userEmail, isLoading: authLoading } = useAuth();
   const navigate = useNavigate();
@@ -137,6 +139,28 @@ export default function ProgramViewer() {
   };
 
   const adjustTimer = (amount) => { setTimeLeft((prev) => Math.max(0, prev + amount)); };
+
+  // Timer Edit Logic
+  const handleTimerClick = () => {
+    setTimerActive(false);
+    setIsEditingTimer(true);
+    setTimerInputValue(formatTime(timeLeft));
+  };
+
+  const handleTimerSubmit = (e) => {
+    e.preventDefault();
+    let newSeconds = 0;
+    if (timerInputValue.includes(':')) {
+      const parts = timerInputValue.split(':');
+      newSeconds = parseInt(parts[0] || 0) * 60 + parseInt(parts[1] || 0);
+    } else {
+      newSeconds = parseInt(timerInputValue || 0);
+    }
+    if (!isNaN(newSeconds)) {
+      setTimeLeft(newSeconds);
+    }
+    setIsEditingTimer(false);
+  };
   
   useEffect(() => { if (userEmail) loadData(true); }, [userEmail]);
 
@@ -466,7 +490,30 @@ export default function ProgramViewer() {
             <button className="pv-timer-btn" onClick={() => { setTimerExpanded(false); setTimerActive(false); }} title="Close Timer"><X size={18} /></button>
             <div className="pv-timer-divider"></div>
             <button className="pv-timer-btn" onClick={() => adjustTimer(-15)} title="-15s"><Minus size={16} /></button>
-            <div className={`pv-timer-clock ${timerActive ? 'is-active-text' : ''} ${timeLeft <= 10 && timeLeft > 0 && timerActive ? 'urgent' : ''}`}>{formatTime(timeLeft)}</div>
+            
+            {/* EDITABLE TEXT BOX LOGIC */}
+            {isEditingTimer ? (
+              <form onSubmit={handleTimerSubmit} style={{ margin: 0, padding: 0, display: 'flex' }}>
+                <input 
+                  autoFocus
+                  type="text" 
+                  value={timerInputValue} 
+                  onChange={e => setTimerInputValue(e.target.value)} 
+                  onBlur={handleTimerSubmit}
+                  style={{ width: '65px', background: 'transparent', border: 'none', color: '#38bdf8', fontSize: '22px', fontWeight: '600', textAlign: 'center', outline: 'none', fontFamily: '"SF Pro Display", monospace' }} 
+                />
+              </form>
+            ) : (
+              <div 
+                className={`pv-timer-clock ${timerActive ? 'is-active-text' : ''} ${timeLeft <= 10 && timeLeft > 0 && timerActive ? 'urgent' : ''}`} 
+                onClick={handleTimerClick} 
+                style={{ cursor: 'pointer' }}
+                title="Click to edit time"
+              >
+                {formatTime(timeLeft)}
+              </div>
+            )}
+
             <button className="pv-timer-btn" onClick={() => adjustTimer(15)} title="+15s"><Plus size={16} /></button>
             <div className="pv-timer-divider"></div>
             <button className={`pv-timer-btn pv-timer-play ${timerActive ? 'is-playing' : ''}`} onClick={() => setTimerActive(!timerActive)}>{timerActive ? <Pause size={18} /> : <Play size={18} style={{ marginLeft: '2px' }} />}</button>
@@ -522,7 +569,10 @@ export default function ProgramViewer() {
             {programMediaUrl && showProgramMedia && (
               <div className="pv-media-player-wrap">
                 {getYouTubeId(programMediaUrl) ? (
-                  <iframe src={'https://www.youtube.com/embed/' + getYouTubeId(programMediaUrl) + '?autoplay=1&rel=0'} allowFullScreen title="Coach Program Media" className="pv-media-iframe" />
+                  // FIX: 16:9 RESPONSIVE WRAPPER FOR YOUTUBE COACH NOTES
+                  <div style={{ position: 'relative', paddingBottom: '56.25%', height: 0, overflow: 'hidden', borderRadius: '8px' }}>
+                    <iframe src={'https://www.youtube.com/embed/' + getYouTubeId(programMediaUrl) + '?autoplay=1&rel=0'} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 0 }} allowFullScreen title="Coach Program Media" />
+                  </div>
                 ) : (programMediaUrl.toLowerCase().includes('.png') || programMediaUrl.toLowerCase().includes('.jpg')) ? (
                   <img src={programMediaUrl} alt="Program Media" style={{ maxWidth: '100%', maxHeight: '400px', objectFit: 'contain', borderRadius: '8px' }} />
                 ) : getMediaType(programMediaUrl) === 'audio' ? (
@@ -568,7 +618,11 @@ export default function ProgramViewer() {
                     
                     {hasMedia && expandedVideos.has(group.id) && (
                       <div className="pv-video-container" style={{ padding: isImage ? '10px' : '0' }}>
-                        {group.ytId ? ( <iframe src={`https://www.youtube.com/embed/${group.ytId}?autoplay=1&rel=0`} allowFullScreen title={group.name} />
+                        {group.ytId ? ( 
+                          // FIX: 16:9 RESPONSIVE WRAPPER FOR EXERCISE YOUTUBE VIDEOS
+                          <div style={{ position: 'relative', paddingBottom: '56.25%', height: 0, overflow: 'hidden', borderRadius: '4px' }}>
+                            <iframe src={`https://www.youtube.com/embed/${group.ytId}?autoplay=1&rel=0`} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 0 }} allowFullScreen title={group.name} />
+                          </div>
                         ) : isImage ? ( <img src={group.videoUrl} alt={group.name} style={{ width: '100%', maxHeight: '40vh', objectFit: 'contain', borderRadius: '4px' }} />
                         ) : ( <video key={group.videoUrl} src={group.videoUrl} autoPlay controls playsInline preload="metadata" controlsList="nodownload" style={{ width: '100%', borderRadius: '4px' }}></video> )}
                       </div>
@@ -609,13 +663,11 @@ export default function ProgramViewer() {
                           
                           <div className="pv-inputs" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                             
-                            {/* 1. REPS (Always first) */}
                             <div className="pv-input-group">
                               <span className="pv-input-label">reps</span>
                               <input type="text" className="pv-input pv-input-text" placeholder={set.reps || '--'} value={input.reps || ''} onChange={e => handleInputChange(group.id, idx, 'reps', e.target.value)} />
                             </div>
 
-                            {/* 2. DISTANCE */}
                             {metrics.distance && (
                               <div className="pv-input-group">
                                 <span className="pv-input-label">dist</span>
@@ -623,7 +675,6 @@ export default function ProgramViewer() {
                               </div>
                             )}
 
-                            {/* 3. TIME */}
                             {metrics.time && (
                               <div className="pv-input-group">
                                 <span className="pv-input-label">time</span>
@@ -631,7 +682,6 @@ export default function ProgramViewer() {
                               </div>
                             )}
 
-                            {/* 4. WEIGHT (kg) */}
                             {metrics.weight && (
                               <div className="pv-input-group">
                                 <span className="pv-input-label">kg</span>
