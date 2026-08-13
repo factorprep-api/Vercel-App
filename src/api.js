@@ -51,7 +51,6 @@ export const fetchLibrary = async () => {
   }
 };
 
-// FIX: Restored the missing Help Videos function!
 export const fetchHelpVideos = async () => {
   try {
     let response = await fetch(`${GOOGLE_SCRIPT_API_URL}?action=getHelpVideos&t=${Date.now()}`);
@@ -96,6 +95,20 @@ export const getLatestMaxes = async (athleteName) => {
 // ==========================================
 // SECURE POST REQUESTS (Saving Data)
 // ==========================================
+
+// FIX: Restored createAthlete for the Login page
+export const createAthlete = async (athleteData) => {
+  try {
+    let response = await fetch(`${GOOGLE_SCRIPT_API_URL}?action=createAthlete&t=${Date.now()}`, {
+      method: 'POST',
+      body: JSON.stringify(athleteData)
+    });
+    return await response.json();
+  } catch (error) {
+    return { status: 'Error', message: error.message };
+  }
+};
+
 export const saveSession = async (payload) => {
   try {
     let response = await fetch(`${GOOGLE_SCRIPT_API_URL}?action=saveSession&t=${Date.now()}`, {
