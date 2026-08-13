@@ -51,6 +51,17 @@ export const fetchLibrary = async () => {
   }
 };
 
+// FIX: Restored the missing Help Videos function!
+export const fetchHelpVideos = async () => {
+  try {
+    let response = await fetch(`${GOOGLE_SCRIPT_API_URL}?action=getHelpVideos&t=${Date.now()}`);
+    let json = await response.json();
+    return { helpVideos: json.helpVideos || json.data || [], error: null };
+  } catch (error) {
+    return { helpVideos: [], error: "Failed to fetch help videos" };
+  }
+};
+
 // ==========================================
 // SPECIFIC DB QUERIES
 // ==========================================
@@ -130,18 +141,14 @@ export const getMediaType = (url) => {
   if (!url) return null;
   const lower = url.toLowerCase();
   
-  // Videos
   if (lower.match(/\.(mp4|webm|mov)$/) || lower.includes('youtube') || lower.includes('youtu.be')) {
     return 'video';
   }
-  // Audio
   if (lower.match(/\.(mp3|wav|m4a)$/)) {
     return 'audio';
   }
-  // Images
   if (lower.match(/\.(png|jpe?g|gif|webp)$/)) {
     return 'image';
   }
-  
-  return 'video'; // default
+  return 'video'; 
 };
