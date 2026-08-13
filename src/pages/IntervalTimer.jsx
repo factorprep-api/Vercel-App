@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Play, Pause, Square, Plus, Trash2, Save, Activity, Coffee, Volume2, VolumeX, ArrowLeft, ArrowUp, ArrowDown, X, Copy, Repeat, PlusCircle } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
+import HelpButton from '../components/HelpButton';
 
 // Audio URLs
 const SOUNDS = {
@@ -143,11 +144,9 @@ export default function IntervalTimer() {
     setActiveSequence(newSeq);
   };
 
-  // NEW: Adds just one round based on the last work/rest values entered
   const addOneRound = () => {
     if (activeSequence.length === 0) return;
     
-    // Find the last 'work' and last 'rest' in the current sequence
     const lastWork = [...activeSequence].reverse().find(s => s.type === 'work');
     const lastRest = [...activeSequence].reverse().find(s => s.type === 'rest');
     
@@ -158,7 +157,6 @@ export default function IntervalTimer() {
     setActiveSequence([...activeSequence, ...newSteps]);
   };
 
-  // ORIGINAL: Doubles the entire current list
   const duplicateSequence = () => {
     if (activeSequence.length === 0) return;
     const duplicated = activeSequence.map(step => ({ ...step, id: Date.now() + Math.random() }));
@@ -305,7 +303,7 @@ export default function IntervalTimer() {
           
           {isFinished && (
             <button onClick={stopTimer} style={{ marginTop: '60px', backgroundColor: 'white', color: bgColor, border: 'none', borderRadius: '50px', padding: '20px 40px', fontSize: '24px', fontWeight: '700', cursor: 'pointer' }}>
-               CLOSE TIMER
+              BACK TO MENU
             </button>
           )}
         </div>
@@ -317,7 +315,7 @@ export default function IntervalTimer() {
   // RENDER: BUILDER VIEW
   // ==========================================
   return (
-    <div style={{ padding: '16px', maxWidth: '600px', margin: '0 auto', fontFamily: '"Roboto Flex", sans-serif', backgroundColor: '#f8fafc', minHeight: '100vh' }}>
+    <div style={{ padding: '16px', maxWidth: '600px', margin: '0 auto', fontFamily: '"Roboto Flex", sans-serif', backgroundColor: '#f8fafc', minHeight: '100vh', position: 'relative' }}>
       
       {/* HEADER */}
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: '24px' }}>
@@ -465,7 +463,9 @@ export default function IntervalTimer() {
           </button>
         </div>
       )}
-
+      
+      {/* HELP BUTTON ADDED HERE */}
+      <HelpButton pageName="Interval Timer" position="bottom-right" />
     </div>
   );
 }
