@@ -51,7 +51,7 @@ export default function ProgramBuilder() {
   const [mediaInputDraft, setMediaInputDraft] = useState('');
   
   const draftRef = useRef(null);
-  const setsInputRef = useRef(null); // Used to snap focus and close datalist
+  const setsInputRef = useRef(null);
 
   useEffect(() => { loadData(); }, []);
   useEffect(() => { 
@@ -160,10 +160,7 @@ export default function ProgramBuilder() {
 
   function addDraftExercise() {
     if (!form.exercise) { showToast('Please select an exercise.', true); return; }
-    if (!form.sets) { showToast('Sets are required.', true); return; }
-    if (!form.reps && !advanced.metrics.time && !advanced.metrics.distance) { 
-      showToast('Enter Reps or select Time/Distance in Advanced Options.', true); return; 
-    }
+    if (!form.sets || !form.reps) { showToast('Sets and Reps are required.', true); return; }
     
     setDraft([...draft, {
       phase: form.phase, exercise: form.exercise, sets: form.sets,
@@ -172,7 +169,7 @@ export default function ProgramBuilder() {
     }]);
     
     showToast('Added! Settings kept for next exercise.');
-    // Inputs remain completely sticky!
+    // Keep sticky!
   }
 
   function moveItem(i, dir) {
@@ -209,6 +206,10 @@ export default function ProgramBuilder() {
       }
 
       if (res.status === 'Success') {
+        // FIX #1: THE CACHE WIPE. Instantly deletes old data so library fetches fresh!
+        localStorage.removeItem('fp_program_data');
+        localStorage.removeItem('fp_builder_data_v2');
+
         showToast(loadProgramName && loadProgramName !== form.name ? 'Saved as new program!' : 'Program saved!');
         setDraft([]);
         setForm(f => ({ ...f, name: '', notes: '', privacyLevel: 'PRIVATE' }));
@@ -287,7 +288,7 @@ export default function ProgramBuilder() {
           display: inline-flex;
           align-items: center;
           justify-content: center;
-          background-color: #334155; /* Neutral Dark Slate / Navy */
+          background-color: #334155;
           color: white;
           font-weight: 800;
           font-size: 10px;
@@ -349,11 +350,7 @@ export default function ProgramBuilder() {
           <div className="pb-field-group">
             <div className="pb-label-row">
               <label className="pb-label">Coach's Notes (Optional):</label>
-              <button
-                type="button"
-                className={`pb-media-inline-btn${mediaUrl ? ' has-media' : ''}`}
-                onClick={() => { setMediaInputDraft(mediaUrl); setShowMediaInput(true); }}
-              >
+              <button type="button" className={`pb-media-inline-btn${mediaUrl ? ' has-media' : ''}`} onClick={() => { setMediaInputDraft(mediaUrl); setShowMediaInput(true); }}>
                 {mediaUrl ? '✓ Media' : '+ Media'}
               </button>
             </div>
@@ -394,7 +391,6 @@ export default function ProgramBuilder() {
               onChange={e => {
                 const val = e.target.value;
                 setForm({...form, exercise: val});
-                // SMART FOCUS: Close datalist instantly if valid exercise is clicked
                 if (exerciseList.includes(val)) {
                   setTimeout(() => setsInputRef.current?.focus(), 10);
                 }
