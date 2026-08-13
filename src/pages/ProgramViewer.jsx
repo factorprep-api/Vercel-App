@@ -105,9 +105,7 @@ export default function ProgramViewer() {
   const [showProgramMedia, setShowProgramMedia] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   
-  // ==========================================
   // SLEEK FLOATING TIMER STATE
-  // ==========================================
   const [timerExpanded, setTimerExpanded] = useState(false);
   const [timerActive, setTimerActive] = useState(false);
   const [timeLeft, setTimeLeft] = useState(90); 
@@ -115,9 +113,7 @@ export default function ProgramViewer() {
   const { userEmail, isLoading: authLoading } = useAuth();
   const navigate = useNavigate();
 
-  // ==========================================
   // TIMER LOGIC & AUDIO
-  // ==========================================
   useEffect(() => {
     let interval = null;
     if (timerActive && timeLeft > 0) {
@@ -146,9 +142,7 @@ export default function ProgramViewer() {
     setTimeLeft((prev) => Math.max(0, prev + amount));
   };
   
-  // ==========================================
-  // DATA LOADING
-  // ==========================================
+  // DATA LOADING (With Shock Absorber)
   useEffect(() => { if (userEmail) loadData(true); }, [userEmail]);
 
   async function loadData(useCache = false) {
@@ -295,6 +289,7 @@ export default function ProgramViewer() {
     return url && url.toLowerCase() !== 'undefined' ? url : '';
   }, [selectedProgram, programData]);
 
+  // PARSE GROUPS WITH ADVANCED METADATA (Col 14)
   const workoutGroups = useMemo(() => {
     if (!selectedProgram || !programData.length) return [];
     let rows = programData.slice(1).filter(r => String(r[0] || '').trim() === selectedProgram);
@@ -313,7 +308,16 @@ export default function ProgramViewer() {
       
       if (!currentGroup || currentGroup.name !== name || currentGroup.phase !== phase) {
         if (currentGroup) groups.push(currentGroup);
-        currentGroup = { id: 'ex_' + index, phase, name, details: [], baseLift: '', multiplier: 1.0, videoUrl: '', ytId: null };
+        
+        // Parse the Advanced Metadata Payload
+        let advanced = null;
+        try {
+          if (row.length > 13 && row[13]) {
+            advanced = JSON.parse(String(row[13]));
+          }
+        } catch(e) {}
+
+        currentGroup = { id: 'ex_' + index, phase, name, details: [], baseLift: '', multiplier: 1.0, videoUrl: '', ytId: null, advanced };
       }
       
       for (let s = 0; s < numSets; s++) {
@@ -345,6 +349,7 @@ export default function ProgramViewer() {
     return groups;
   }, [selectedProgram, programData, libraryData]);
 
+  // SINGLE LOGBOOK FETCH FOR TARGET CALCS
   useEffect(() => {
     if (!athleteName || !workoutGroups.length || !libraryData.length) return;
     
@@ -466,6 +471,7 @@ export default function ProgramViewer() {
     setInputValues(prev => ({ ...prev, [key]: { ...prev[key], [field]: value } }));
   }
 
+  // DYNAMIC SAVE LOGIC: Saves whatever metric inputs were active
   async function handleSaveSession() {
     if (!workoutGroups.length) return;
     setSaving(true);
@@ -473,21 +479,39 @@ export default function ProgramViewer() {
     const setsToLog = [];
     
     workoutGroups.forEach(group => {
+      const metrics = group.advanced?.metrics || { weight: true, reps: true };
+
       group.details.forEach((set, idx) => {
         const key = group.id + '_' + idx;
         const input = inputValues[key] || {};
+        
         const target = targetCalcs[key] || '';
         const targetNum = typeof target === 'string' && target.includes('kg') ? target.replace(' kg', '') : '';
-        const wt = input.wt || (targetNum ? targetNum : '');
-        const rp = input.reps || set.reps;
-        if (!wt || wt === '--' || !rp) return;
-        const wtNum = parseFloat(wt);
-        const rpNum = parseFloat(rp);
-        if (wtNum > 0 && rpNum > 0) {
-          setsToLog.push({ exercise: group.name, weight: wtNum, reps: rpNum, intensity: set.intensity || '' });
+        
+        const wt = input.wt || (metrics.weight && targetNum ? targetNum : '');
+        const rp = input.reps || (metrics.reps ? set.reps : '');
+        const tm = input.time || '';
+        const dst = input.dist || '';
+
+        // Only log if they filled out AT LEAST ONE relevant box
+        if (!wt && !rp && !tm && !dst) return;
+
+        // Ensure database always gets a number for weight, even if 0
+        const wtNum = parseFloat(wt) || 0;
+        
+        // Safely bundle custom reps, time, and distance strings into the reps column
+        let finalReps = [];
+        if (rp) finalReps.push(`${rp}`);
+        if (tm) finalReps.push(`${tm}`);
+        if (dst) finalReps.push(`${dst}`);
+        const repsString = finalReps.join(' | ');
+
+        if (wtNum > 0 || finalReps.length > 0) {
+          setsToLog.push({ exercise: group.name, weight: wtNum, reps: repsString, intensity: set.intensity || '' });
         }
       });
     });
+
     if (!setsToLog.length) {
       alert('Nothing to save.');
       setSaving(false);
@@ -540,6 +564,37 @@ export default function ProgramViewer() {
           -moz-appearance: textfield;
           width: 65px !important;
           text-align: center;
+        }
+        .pv-input-text {
+          width: 80px !important;
+          text-align: center;
+        }
+        
+        /* ADVANCED ICONS AND BADGES */
+        .uni-dot {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          background-color: #4f46e5; /* Deep Indigo */
+          color: white;
+          font-weight: 800;
+          font-size: 10px;
+          width: 20px;
+          height: 20px;
+          border-radius: 50%;
+          margin-left: 8px;
+          vertical-align: middle;
+        }
+        .superset-bracket {
+          position: absolute;
+          left: -4px;
+          top: -8px;
+          bottom: -8px;
+          width: 8px;
+          border-left: 3px solid #008ed3;
+          border-top: 3px solid #008ed3;
+          border-bottom: 3px solid #008ed3;
+          border-radius: 4px 0 0 4px;
         }
         
         /* BOTTOM FLOATING ACTION BUTTON (FAB) STYLES */
@@ -650,7 +705,7 @@ export default function ProgramViewer() {
         }
       `}</style>
 
-      {/* FIX: BOTTOM FLOATING ACTION BUTTON */}
+      {/* FAB TIMER */}
       <div className={`pv-floating-fab ${timerActive ? 'is-active' : ''}`}>
         {timerExpanded ? (
           <>
@@ -680,9 +735,7 @@ export default function ProgramViewer() {
       </div>
 
       <div className="pv-body">
-        {/* Clean Header - No squished buttons! */}
         <h2 style={{ fontSize: '24px', color: '#008ed3', marginBottom: '16px', fontWeight: '700' }}>Today's Workout</h2>
-        
         {athleteName && <p style={{ color: '#666', fontSize: '15px', marginBottom: '20px', marginTop: '-8px' }}>Welcome, {athleteName}</p>}
 
         <div className="pv-search-box">
@@ -779,10 +832,35 @@ export default function ProgramViewer() {
                 const hasMedia = group.videoUrl || group.ytId;
                 const isImage = group.videoUrl && (group.videoUrl.toLowerCase().includes('.png') || group.videoUrl.toLowerCase().includes('.jpg'));
                 
+                // Advanced Metadata Rendering Logic
+                const isSuperset = group.advanced?.setType === 'superset';
+                const isDrop = group.advanced?.setType === 'drop';
+                const exec = group.advanced?.execution;
+                const metrics = group.advanced?.metrics || { weight: true, reps: true };
+                const targets = group.advanced?.targets || {};
+
                 return (
-                  <div key={group.id}>
+                  <div key={group.id} style={{ position: 'relative' }}>
+                    
+                    {/* Visual Superset Bracket */}
+                    {isSuperset && <div className="superset-bracket"></div>}
+
                     <div className="pv-exercise-header">
-                      <h4 className="pv-exercise-name">{group.name}</h4>
+                      <h4 className="pv-exercise-name" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        {isSuperset && <span title="Superset">🔗</span>}
+                        {group.name}
+                        
+                        {/* Drop Set Icon */}
+                        {isDrop && (
+                          <img src="/drop-set-icon.png" alt="Drop Set 📉" style={{ width: '20px', height: '20px' }} onError={(e) => { e.target.style.display='none'; e.target.insertAdjacentText('afterend', '📉'); }} />
+                        )}
+                        
+                        {/* Unilateral Badges */}
+                        {exec === 'uni-both' && <span className="uni-dot" title="Unilateral">U</span>}
+                        {exec === 'uni-left' && <span className="uni-dot" title="Left Only">L</span>}
+                        {exec === 'uni-right' && <span className="uni-dot" title="Right Only">R</span>}
+                      </h4>
+                      
                       {hasMedia && (
                         <button className="pv-video-toggle" style={{ color: section.color, borderColor: section.color, background: `${section.color}0D` }} onClick={() => toggleMedia(group.id)}>
                           {isImage ? <ImageIcon size={12} /> : <Video size={12} />} Media
@@ -805,29 +883,59 @@ export default function ProgramViewer() {
                     {group.details.map((set, idx) => {
                       const inputKey = group.id + '_' + idx;
                       const input = inputValues[inputKey] || {};
-                      const target = targetCalcs[inputKey] || 'Loading...';
-                      const targetNum = typeof target === 'string' && target.includes('kg') ? target.replace(' kg', '') : '';
+                      
+                      // Base 1RM target
+                      const calcTarget = targetCalcs[inputKey] || 'Loading...';
+                      let displayTarget = typeof calcTarget === 'string' && calcTarget.includes('kg') ? calcTarget.replace(' kg', '') : calcTarget;
+
+                      // Override Target if Custom Advanced Targets Exist
+                      let customTargetDisplay = '';
+                      if (targets.time) customTargetDisplay += `⏱️ ${targets.time} `;
+                      if (targets.distance) customTargetDisplay += `📏 ${targets.distance}`;
+                      
                       return (
                         <div key={idx} className="pv-set-row">
                           <div className="pv-set-info">
-                            <div className="pv-set-label"><strong>Set {idx + 1}:</strong> {set.reps} reps {set.intensity ? '@ ' + set.intensity + '%' : ''}</div>
+                            <div className="pv-set-label"><strong>Set {idx + 1}:</strong> {set.reps} {metrics.weight ? 'reps' : ''} {set.intensity ? '@ ' + set.intensity + '%' : ''}</div>
                             {(set.tempo || set.rest) && (
                               <div className="pv-set-meta">
                                 {set.tempo && <>Tempo: <span style={{ color: '#555' }}>{set.tempo}</span>{set.rest ? ' | ' : ''}</>}
                                 {set.rest && <>Rest: <span style={{ color: '#555' }}>{set.rest}</span></>}
                               </div>
                             )}
-                            <div className="pv-target">Target: <span className="pv-target-value" style={{ color: section.color }}>{targetNum ? targetNum + 'kg' : target}</span></div>
+                            <div className="pv-target">
+                              Target: <span className="pv-target-value" style={{ color: section.color }}>
+                                {customTargetDisplay ? customTargetDisplay : (displayTarget && displayTarget !== 'Auto' && displayTarget !== 'First time' && displayTarget !== 'No previous data' ? displayTarget + 'kg' : displayTarget)}
+                              </span>
+                            </div>
                           </div>
-                          <div className="pv-inputs">
-                            <div className="pv-input-group">
-                              <span className="pv-input-label">kg</span>
-                              <input type="number" className="pv-input pv-input-kg" placeholder={targetNum || '--'} value={input.wt || ''} onChange={e => handleInputChange(group.id, idx, 'wt', e.target.value)} />
-                            </div>
-                            <div className="pv-input-group">
-                              <span className="pv-input-label">reps</span>
-                              <input type="number" className="pv-input" placeholder={set.reps} value={input.reps || ''} onChange={e => handleInputChange(group.id, idx, 'reps', e.target.value)} />
-                            </div>
+                          
+                          {/* DYNAMIC METRIC INPUTS */}
+                          <div className="pv-inputs" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                            {metrics.weight && (
+                              <div className="pv-input-group">
+                                <span className="pv-input-label">kg</span>
+                                <input type="number" className="pv-input pv-input-kg" placeholder={displayTarget === 'Auto' ? '--' : displayTarget} value={input.wt || ''} onChange={e => handleInputChange(group.id, idx, 'wt', e.target.value)} />
+                              </div>
+                            )}
+                            {metrics.reps && (
+                              <div className="pv-input-group">
+                                <span className="pv-input-label">reps</span>
+                                <input type="number" className="pv-input" placeholder={set.reps} value={input.reps || ''} onChange={e => handleInputChange(group.id, idx, 'reps', e.target.value)} />
+                              </div>
+                            )}
+                            {metrics.time && (
+                              <div className="pv-input-group">
+                                <span className="pv-input-label">time</span>
+                                <input type="text" className="pv-input pv-input-text" placeholder="e.g. 10s" value={input.time || ''} onChange={e => handleInputChange(group.id, idx, 'time', e.target.value)} />
+                              </div>
+                            )}
+                            {metrics.distance && (
+                              <div className="pv-input-group">
+                                <span className="pv-input-label">dist</span>
+                                <input type="text" className="pv-input pv-input-text" placeholder="e.g. 60m" value={input.dist || ''} onChange={e => handleInputChange(group.id, idx, 'dist', e.target.value)} />
+                              </div>
+                            )}
                           </div>
                         </div>
                       );
