@@ -5,7 +5,6 @@ import { fetchPrograms, fetchLibrary, saveFullProgram, updateProgram, getMediaTy
 import './program-builder.css';
 import HelpButton from '../components/HelpButton';
 
-// Upgraded MediaPlayer
 function MediaPlayer({ url, compact = false }) {
   if (!url) return null;
   const isImg = url.toLowerCase().includes('.png') || url.toLowerCase().includes('.jpg') || url.toLowerCase().includes('.jpeg');
@@ -160,7 +159,10 @@ export default function ProgramBuilder() {
 
   function addDraftExercise() {
     if (!form.exercise) { showToast('Please select an exercise.', true); return; }
-    if (!form.sets || !form.reps) { showToast('Sets and Reps are required.', true); return; }
+    if (!form.sets) { showToast('Sets are required.', true); return; }
+    if (!form.reps && !advanced.metrics.time && !advanced.metrics.distance) { 
+      showToast('Enter Reps or select Time/Distance in Advanced Options.', true); return; 
+    }
     
     setDraft([...draft, {
       phase: form.phase, exercise: form.exercise, sets: form.sets,
@@ -169,7 +171,6 @@ export default function ProgramBuilder() {
     }]);
     
     showToast('Added! Settings kept for next exercise.');
-    // Keep sticky!
   }
 
   function moveItem(i, dir) {
@@ -206,7 +207,6 @@ export default function ProgramBuilder() {
       }
 
       if (res.status === 'Success') {
-        // FIX #1: THE CACHE WIPE. Instantly deletes old data so library fetches fresh!
         localStorage.removeItem('fp_program_data');
         localStorage.removeItem('fp_builder_data_v2');
 
@@ -216,6 +216,8 @@ export default function ProgramBuilder() {
         setLoadProgramName('');
         setMediaUrl('');
         setAdvanced(DEFAULT_ADVANCED);
+        
+        await new Promise(resolve => setTimeout(resolve, 1500));
         await refreshData();
       } else { 
         showToast('Save failed', true); 

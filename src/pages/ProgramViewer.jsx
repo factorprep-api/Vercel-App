@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Play, ChevronDown, ChevronUp, Video, Image as ImageIcon, Save, CheckCircle, MessageSquare, UserPlus, Globe, Timer, Pause, RotateCcw, Plus, Minus, X } from 'lucide-react';
@@ -34,7 +35,6 @@ function extractMediaUrl(rawVid) {
   return '';
 }
 
-// FIX #3: NEW TARGET LOGIC ENGINE
 function calculateTargetLoad(libraryData, athleteMaxes, lastWeights, exerciseName, reps, intensity) {
   if (!intensity || isNaN(parseFloat(intensity)) || parseFloat(intensity) <= 0) return { text: '', val: '', source: 'none' };
 
@@ -56,7 +56,7 @@ function calculateTargetLoad(libraryData, athleteMaxes, lastWeights, exerciseNam
       oneRM = maxEntry;
       source = '1rm';
     } else {
-      return { text: '', val: '', source: 'none' }; // Blank instead of 'First Time'
+      return { text: '', val: '', source: 'none' }; 
     }
   } else {
     const lastEntry = lastWeights[normalizeString(exerciseName)];
@@ -66,7 +66,7 @@ function calculateTargetLoad(libraryData, athleteMaxes, lastWeights, exerciseNam
       oneRM = lastWt * (1 + 0.0333 * lastReps);
       source = 'history';
     } else {
-      return { text: '', val: '', source: 'none' }; // Blank instead of 'No previous data'
+      return { text: '', val: '', source: 'none' }; 
     }
   }
 
@@ -366,7 +366,6 @@ export default function ProgramViewer() {
     const key = groupId + '_' + detailIdx; setInputValues(prev => ({ ...prev, [key]: { ...prev[key], [field]: value } }));
   }
 
-  // FIX #4: Auto-populate Targets on Save
   async function handleSaveSession() {
     if (!workoutGroups.length) return;
     setSaving(true);
@@ -383,7 +382,6 @@ export default function ProgramViewer() {
         
         const targetData = targetCalcs[key] || { val: '' };
         
-        // Auto-populate logic if user leaves it blank but a target existed
         const wt = input.wt || (metrics.weight && targetData.val ? targetData.val : '');
         const rp = input.reps || set.reps || '';
         const tm = input.time || targets.time || '';
@@ -426,10 +424,7 @@ export default function ProgramViewer() {
         .pv-input-kg { -moz-appearance: textfield; width: 65px !important; text-align: center; }
         .pv-input-text { width: 80px !important; text-align: center; }
         
-        /* FIX #3: SMART FONT COLORS FOR INPUT PLACEHOLDERS */
-        /* Dark font for historical data */
         .pv-input-history::placeholder { color: #1e293b; opacity: 1; font-weight: 700; }
-        /* Standard gray font for 1RM calculations */
         .pv-input-calc::placeholder { color: #94a3b8; font-weight: 500; }
 
         .uni-dot {
@@ -564,7 +559,6 @@ export default function ProgramViewer() {
                         {group.name}
                         {isDrop && ( <img src="/drop-set-icon.png" alt="Drop Set 📉" style={{ width: '20px', height: '20px' }} onError={(e) => { e.target.style.display='none'; e.target.insertAdjacentText('afterend', '📉'); }} /> )}
                         
-                        {/* REVERTED TO CLEAN PURPLE DOTS */}
                         {exec === 'uni-both' && <span className="uni-dot" title="Unilateral">U</span>}
                         {exec === 'uni-left' && <span className="uni-dot" title="Left Only">L</span>}
                         {exec === 'uni-right' && <span className="uni-dot" title="Right Only">R</span>}
@@ -584,19 +578,18 @@ export default function ProgramViewer() {
                       const inputKey = group.id + '_' + idx;
                       const input = inputValues[inputKey] || {};
                       
-                      // FIX #3: Clean Target Data Object
                       const targetData = targetCalcs[inputKey] || { text: '', val: '', source: 'none' };
                       let customTargetDisplay = '';
                       if (targets.time) customTargetDisplay += `⏱️ ${targets.time} `;
                       if (targets.distance) customTargetDisplay += `📏 ${targets.distance}`;
                       
-                      const inputClass = targetData.source === 'history' ? 'pv-input-kg pv-input-history' : 'pv-input-kg pv-input-calc';
+                      const inputClass = targetData.source === 'history' ? 'pv-input pv-input-kg pv-input-history' : 'pv-input pv-input-kg pv-input-calc';
 
                       return (
                         <div key={idx} className="pv-set-row">
                           <div className="pv-set-info">
                             <div className="pv-set-label">
-                              <strong>Set {idx + 1}:</strong> {set.reps} {set.intensity ? '@ ' + set.intensity + '%' : ''}
+                              <strong>Set {idx + 1}:</strong> {set.reps} reps {set.intensity ? '@ ' + set.intensity + '%' : ''}
                             </div>
                             {(set.tempo || set.rest) && (
                               <div className="pv-set-meta">
@@ -605,7 +598,6 @@ export default function ProgramViewer() {
                               </div>
                             )}
                             
-                            {/* ONLY RENDER TARGET IF IT EXISTS */}
                             {(customTargetDisplay || targetData.text) && (
                               <div className="pv-target">
                                 Target: <span className="pv-target-value" style={{ color: section.color }}>
@@ -616,32 +608,37 @@ export default function ProgramViewer() {
                           </div>
                           
                           <div className="pv-inputs" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                            {metrics.weight && (
-                              <div className="pv-input-group">
-                                <span className="pv-input-label">kg</span>
-                                {/* Smart Placeholder Class */}
-                                <input type="number" className={inputClass} placeholder={targetData.val || '--'} value={input.wt || ''} onChange={e => handleInputChange(group.id, idx, 'wt', e.target.value)} />
-                              </div>
-                            )}
                             
-                            {/* FIX #2: PERMANENT REPS ROW */}
+                            {/* 1. REPS (Always first) */}
                             <div className="pv-input-group">
                               <span className="pv-input-label">reps</span>
-                              <input type="text" className="pv-input pv-input-text" placeholder={set.reps} value={input.reps || ''} onChange={e => handleInputChange(group.id, idx, 'reps', e.target.value)} />
+                              <input type="text" className="pv-input pv-input-text" placeholder={set.reps || '--'} value={input.reps || ''} onChange={e => handleInputChange(group.id, idx, 'reps', e.target.value)} />
                             </div>
 
-                            {metrics.time && (
-                              <div className="pv-input-group">
-                                <span className="pv-input-label">time</span>
-                                <input type="text" className="pv-input pv-input-text" placeholder={targets.time || 'e.g. 10s'} value={input.time || ''} onChange={e => handleInputChange(group.id, idx, 'time', e.target.value)} />
-                              </div>
-                            )}
+                            {/* 2. DISTANCE */}
                             {metrics.distance && (
                               <div className="pv-input-group">
                                 <span className="pv-input-label">dist</span>
-                                <input type="text" className="pv-input pv-input-text" placeholder={targets.distance || 'e.g. 60m'} value={input.dist || ''} onChange={e => handleInputChange(group.id, idx, 'dist', e.target.value)} />
+                                <input type="text" className="pv-input pv-input-text" placeholder={targets.distance || '--'} value={input.dist || ''} onChange={e => handleInputChange(group.id, idx, 'dist', e.target.value)} />
                               </div>
                             )}
+
+                            {/* 3. TIME */}
+                            {metrics.time && (
+                              <div className="pv-input-group">
+                                <span className="pv-input-label">time</span>
+                                <input type="text" className="pv-input pv-input-text" placeholder={targets.time || '--'} value={input.time || ''} onChange={e => handleInputChange(group.id, idx, 'time', e.target.value)} />
+                              </div>
+                            )}
+
+                            {/* 4. WEIGHT (kg) */}
+                            {metrics.weight && (
+                              <div className="pv-input-group">
+                                <span className="pv-input-label">kg</span>
+                                <input type="number" className={inputClass} placeholder={targetData.val || '--'} value={input.wt || ''} onChange={e => handleInputChange(group.id, idx, 'wt', e.target.value)} />
+                              </div>
+                            )}
+
                           </div>
                         </div>
                       );
