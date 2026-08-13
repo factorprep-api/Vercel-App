@@ -1,20 +1,20 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Play, Pause, Square, Plus, Trash2, Save, Activity, Coffee, Volume2, VolumeX, ArrowLeft, ArrowUp, ArrowDown, X} from 'lucide-react';
+import { Play, Pause, Square, Plus, Trash2, Save, Activity, Coffee, Volume2, VolumeX, ArrowLeft, ArrowUp, ArrowDown, X, Copy, Repeat, PlusCircle } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
+import HelpButton from '../components/HelpButton';
 
 // Audio URLs
 const SOUNDS = {
-  work: 'https://assets.mixkit.co/active_storage/sfx/1003/1003-preview.mp3', // Boxing bell style
-  rest: 'https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3', // Double beep
-  finish: 'https://assets.mixkit.co/active_storage/sfx/1435/1435-preview.mp3' // Tada / Victory
+  work: 'https://assets.mixkit.co/active_storage/sfx/1003/1003-preview.mp3', 
+  rest: 'https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3', 
+  finish: 'https://assets.mixkit.co/active_storage/sfx/1435/1435-preview.mp3' 
 };
 
 export default function IntervalTimer() {
   const navigate = useNavigate();
   const { userEmail } = useAuth();
   
-  // Storage Key tied to the user
   const storageKey = `fp_intervals_${userEmail || 'guest'}`;
 
   // ==========================================
@@ -24,12 +24,14 @@ export default function IntervalTimer() {
   const [activeSequence, setActiveSequence] = useState([]);
   const [presetName, setPresetName] = useState('');
   const [selectedPresetId, setSelectedAthleteId] = useState('');
+  const [isLooping, setIsLooping] = useState(false);
   
   // Timer State
-  const [timerState, setTimerState] = useState('idle'); // 'idle' | 'running' | 'paused' | 'finished'
+  const [timerState, setTimerState] = useState('idle'); 
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [timeLeft, setTimeLeft] = useState(0);
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [loopCount, setLoopCount] = useState(1);
 
   // Builder Inputs
   const [inputMin, setInputMin] = useState('');
@@ -41,13 +43,11 @@ export default function IntervalTimer() {
   // INITIALIZATION
   // ==========================================
   useEffect(() => {
-    // Load presets from local storage
     const saved = localStorage.getItem(storageKey);
     if (saved) {
       try { setPresets(JSON.parse(saved)); } catch (e) {}
     }
     
-    // Preload audio objects
     audioRefs.current = {
       work: new Audio(SOUNDS.work),
       rest: new Audio(SOUNDS.rest),
@@ -66,22 +66,32 @@ export default function IntervalTimer() {
         setTimeLeft(prev => prev - 1);
       }, 1000);
     } else if (timerState === 'running' && timeLeft === 0) {
-      // Step finished! Move to next step
+      
       if (currentStepIndex < activeSequence.length - 1) {
+        // Next Step in Sequence
         const nextIndex = currentStepIndex + 1;
         const nextStep = activeSequence[nextIndex];
         setCurrentStepIndex(nextIndex);
         setTimeLeft(nextStep.duration);
         playSound(nextStep.type);
       } else {
-        // Entire workout finished
-        setTimerState('finished');
-        playSound('finish');
+        // End of Sequence reached
+        if (isLooping) {
+          // INFINITE LOOP: Reset to step 0, increment round counter
+          setLoopCount(prev => prev + 1);
+          setCurrentStepIndex(0);
+          setTimeLeft(activeSequence[0].duration);
+          playSound(activeSequence[0].type);
+        } else {
+          // FINISHED
+          setTimerState('finished');
+          playSound('finish');
+        }
       }
     }
 
     return () => clearInterval(interval);
-  }, [timerState, timeLeft, currentStepIndex, activeSequence]);
+  }, [timerState, timeLeft, currentStepIndex, activeSequence, isLooping]);
 
   // ==========================================
   // HELPERS
@@ -115,10 +125,7 @@ export default function IntervalTimer() {
     const s = parseInt(inputSec) || 0;
     const duration = (m * 60) + s;
     
-    if (duration <= 0) {
-      alert("Please enter a valid time.");
-      return;
-    }
+    if (duration <= 0) { alert("Please enter a valid time."); return; }
 
     setActiveSequence([...activeSequence, { id: Date.now() + Math.random(), type, duration }]);
     setInputMin('');
@@ -137,6 +144,25 @@ export default function IntervalTimer() {
     setActiveSequence(newSeq);
   };
 
+  const addOneRound = () => {
+    if (activeSequence.length === 0) return;
+    
+    const lastWork = [...activeSequence].reverse().find(s => s.type === 'work');
+    const lastRest = [...activeSequence].reverse().find(s => s.type === 'rest');
+    
+    const newSteps = [];
+    if (lastWork) newSteps.push({ id: Date.now() + Math.random(), type: 'work', duration: lastWork.duration });
+    if (lastRest) newSteps.push({ id: Date.now() + Math.random() + 1, type: 'rest', duration: lastRest.duration });
+    
+    setActiveSequence([...activeSequence, ...newSteps]);
+  };
+
+  const duplicateSequence = () => {
+    if (activeSequence.length === 0) return;
+    const duplicated = activeSequence.map(step => ({ ...step, id: Date.now() + Math.random() }));
+    setActiveSequence([...activeSequence, ...duplicated]);
+  };
+
   // ==========================================
   // PRESET CONTROLS
   // ==========================================
@@ -147,14 +173,12 @@ export default function IntervalTimer() {
     const newPreset = {
       id: Date.now().toString(),
       name: presetName.trim(),
-      sequence: activeSequence
+      sequence: activeSequence,
+      isLooping: isLooping
     };
 
-    // Limit to 10 presets
     let updatedPresets = [...presets.filter(p => p.name !== newPreset.name), newPreset];
-    if (updatedPresets.length > 10) {
-      updatedPresets = updatedPresets.slice(updatedPresets.length - 10);
-    }
+    if (updatedPresets.length > 10) updatedPresets = updatedPresets.slice(updatedPresets.length - 10);
 
     setPresets(updatedPresets);
     localStorage.setItem(storageKey, JSON.stringify(updatedPresets));
@@ -167,12 +191,14 @@ export default function IntervalTimer() {
     if (!id) {
       setActiveSequence([]);
       setPresetName('');
+      setIsLooping(false);
       return;
     }
     const preset = presets.find(p => p.id === id);
     if (preset) {
       setActiveSequence([...preset.sequence]);
       setPresetName(preset.name);
+      setIsLooping(preset.isLooping || false);
     }
   };
 
@@ -185,6 +211,7 @@ export default function IntervalTimer() {
       setSelectedAthleteId('');
       setActiveSequence([]);
       setPresetName('');
+      setIsLooping(false);
     }
   };
 
@@ -194,23 +221,24 @@ export default function IntervalTimer() {
   const startTimer = () => {
     if (activeSequence.length === 0) return;
     
-    // Audio Unlock (Browser hack to allow audio to play later)
     if (soundEnabled) {
       Object.values(audioRefs.current).forEach(audio => {
         audio.play().then(() => audio.pause()).catch(() => {});
       });
     }
 
+    setLoopCount(1);
     setCurrentStepIndex(0);
     setTimeLeft(activeSequence[0].duration);
     setTimerState('running');
-    playSound(activeSequence[0].type); // Play start sound
+    playSound(activeSequence[0].type); 
   };
 
   const stopTimer = () => {
     setTimerState('idle');
     setCurrentStepIndex(0);
     setTimeLeft(0);
+    setLoopCount(1);
   };
 
   // ==========================================
@@ -221,7 +249,6 @@ export default function IntervalTimer() {
     const currentStep = activeSequence[currentStepIndex];
     const isWork = currentStep?.type === 'work';
     
-    // Dynamic background colors for the sweaty hands view
     const bgColor = isFinished ? '#22c55e' : (isWork ? '#0ea5e9' : '#f59e0b');
     
     return (
@@ -231,6 +258,13 @@ export default function IntervalTimer() {
           <button onClick={stopTimer} style={{ background: 'rgba(0,0,0,0.2)', border: 'none', color: 'white', padding: '12px', borderRadius: '50%', cursor: 'pointer' }}>
             <X size={28} />
           </button>
+          
+          {isLooping && !isFinished && (
+            <div style={{ background: 'rgba(0,0,0,0.2)', padding: '8px 16px', borderRadius: '20px', fontWeight: '800', letterSpacing: '1px' }}>
+              ROUND {loopCount}
+            </div>
+          )}
+
           <button onClick={() => setSoundEnabled(!soundEnabled)} style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer' }}>
             {soundEnabled ? <Volume2 size={28} /> : <VolumeX size={28} />}
           </button>
@@ -281,7 +315,7 @@ export default function IntervalTimer() {
   // RENDER: BUILDER VIEW
   // ==========================================
   return (
-    <div style={{ padding: '16px', maxWidth: '600px', margin: '0 auto', fontFamily: '"Roboto Flex", sans-serif', backgroundColor: '#f8fafc', minHeight: '100vh' }}>
+    <div style={{ padding: '16px', maxWidth: '600px', margin: '0 auto', fontFamily: '"Roboto Flex", sans-serif', backgroundColor: '#f8fafc', minHeight: '100vh', position: 'relative' }}>
       
       {/* HEADER */}
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: '24px' }}>
@@ -303,7 +337,7 @@ export default function IntervalTimer() {
             >
               <option value="">-- Create New Timer --</option>
               {presets.map(p => (
-                <option key={p.id} value={p.id}>{p.name} ({getTotalTime(p.sequence)})</option>
+                <option key={p.id} value={p.id}>{p.name} ({getTotalTime(p.sequence)}) {p.isLooping ? '🔁' : ''}</option>
               ))}
             </select>
             {selectedPresetId && (
@@ -345,7 +379,7 @@ export default function IntervalTimer() {
       <div style={{ marginBottom: '32px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
           <h3 style={{ margin: 0, fontSize: '16px', color: '#0f172a' }}>Sequence</h3>
-          <span style={{ fontSize: '14px', fontWeight: '600', color: '#0ea5e9' }}>Total: {getTotalTime(activeSequence)}</span>
+          <span style={{ fontSize: '14px', fontWeight: '600', color: '#0ea5e9' }}>{isLooping ? '∞' : 'Total:'} {getTotalTime(activeSequence)}</span>
         </div>
 
         {activeSequence.length === 0 ? (
@@ -371,6 +405,22 @@ export default function IntervalTimer() {
                 </button>
               </div>
             ))}
+
+            {/* DUPLICATE BUTTONS */}
+            <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+              <button 
+                onClick={addOneRound}
+                style={{ flex: 1, padding: '12px', backgroundColor: '#f1f5f9', border: '1px dashed #cbd5e1', borderRadius: '8px', color: '#475569', fontWeight: '600', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
+              >
+                <PlusCircle size={16} /> +1 Round
+              </button>
+              <button 
+                onClick={duplicateSequence}
+                style={{ flex: 1, padding: '12px', backgroundColor: '#f1f5f9', border: '1px dashed #cbd5e1', borderRadius: '8px', color: '#475569', fontWeight: '600', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
+              >
+                <Copy size={16} /> x2 Duplicate All
+              </button>
+            </div>
           </div>
         )}
       </div>
@@ -379,7 +429,7 @@ export default function IntervalTimer() {
       {activeSequence.length > 0 && (
         <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
           
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '24px' }}>
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
             <input 
               type="text" 
               value={presetName} 
@@ -392,6 +442,19 @@ export default function IntervalTimer() {
             </button>
           </div>
 
+          {/* INFINITE LOOP TOGGLE */}
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px', backgroundColor: isLooping ? '#e0f2fe' : '#f8fafc', border: `1px solid ${isLooping ? '#bae6fd' : '#e2e8f0'}`, borderRadius: '8px', marginBottom: '24px', cursor: 'pointer', transition: 'all 0.2s' }}>
+            <input 
+              type="checkbox" 
+              checked={isLooping} 
+              onChange={(e) => setIsLooping(e.target.checked)} 
+              style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+            />
+            <span style={{ fontSize: '15px', fontWeight: '600', color: isLooping ? '#0284c7' : '#475569', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Repeat size={18} /> Loop Continuously
+            </span>
+          </label>
+
           <button 
             onClick={startTimer}
             style={{ width: '100%', backgroundColor: '#10b981', color: 'white', border: 'none', padding: '18px', borderRadius: '12px', fontSize: '20px', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '1px', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '12px', boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)' }}
@@ -400,7 +463,9 @@ export default function IntervalTimer() {
           </button>
         </div>
       )}
-
+      
+      {/* HELP BUTTON ADDED HERE */}
+      <HelpButton pageName="Interval Timer" position="bottom-right" />
     </div>
   );
 }

@@ -170,10 +170,12 @@ export const updateAssignment = async (athleteName, assignment) => {
 
 export const saveFullProgram = async (programRows) => {
   try {
-    let url = `${GOOGLE_SCRIPT_API_URL}?action=saveFullProgram&programData=${encodeURIComponent(JSON.stringify(programRows))}&t=${Date.now()}`;
-    let resp = await fetch(url);
-    let json = await resp.json();
-    return json;
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=saveFullProgram&t=${Date.now()}`;
+    let resp = await fetch(url, {
+      method: 'POST',
+      body: JSON.stringify({ programData: JSON.stringify(programRows) })
+    });
+    return await resp.json();
   } catch (err) {
     return { status: 'Error', message: err.message };
   }
@@ -237,8 +239,11 @@ export const fetchHelpVideos = async () => {
 
 export const updateProgram = async (oldName, programRows) => {
   try {
-    let url = `${GOOGLE_SCRIPT_API_URL}?action=updateProgram&oldName=${encodeURIComponent(oldName)}&programData=${encodeURIComponent(JSON.stringify(programRows))}&t=${Date.now()}`;
-    let resp = await fetch(url);
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=updateProgram&t=${Date.now()}`;
+    let resp = await fetch(url, {
+      method: 'POST',
+      body: JSON.stringify({ oldName: oldName, programData: JSON.stringify(programRows) })
+    });
     return await resp.json();
   } catch (err) {
     return { status: 'Error', message: err.message };

@@ -1,12 +1,10 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { Plus, Save, ArrowUp, ArrowDown, Trash2, Hammer, CheckCircle, X, Library as LibIcon } from 'lucide-react';
+import { Plus, Save, ArrowUp, ArrowDown, Trash2, Hammer, CheckCircle, X, Library as LibIcon, Settings } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
-// FIX: Imported the lightning fast pipes instead of fetchAllData
 import { fetchPrograms, fetchLibrary, saveFullProgram, updateProgram, getMediaType } from '../api';
 import './program-builder.css';
 import HelpButton from '../components/HelpButton';
 
-// Upgraded MediaPlayer to handle static images cleanly without breaking
 function MediaPlayer({ url, compact = false }) {
   if (!url) return null;
   const isImg = url.toLowerCase().includes('.png') || url.toLowerCase().includes('.jpg') || url.toLowerCase().includes('.jpeg');
@@ -25,6 +23,13 @@ function MediaPlayer({ url, compact = false }) {
   );
 }
 
+const DEFAULT_ADVANCED = {
+  execution: 'bilateral', 
+  setType: 'standard',    
+  metrics: { weight: true, time: false, distance: false },
+  targets: { time: '', distance: '' }
+};
+
 export default function ProgramBuilder() {
   const { userEmail: coachEmail, isLoading: authLoading } = useAuth();
   const [loading, setLoading] = useState(true);
@@ -34,12 +39,18 @@ export default function ProgramBuilder() {
   const [toast, setToast] = useState(null);
   const [saving, setSaving] = useState(false);
   const [draft, setDraft] = useState([]);
+  
   const [form, setForm] = useState({ name: '', category: '', notes: '', phase: 'Work Block', exercise: '', sets: '', reps: '', intensity: '', tempo: '', rest: '', privacyLevel: 'PRIVATE' });
+  const [advanced, setAdvanced] = useState(DEFAULT_ADVANCED);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+
   const [loadProgramName, setLoadProgramName] = useState('');
   const [mediaUrl, setMediaUrl] = useState('');
   const [showMediaInput, setShowMediaInput] = useState(false);
   const [mediaInputDraft, setMediaInputDraft] = useState('');
+  
   const draftRef = useRef(null);
+  const setsInputRef = useRef(null);
 
   useEffect(() => { loadData(); }, []);
   useEffect(() => { 
@@ -49,7 +60,6 @@ export default function ProgramBuilder() {
   }, [draft]);
 
   async function loadData() {
-    // Cache-first for instant data population if available
     const cached = localStorage.getItem('fp_builder_data_v2');
     if (cached) {
       try {
@@ -62,18 +72,12 @@ export default function ProgramBuilder() {
       } catch {}
     }
 
-    // SILENT AUTO-RETRY LOGIC (The Shock Absorber)
     let attempts = 0;
     let success = false;
 
     while (attempts < 3 && !success) {
       try {
-        // FIX: Using the fast pipes instead of the heavy fetchAllData
-        const [progRes, libRes] = await Promise.all([
-          fetchPrograms(),
-          fetchLibrary()
-        ]);
-        
+        const [progRes, libRes] = await Promise.all([ fetchPrograms(), fetchLibrary() ]);
         if (progRes.error) throw new Error(progRes.error); 
         
         setPrograms(progRes.programs || []);
@@ -101,18 +105,12 @@ export default function ProgramBuilder() {
 
   async function refreshData() {
     try {
-      const [progRes, libRes] = await Promise.all([
-        fetchPrograms(),
-        fetchLibrary()
-      ]);
-      
+      const [progRes, libRes] = await Promise.all([ fetchPrograms(), fetchLibrary() ]);
       if (!progRes.error && !libRes.error) {
         setPrograms(progRes.programs || []);
         setLibrary(libRes.library || []);
         localStorage.setItem('fp_builder_data_v2', JSON.stringify({
-          programs: progRes.programs,
-          library: libRes.library,
-          cachedAt: new Date().toISOString()
+          programs: progRes.programs, library: libRes.library, cachedAt: new Date().toISOString()
         }));
       }
     } catch {}
@@ -120,7 +118,6 @@ export default function ProgramBuilder() {
 
   const exerciseList = useMemo(() => {
     if (!library.length) return [];
-    
     const names = library.slice(1)
       .filter(row => {
         const owner = String(row[5] || '').trim();
@@ -130,7 +127,6 @@ export default function ProgramBuilder() {
       })
       .map(r => String(r[0] || '').trim())
       .filter(Boolean);
-      
     return [...new Set(names)].sort();
   }, [library, coachEmail]);
 
@@ -154,14 +150,27 @@ export default function ProgramBuilder() {
     setTimeout(() => setToast(null), 3500);
   }
 
+  function handleAdvancedMetricToggle(metric) {
+    setAdvanced(prev => ({
+      ...prev,
+      metrics: { ...prev.metrics, [metric]: !prev.metrics[metric] }
+    }));
+  }
+
   function addDraftExercise() {
     if (!form.exercise) { showToast('Please select an exercise.', true); return; }
-    if (!form.sets || !form.reps) { showToast('Sets and Reps are required.', true); return; }
+    if (!form.sets) { showToast('Sets are required.', true); return; }
+    if (!form.reps && !advanced.metrics.time && !advanced.metrics.distance) { 
+      showToast('Enter Reps or select Time/Distance in Advanced Options.', true); return; 
+    }
+    
     setDraft([...draft, {
       phase: form.phase, exercise: form.exercise, sets: form.sets,
-      reps: form.reps, intensity: form.intensity, tempo: form.tempo, rest: form.rest
+      reps: form.reps, intensity: form.intensity, tempo: form.tempo, rest: form.rest,
+      advanced: JSON.parse(JSON.stringify(advanced))
     }]);
-    setForm(f => ({ ...f, exercise: '' }));
+    
+    showToast('Added! Settings kept for next exercise.');
   }
 
   function moveItem(i, dir) {
@@ -176,41 +185,39 @@ export default function ProgramBuilder() {
     setDraft(draft.filter((_, idx) => idx !== i));
   }
 
-  // FIX: Implemented correct "Save As" and "Edit" logic
   async function handleSaveProgram() {
     if (!form.name) { showToast('Program Name is required.', true); return; }
     if (draft.length === 0) { showToast('Draft is empty. Add movements first.', true); return; }
     setSaving(true);
     
-    const rows = draft.map(i => [form.name, form.category, i.phase, i.exercise, i.sets, i.reps, i.intensity, i.tempo, i.rest, form.notes, form.privacyLevel, coachEmail, mediaUrl]);
+    const rows = draft.map(i => [
+      form.name, form.category, i.phase, i.exercise, i.sets, i.reps, 
+      i.intensity, i.tempo, i.rest, form.notes, form.privacyLevel, coachEmail, mediaUrl,
+      JSON.stringify(i.advanced || DEFAULT_ADVANCED)
+    ]);
     
     try {
       let res;
-      
-      // Scenario 1: They loaded a program, but CHANGED the name (Save As / Duplicate)
       if (loadProgramName && loadProgramName !== form.name) {
-        // Prevent accidental duplicates if they typed a name that already exists
-        if (uniqueProgramNames.includes(form.name)) {
-          res = await updateProgram(form.name, rows); 
-        } else {
-          res = await saveFullProgram(rows); // Create brand new! Leaves old program untouched.
-        }
-      } 
-      // Scenario 2: Standard Editing or Creating from scratch
-      else {
-        if (uniqueProgramNames.includes(form.name)) {
-          res = await updateProgram(form.name, rows); // Overwrite existing
-        } else {
-          res = await saveFullProgram(rows); // Create brand new
-        }
+        if (uniqueProgramNames.includes(form.name)) { res = await updateProgram(form.name, rows); } 
+        else { res = await saveFullProgram(rows); }
+      } else {
+        if (uniqueProgramNames.includes(form.name)) { res = await updateProgram(form.name, rows); } 
+        else { res = await saveFullProgram(rows); }
       }
 
       if (res.status === 'Success') {
+        localStorage.removeItem('fp_program_data');
+        localStorage.removeItem('fp_builder_data_v2');
+
         showToast(loadProgramName && loadProgramName !== form.name ? 'Saved as new program!' : 'Program saved!');
         setDraft([]);
         setForm(f => ({ ...f, name: '', notes: '', privacyLevel: 'PRIVATE' }));
         setLoadProgramName('');
         setMediaUrl('');
+        setAdvanced(DEFAULT_ADVANCED);
+        
+        await new Promise(resolve => setTimeout(resolve, 1500));
         await refreshData();
       } else { 
         showToast('Save failed', true); 
@@ -229,17 +236,28 @@ export default function ProgramBuilder() {
       return name === loadProgramName && owner === coachEmail;
     });
     if (programRows.length === 0) { showToast('Program not found or not owned by you.', true); return; }
-    const loadedDraft = programRows.map(row => ({
-      phase: String(row[2] || 'Work Block').trim(),
-      exercise: String(row[3] || '').trim(),
-      sets: String(row[4] || '1').trim(),
-      reps: String(row[5] || '1').trim(),
-      intensity: String(row[6] || '').trim(),
-      tempo: String(row[7] || '').trim(),
-      rest: String(row[8] || '').trim()
-    }));
+    
+    const loadedDraft = programRows.map(row => {
+      let loadedAdvanced = DEFAULT_ADVANCED;
+      try {
+        if (row.length > 13 && row[13]) { loadedAdvanced = JSON.parse(String(row[13])); }
+      } catch (e) {}
+
+      return {
+        phase: String(row[2] || 'Work Block').trim(),
+        exercise: String(row[3] || '').trim(),
+        sets: String(row[4] || '1').trim(),
+        reps: String(row[5] || '1').trim(),
+        intensity: String(row[6] || '').trim(),
+        tempo: String(row[7] || '').trim(),
+        rest: String(row[8] || '').trim(),
+        advanced: loadedAdvanced
+      };
+    });
+
     const firstRow = programRows[0];
     const loadedMediaUrl = (firstRow.length > 12 && String(firstRow[12]).trim()) ? String(firstRow[12]).trim() : '';
+    
     setForm(f => ({
       ...f,
       name: String(firstRow[0] || '').trim(),
@@ -259,6 +277,42 @@ export default function ProgramBuilder() {
 
   return (
     <div className="pb-wrapper">
+      <style>{`
+        .advanced-drawer {
+          background-color: #f8fafc;
+          border: 1px solid #e2e8f0;
+          border-radius: 8px;
+          padding: 16px;
+          margin-top: 12px;
+          box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);
+        }
+        .uni-dot {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          background-color: #334155;
+          color: white;
+          font-weight: 800;
+          font-size: 10px;
+          width: 20px;
+          height: 20px;
+          border-radius: 50%;
+          margin-left: 8px;
+          vertical-align: middle;
+        }
+        .superset-bracket {
+          position: absolute;
+          left: -12px;
+          top: -10px;
+          bottom: -10px;
+          width: 8px;
+          border-left: 3px solid #008ed3;
+          border-top: 3px solid #008ed3;
+          border-bottom: 3px solid #008ed3;
+          border-radius: 4px 0 0 4px;
+        }
+      `}</style>
+
       <h2 style={{ fontSize: '24px', color: '#008ed3', marginBottom: '16px', fontWeight: '700' }}>Program Builder</h2>
       
       {error && <p style={{ color: '#dc3545', marginBottom: '16px', fontWeight: 'bold' }}>{error}</p>}
@@ -270,15 +324,8 @@ export default function ProgramBuilder() {
             <label className="pb-label">Load Existing Program (Your Own):</label>
             <div className="pb-load-row">
               <div>
-                <select 
-                  className="pb-select" 
-                  value={loadProgramName} 
-                  onChange={e => setLoadProgramName(e.target.value)}
-                  disabled={loading} 
-                >
-                  {loading ? (
-                    <option value="">— Loading your programs... —</option>
-                  ) : (
+                <select className="pb-select" value={loadProgramName} onChange={e => setLoadProgramName(e.target.value)} disabled={loading}>
+                  {loading ? ( <option value="">— Loading your programs... —</option> ) : (
                     <>
                       <option value="">— Select a program to load —</option>
                       {uniqueProgramNames.map(p => <option key={p} value={p}>{p}</option>)}
@@ -305,14 +352,7 @@ export default function ProgramBuilder() {
           <div className="pb-field-group">
             <div className="pb-label-row">
               <label className="pb-label">Coach's Notes (Optional):</label>
-              <button
-                type="button"
-                className={`pb-media-inline-btn${mediaUrl ? ' has-media' : ''}`}
-                onClick={() => {
-                  setMediaInputDraft(mediaUrl);
-                  setShowMediaInput(true);
-                }}
-              >
+              <button type="button" className={`pb-media-inline-btn${mediaUrl ? ' has-media' : ''}`} onClick={() => { setMediaInputDraft(mediaUrl); setShowMediaInput(true); }}>
                 {mediaUrl ? '✓ Media' : '+ Media'}
               </button>
             </div>
@@ -331,10 +371,6 @@ export default function ProgramBuilder() {
               <option value="PRIVATE">Private (only you can see)</option>
               <option value="PUBLIC">Public (all coaches can use as template)</option>
             </select>
-            <p className="pb-hint" style={{ fontSize: 11, color: '#888', marginTop: 4 }}>
-              {form.privacyLevel === 'PRIVATE' && 'Only visible to you. Use Program Library to assign to athletes.'}
-              {form.privacyLevel === 'PUBLIC' && 'Visible to all coaches who can use it as a template.'}
-            </p>
           </div>
 
           <h3 className="pb-section-title">2. Add Movement</h3>
@@ -346,13 +382,21 @@ export default function ProgramBuilder() {
               <option value="Cool Down">Cool Down</option>
             </select>
           </div>
+          
           <div className="pb-field-group">
             <label className="pb-label">Select Exercise from Library:</label>
             <input
               className="pb-input"
               list="pb-exercise-list"
               value={form.exercise}
-              onChange={e => setForm({...form, exercise: e.target.value})}
+              onFocus={() => setForm({...form, exercise: ''})}
+              onChange={e => {
+                const val = e.target.value;
+                setForm({...form, exercise: val});
+                if (exerciseList.includes(val)) {
+                  setTimeout(() => setsInputRef.current?.focus(), 10);
+                }
+              }}
               autoComplete="off"
               placeholder={loading ? "Loading exercise library..." : "Type to search exercises..."}
             />
@@ -362,7 +406,7 @@ export default function ProgramBuilder() {
           </div>
           
           <div className="pb-field-row">
-            <div><label className="pb-label">Sets:</label><input type="number" className="pb-input" value={form.sets} onChange={e => setForm({...form, sets: e.target.value})} placeholder="e.g. 1" /></div>
+            <div><label className="pb-label">Sets:</label><input ref={setsInputRef} type="number" className="pb-input" value={form.sets} onChange={e => setForm({...form, sets: e.target.value})} placeholder="e.g. 1" /></div>
             <div><label className="pb-label">Reps:</label><input className="pb-input" value={form.reps} onChange={e => setForm({...form, reps: e.target.value})} placeholder="e.g. 5" /></div>
           </div>
           <div className="pb-field-row">
@@ -370,6 +414,65 @@ export default function ProgramBuilder() {
             <div><label className="pb-label">Tempo:</label><input className="pb-input" value={form.tempo} onChange={e => setForm({...form, tempo: e.target.value})} placeholder="e.g. 30X0" /></div>
             <div><label className="pb-label">Rest:</label><input className="pb-input" value={form.rest} onChange={e => setForm({...form, rest: e.target.value})} placeholder="90s" /></div>
           </div>
+
+          <div style={{ marginTop: '12px', marginBottom: '20px' }}>
+            <button 
+              onClick={() => setShowAdvanced(!showAdvanced)}
+              style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'none', border: 'none', color: '#64748b', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}
+            >
+              <Settings size={16} /> {showAdvanced ? 'Hide Advanced Options' : 'Advanced Options (Supersets, Targets, Unilateral)'}
+            </button>
+            
+            {showAdvanced && (
+              <div className="advanced-drawer">
+                <div style={{ display: 'flex', gap: '16px', marginBottom: '16px' }}>
+                  <div style={{ flex: 1 }}>
+                    <label className="pb-label">Execution:</label>
+                    <select className="pb-select" value={advanced.execution} onChange={e => setAdvanced({...advanced, execution: e.target.value})}>
+                      <option value="bilateral">Bilateral (Standard)</option>
+                      <option value="uni-both">Unilateral (Left & Right)</option>
+                      <option value="uni-left">Unilateral (Left Only)</option>
+                      <option value="uni-right">Unilateral (Right Only)</option>
+                    </select>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label className="pb-label">Set Type:</label>
+                    <select className="pb-select" value={advanced.setType} onChange={e => setAdvanced({...advanced, setType: e.target.value})}>
+                      <option value="standard">Standard Set</option>
+                      <option value="superset">Superset (Links to above)</option>
+                      <option value="drop">Drop Set</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="pb-label" style={{ marginBottom: '8px', display: 'block' }}>Metrics to Track (What the athlete logs):</label>
+                  <div style={{ display: 'flex', gap: '16px', marginBottom: '12px' }}>
+                    <label style={{ fontSize: '14px', color: '#334155' }}><input type="checkbox" checked={advanced.metrics.weight} onChange={() => handleAdvancedMetricToggle('weight')} /> Weight (kg)</label>
+                    <label style={{ fontSize: '14px', color: '#334155' }}><input type="checkbox" checked={advanced.metrics.time} onChange={() => handleAdvancedMetricToggle('time')} /> Time</label>
+                    <label style={{ fontSize: '14px', color: '#334155' }}><input type="checkbox" checked={advanced.metrics.distance} onChange={() => handleAdvancedMetricToggle('distance')} /> Distance</label>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '16px' }}>
+                  {advanced.metrics.time && (
+                    <div style={{ flex: 1 }}>
+                      <label className="pb-label">Target Time (e.g. "10s"):</label>
+                      <input className="pb-input" value={advanced.targets.time} onChange={e => setAdvanced({...advanced, targets: {...advanced.targets, time: e.target.value}})} placeholder="10s" />
+                    </div>
+                  )}
+                  {advanced.metrics.distance && (
+                    <div style={{ flex: 1 }}>
+                      <label className="pb-label">Target Distance (e.g. "500m"):</label>
+                      <input className="pb-input" value={advanced.targets.distance} onChange={e => setAdvanced({...advanced, targets: {...advanced.targets, distance: e.target.value}})} placeholder="500m" />
+                    </div>
+                  )}
+                </div>
+
+              </div>
+            )}
+          </div>
+
           <button className="pb-add-btn" onClick={addDraftExercise}>
             <Plus size={16} /> Add to Draft
           </button>
@@ -377,20 +480,44 @@ export default function ProgramBuilder() {
         
         <div className="pb-right">
           <h3 className="pb-section-title" style={{ textAlign: 'center', textTransform: 'uppercase', color: '#495057' }}>Live Draft View</h3>
-           <div className="pb-draft-list" ref={draftRef} style={{ maxHeight: '600px', overflowY: 'auto' }}>
+           <div className="pb-draft-list" ref={draftRef} style={{ maxHeight: '600px', overflowY: 'auto', paddingLeft: '16px' }}>
             {draft.length === 0 ? (
               <p className="pb-draft-empty">Draft is empty.</p>
             ) : draft.map((item, i) => (
-              <div key={i} className="pb-draft-card">
+              <div key={i} className="pb-draft-card" style={{ position: 'relative' }}>
+                
+                {item.advanced?.setType === 'superset' && <div className="superset-bracket"></div>}
+
                 <div className="pb-draft-info">
-                  <span className="pb-phase-tag" style={{ background: phaseColors[item.phase] || '#008ed3' }}>{item.phase}</span>
-                  <h4 className="pb-draft-name">{item.exercise}</h4>
+                  <div style={{ display: 'flex', alignItems: 'center', marginBottom: '4px' }}>
+                    <span className="pb-phase-tag" style={{ background: phaseColors[item.phase] || '#008ed3', marginBottom: 0, marginRight: '8px' }}>{item.phase}</span>
+                    
+                    {item.advanced?.execution === 'uni-both' && <span className="uni-dot" title="Unilateral">U</span>}
+                    {item.advanced?.execution === 'uni-left' && <span className="uni-dot" title="Left Only">L</span>}
+                    {item.advanced?.execution === 'uni-right' && <span className="uni-dot" title="Right Only">R</span>}
+                  </div>
+
+                  <h4 className="pb-draft-name" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    {item.advanced?.setType === 'superset' && <span title="Superset">🔗</span>}
+                    {item.exercise}
+                    {item.advanced?.setType === 'drop' && (
+                      <img src="/drop-set-icon.png" alt="Drop Set 📉" style={{ width: '20px', height: '20px', marginLeft: '4px', verticalAlign: 'middle' }} onError={(e) => { e.target.style.display='none'; e.target.insertAdjacentText('afterend', '📉'); }} />
+                    )}
+                  </h4>
+                  
                   <p className="pb-draft-detail">
                     {item.sets} Sets | {item.reps} Reps
                     {item.intensity ? ` | ${item.intensity}%` : ''}
                     {item.tempo ? ` | Tempo: ${item.tempo}` : ''}
                     {item.rest ? ` | Rest: ${item.rest}` : ''}
                   </p>
+                  
+                  {(item.advanced?.targets?.time || item.advanced?.targets?.distance) && (
+                    <p style={{ fontSize: '12px', color: '#0ea5e9', fontWeight: '600', margin: '4px 0 0 0' }}>
+                      Targets: {item.advanced.targets.time && `⏱️ ${item.advanced.targets.time}`} {item.advanced.targets.distance && `📏 ${item.advanced.targets.distance}`}
+                    </p>
+                  )}
+
                 </div>
                 <div className="pb-draft-controls">
                   <div className="pb-draft-btn-row">
@@ -413,44 +540,11 @@ export default function ProgramBuilder() {
         <div className="pb-media-modal-overlay" onClick={() => setShowMediaInput(false)}>
           <div className="pb-media-modal" onClick={e => e.stopPropagation()}>
             <h4>{mediaUrl ? 'Edit Media Link' : 'Add Media Link'}</h4>
-            <input
-              type="url"
-              className="pb-media-input"
-              placeholder="Paste video or audio file URL (e.g., https://...mp4)"
-              value={mediaInputDraft}
-              onChange={(e) => setMediaInputDraft(e.target.value)}
-            />
+            <input type="url" className="pb-media-input" placeholder="Paste video or audio file URL" value={mediaInputDraft} onChange={(e) => setMediaInputDraft(e.target.value)} />
             <div className="pb-media-input-actions">
-              <button
-                type="button"
-                className="pb-media-save-btn"
-                onClick={() => {
-                  setMediaUrl(mediaInputDraft.trim());
-                  setShowMediaInput(false);
-                }}
-              >
-                Set Link
-              </button>
-              {mediaUrl && (
-                <button
-                  type="button"
-                  className="pb-media-remove-btn"
-                  onClick={() => {
-                    setMediaUrl('');
-                    setMediaInputDraft('');
-                    setShowMediaInput(false);
-                  }}
-                >
-                  Remove
-                </button>
-              )}
-              <button
-                type="button"
-                className="pb-media-cancel-btn"
-                onClick={() => setShowMediaInput(false)}
-              >
-                Cancel
-              </button>
+              <button type="button" className="pb-media-save-btn" onClick={() => { setMediaUrl(mediaInputDraft.trim()); setShowMediaInput(false); }}>Set Link</button>
+              {mediaUrl && <button type="button" className="pb-media-remove-btn" onClick={() => { setMediaUrl(''); setMediaInputDraft(''); setShowMediaInput(false); }}>Remove</button>}
+              <button type="button" className="pb-media-cancel-btn" onClick={() => setShowMediaInput(false)}>Cancel</button>
             </div>
           </div>
         </div>
@@ -465,5 +559,3 @@ export default function ProgramBuilder() {
     </div>
   );
 }
-
-
