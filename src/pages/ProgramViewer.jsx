@@ -34,48 +34,109 @@ function extractMediaUrl(rawVid) {
   return '';
 }
 
+// =====================================
+// TIME & DISTANCE PARSING UTILS
+// =====================================
+function parseTimeToSeconds(str) {
+  if (!str) return 0;
+  const colonMatch = str.match(/(\d+):(\d+)/);
+  if (colonMatch) return parseInt(colonMatch[1]) * 60 + parseInt(colonMatch[2]);
+  const secMatch = str.match(/(\d+(?:\.\d+)?)\s*s/i);
+  if (secMatch) return parseFloat(secMatch[1]);
+  const rawNum = parseFloat(str);
+  if (!isNaN(rawNum)) return rawNum;
+  return 0;
+}
+
+function formatSecondsToTime(sec) {
+  if (sec < 60) return Math.round(sec * 10) / 10 + 's';
+  const m = Math.floor(sec / 60);
+  const s = Math.round(sec % 60);
+  return `${m}:${s < 10 ? '0' : ''}${s}`;
+}
+
+function parseDistance(str) {
+  if (!str) return { val: 0, unit: 'm' };
+  const match = str.match(/(\d+(?:\.\d+)?)\s*(m|km)/i);
+  if (match) return { val: parseFloat(match[1]), unit: match[2].toLowerCase() };
+  const rawNum = parseFloat(str);
+  if (!isNaN(rawNum)) return { val: rawNum, unit: 'm' };
+  return { val: 0, unit: 'm' };
+}
+
+// =====================================
+// UNIVERSAL TARGET LOAD ENGINE
+// =====================================
 function calculateTargetLoad(libraryData, athleteMaxes, lastWeights, exerciseName, reps, intensity) {
-  if (!intensity || isNaN(parseFloat(intensity)) || parseFloat(intensity) <= 0) return { text: '', val: '', source: 'none' };
+  if (!intensity || isNaN(parseFloat(intensity)) || parseFloat(intensity) <= 0) return { text: '', val: '', source: 'none', metric: '' };
 
   const safeReps = parseFloat(reps) || 1;
   const intensityDecimal = parseFloat(intensity) / 100;
 
   const exInfo = libraryData.find(ex => normalizeString(ex[0]) === normalizeString(exerciseName));
-  const isFormula = exInfo && String(exInfo[3] || '').trim().toLowerCase() === 'yes';
+  
+  // Read Column D to determine the calculation type
+  let calcType = String(exInfo?.[3] || '').trim().toLowerCase();
+  if (calcType === 'yes') calcType = 'weight'; // Legacy fallback
 
-  let oneRM = 0;
   let source = 'none';
+  let targetText = '';
+  let targetVal = '';
+  let metricType = calcType;
 
-  if (isFormula) {
+  // 1. TIME MATH (Inverse Division)
+  if (calcType === 'time') {
+    const lastEntry = lastWeights[normalizeString(exerciseName)];
+    if (lastEntry && lastEntry.repsString) {
+      let prevSeconds = parseTimeToSeconds(lastEntry.repsString);
+      if (prevSeconds > 0) {
+        const targetSeconds = prevSeconds / intensityDecimal; // Inverse math!
+        targetText = formatSecondsToTime(targetSeconds);
+        targetVal = targetText;
+        source = 'history';
+      }
+    }
+  } 
+  // 2. DISTANCE MATH (Standard Multiplication)
+  else if (calcType === 'distance') {
+    const lastEntry = lastWeights[normalizeString(exerciseName)];
+    if (lastEntry && lastEntry.repsString) {
+      let prevDist = parseDistance(lastEntry.repsString);
+      if (prevDist.val > 0) {
+        const targetDist = prevDist.val * intensityDecimal;
+        targetText = (Math.round(targetDist * 10) / 10) + prevDist.unit;
+        targetVal = targetText;
+        source = 'history';
+      }
+    }
+  }
+  // 3. WEIGHT MATH (Epley Formula)
+  else if (calcType === 'weight') {
+    let oneRM = 0;
     const maxEntry = athleteMaxes[normalizeString(exerciseName)];
-    if (maxEntry && typeof maxEntry === 'object' && maxEntry.oneRM > 0) {
+    
+    if (maxEntry && maxEntry.oneRM > 0) {
       oneRM = maxEntry.oneRM;
       source = '1rm';
-    } else if (maxEntry && typeof maxEntry === 'number' && maxEntry > 0) {
-      oneRM = maxEntry;
-      source = '1rm';
     } else {
-      return { text: '', val: '', source: 'none' }; 
+      const lastEntry = lastWeights[normalizeString(exerciseName)];
+      if (lastEntry && lastEntry.weight > 0) {
+        const lastWt = parseFloat(lastEntry.weight);
+        let lastRepsNum = parseFloat(lastEntry.repsString) || 1;
+        oneRM = lastWt * (1 + 0.0333 * lastRepsNum);
+        source = 'history';
+      }
     }
-  } else {
-    const lastEntry = lastWeights[normalizeString(exerciseName)];
-    if (lastEntry && lastEntry.weight) {
-      const lastWt = parseFloat(lastEntry.weight);
-      const lastReps = parseFloat(lastEntry.reps) || 1;
-      oneRM = lastWt * (1 + 0.0333 * lastReps);
-      source = 'history';
-    } else {
-      return { text: '', val: '', source: 'none' }; 
+    
+    if (oneRM > 0) {
+      const repMax = oneRM / (1 + 0.0333 * safeReps);
+      const target = repMax * intensityDecimal;
+      targetVal = Math.round(target);
+      targetText = targetVal + 'kg';
     }
   }
 
-  if (!oneRM) return { text: '', val: '', source: 'none' };
-  const repMax = oneRM / (1 + 0.0333 * safeReps);
-  const target = repMax * intensityDecimal;
-  if (isNaN(target)) return { text: '', val: '', source: 'none' };
-  
-  const targetVal = Math.round(target);
-  return { text: targetVal + ' kg', val: targetVal, source: source };
+  return { text: targetText, val: targetVal, source: source, metric: metricType };
 }
 
 function findAthleteRowByEmail(athletesData, email) {
@@ -132,7 +193,7 @@ export default function ProgramViewer() {
     return () => clearInterval(interval);
   }, [timerActive, timeLeft]);
 
-  const formatTime = (seconds) => {
+  const formatTimeStr = (seconds) => {
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
     return `${m}:${s < 10 ? '0' : ''}${s}`;
@@ -140,11 +201,10 @@ export default function ProgramViewer() {
 
   const adjustTimer = (amount) => { setTimeLeft((prev) => Math.max(0, prev + amount)); };
 
-  // Timer Edit Logic
   const handleTimerClick = () => {
     setTimerActive(false);
     setIsEditingTimer(true);
-    setTimerInputValue(formatTime(timeLeft));
+    setTimerInputValue(formatTimeStr(timeLeft));
   };
 
   const handleTimerSubmit = (e) => {
@@ -332,7 +392,12 @@ export default function ProgramViewer() {
            uniqueExercises.forEach(exName => {
              const normEx = normalizeString(exName);
              const found = logData.find(entry => normalizeString(entry.ex) === normEx);
-             if (found) { lastWeights[normEx] = { weight: found.wt || 0, reps: found.reps || 0 }; }
+             if (found) { 
+               lastWeights[normEx] = { 
+                 weight: found.wt || 0, 
+                 repsString: String(found.reps || '') 
+               }; 
+             }
            });
         }
       } catch (e) {}
@@ -404,12 +469,13 @@ export default function ProgramViewer() {
         const key = group.id + '_' + idx;
         const input = inputValues[key] || {};
         
-        const targetData = targetCalcs[key] || { val: '' };
+        const targetData = targetCalcs[key] || { val: '', metric: '' };
         
-        const wt = input.wt || (metrics.weight && targetData.val ? targetData.val : '');
+        // Auto-save logic routes to the correct metric
+        const wt = input.wt || (metrics.weight ? (parseFloat(targets.weight) || (targetData.metric === 'weight' ? targetData.val : '')) : '');
         const rp = input.reps || set.reps || '';
-        const tm = input.time || targets.time || '';
-        const dst = input.dist || targets.distance || '';
+        const tm = input.time || targets.time || (targetData.metric === 'time' ? targetData.val : '');
+        const dst = input.dist || targets.distance || (targetData.metric === 'distance' ? targetData.val : '');
 
         if (!wt && !rp && !tm && !dst) return;
 
@@ -436,6 +502,17 @@ export default function ProgramViewer() {
     } catch (err) { alert('Network error. Please try again.'); }
     setSaving(false);
   }
+
+  // Input Field Class Routing
+  const getInputClass = (targetData, inputType, overrideExists) => {
+    let base = "pv-input pv-input-text";
+    if (inputType === 'weight') base = "pv-input pv-input-kg";
+    
+    if (targetData.metric === inputType && targetData.source !== 'none' && !overrideExists) {
+      return `${base} ${targetData.source === 'history' ? 'pv-input-history' : 'pv-input-calc'}`;
+    }
+    return base;
+  };
 
   if (loading) { return ( <div className="pv-container"><div className="pv-body"><h2 style={{ fontSize: '24px', color: '#008ed3', marginBottom: '16px', fontWeight: '700' }}>Today's Workout</h2><p className="pv-placeholder">Loading program data...</p></div><HelpButton pageName="Program View" position="bottom-right" /></div> ); }
   if (error) { return ( <div className="pv-container"><div className="pv-body"><h2 style={{ fontSize: '24px', color: '#008ed3', marginBottom: '16px', fontWeight: '700' }}>Today's Workout</h2><p className="pv-error">{error}</p></div><HelpButton pageName="Program View" position="bottom-right" /></div> ); }
@@ -491,7 +568,6 @@ export default function ProgramViewer() {
             <div className="pv-timer-divider"></div>
             <button className="pv-timer-btn" onClick={() => adjustTimer(-15)} title="-15s"><Minus size={16} /></button>
             
-            {/* EDITABLE TEXT BOX LOGIC */}
             {isEditingTimer ? (
               <form onSubmit={handleTimerSubmit} style={{ margin: 0, padding: 0, display: 'flex' }}>
                 <input 
@@ -510,7 +586,7 @@ export default function ProgramViewer() {
                 style={{ cursor: 'pointer' }}
                 title="Click to edit time"
               >
-                {formatTime(timeLeft)}
+                {formatTimeStr(timeLeft)}
               </div>
             )}
 
@@ -569,7 +645,6 @@ export default function ProgramViewer() {
             {programMediaUrl && showProgramMedia && (
               <div className="pv-media-player-wrap">
                 {getYouTubeId(programMediaUrl) ? (
-                  // FIX: 16:9 RESPONSIVE WRAPPER FOR YOUTUBE COACH NOTES
                   <div style={{ position: 'relative', paddingBottom: '56.25%', height: 0, overflow: 'hidden', borderRadius: '8px' }}>
                     <iframe src={'https://www.youtube.com/embed/' + getYouTubeId(programMediaUrl) + '?autoplay=1&rel=0'} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 0 }} allowFullScreen title="Coach Program Media" />
                   </div>
@@ -619,7 +694,6 @@ export default function ProgramViewer() {
                     {hasMedia && expandedVideos.has(group.id) && (
                       <div className="pv-video-container" style={{ padding: isImage ? '10px' : '0' }}>
                         {group.ytId ? ( 
-                          // FIX: 16:9 RESPONSIVE WRAPPER FOR EXERCISE YOUTUBE VIDEOS
                           <div style={{ position: 'relative', paddingBottom: '56.25%', height: 0, overflow: 'hidden', borderRadius: '4px' }}>
                             <iframe src={`https://www.youtube.com/embed/${group.ytId}?autoplay=1&rel=0`} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 0 }} allowFullScreen title={group.name} />
                           </div>
@@ -632,12 +706,22 @@ export default function ProgramViewer() {
                       const inputKey = group.id + '_' + idx;
                       const input = inputValues[inputKey] || {};
                       
-                      const targetData = targetCalcs[inputKey] || { text: '', val: '', source: 'none' };
-                      let customTargetDisplay = '';
-                      if (targets.time) customTargetDisplay += `⏱️ ${targets.time} `;
-                      if (targets.distance) customTargetDisplay += `📏 ${targets.distance}`;
+                      const targetData = targetCalcs[inputKey] || { text: '', val: '', source: 'none', metric: '' };
                       
-                      const inputClass = targetData.source === 'history' ? 'pv-input pv-input-kg pv-input-history' : 'pv-input pv-input-kg pv-input-calc';
+                      let customTargetDisplay = '';
+                      if (targets.weight) customTargetDisplay += `🏋️ ${targets.weight} `;
+                      if (targets.time) customTargetDisplay += `⏱️ ${targets.time} `;
+                      if (targets.distance) customTargetDisplay += `📏 ${targets.distance} `;
+
+                      // Only display calculated string if a custom target wasn't explicitly typed for that metric
+                      let calcDisplay = '';
+                      if (targetData.text && !targets[targetData.metric]) {
+                        if (targetData.metric === 'weight') calcDisplay = `🏋️ ${targetData.text}`;
+                        if (targetData.metric === 'time') calcDisplay = `⏱️ ${targetData.text}`;
+                        if (targetData.metric === 'distance') calcDisplay = `📏 ${targetData.text}`;
+                      }
+
+                      const finalTargetDisplay = (customTargetDisplay + calcDisplay).trim();
 
                       return (
                         <div key={idx} className="pv-set-row">
@@ -652,10 +736,10 @@ export default function ProgramViewer() {
                               </div>
                             )}
                             
-                            {(customTargetDisplay || targetData.text) && (
+                            {finalTargetDisplay && (
                               <div className="pv-target">
                                 Target: <span className="pv-target-value" style={{ color: section.color }}>
-                                  {customTargetDisplay ? customTargetDisplay : targetData.text}
+                                  {finalTargetDisplay}
                                 </span>
                               </div>
                             )}
@@ -671,21 +755,21 @@ export default function ProgramViewer() {
                             {metrics.distance && (
                               <div className="pv-input-group">
                                 <span className="pv-input-label">dist</span>
-                                <input type="text" className="pv-input pv-input-text" placeholder={targets.distance || '--'} value={input.dist || ''} onChange={e => handleInputChange(group.id, idx, 'dist', e.target.value)} />
+                                <input type="text" className={getInputClass(targetData, 'distance', targets.distance)} placeholder={targets.distance || (targetData.metric === 'distance' ? targetData.val : '--')} value={input.dist || ''} onChange={e => handleInputChange(group.id, idx, 'dist', e.target.value)} />
                               </div>
                             )}
 
                             {metrics.time && (
                               <div className="pv-input-group">
                                 <span className="pv-input-label">time</span>
-                                <input type="text" className="pv-input pv-input-text" placeholder={targets.time || '--'} value={input.time || ''} onChange={e => handleInputChange(group.id, idx, 'time', e.target.value)} />
+                                <input type="text" className={getInputClass(targetData, 'time', targets.time)} placeholder={targets.time || (targetData.metric === 'time' ? targetData.val : '--')} value={input.time || ''} onChange={e => handleInputChange(group.id, idx, 'time', e.target.value)} />
                               </div>
                             )}
 
                             {metrics.weight && (
                               <div className="pv-input-group">
                                 <span className="pv-input-label">kg</span>
-                                <input type="number" className={inputClass} placeholder={targetData.val || '--'} value={input.wt || ''} onChange={e => handleInputChange(group.id, idx, 'wt', e.target.value)} />
+                                <input type="number" className={getInputClass(targetData, 'weight', targets.weight)} placeholder={parseFloat(targets.weight) || (targetData.metric === 'weight' ? targetData.val : '--')} value={input.wt || ''} onChange={e => handleInputChange(group.id, idx, 'wt', e.target.value)} />
                               </div>
                             )}
 
@@ -718,3 +802,4 @@ export default function ProgramViewer() {
     </div>
   );
 }
+

@@ -2,9 +2,13 @@ import { useState, useEffect, useMemo } from 'react';
 import { Search, Trash2, UserPlus, CheckCircle, X, Layers, Dumbbell, Activity, Lock, Globe } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
-// FIX: Actually imported the new fast pipes so the app doesn't crash!
 import { fetchPrograms, fetchAthletes, deleteProgram, assignProgramBulk } from '../api';
 import './program-library.css';
+
+// ==========================================
+// ADMIN "GOD MODE" EMAIL
+// ==========================================
+const ADMIN_EMAIL = 'crusty@hotmail.com';
 
 export default function ProgramLibrary() {
   const [loading, setLoading] = useState(true);
@@ -379,37 +383,51 @@ export default function ProgramLibrary() {
 
         {!loading && !error && (
           <div className="pl-program-list">
-            {filteredPrograms.map(program => (
-              <div key={program.name} className="pl-program-card">
-                <div className="pl-program-header" onClick={() => toggleExpand(program.name)}>
-                  <div>
-                    <div className="pl-program-name">{program.name}</div>
-                    
-                    <div className="pl-program-meta">
-                      {program.categoryName && (
-                        <span className="pl-meta-badge"><Layers size={10} /> {program.categoryName}</span>
-                      )}
-                      <span className="pl-meta-badge"><Dumbbell size={10} /> {program.exercises.size} exercises</span>
-                      <span className="pl-meta-badge"><Activity size={10} /> {program.workVolume} rep volume</span>
-                      {renderPrivacyBadge(program)}
-                    </div>
+            {filteredPrograms.map(program => {
+              
+              // ==========================================
+              // SECURITY: CAN THIS USER DELETE THIS PROGRAM?
+              // ==========================================
+              const isAdmin = userEmail && userEmail.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+              const isOwner = program.ownerEmail === userEmail;
+              const isPublic = program.privacyLevel === 'PUBLIC';
+              
+              // Only allow delete if they are the Admin OR (they own it AND it is not public)
+              const canDelete = isAdmin || (isOwner && !isPublic);
 
+              return (
+                <div key={program.name} className="pl-program-card">
+                  <div className="pl-program-header" onClick={() => toggleExpand(program.name)}>
+                    <div>
+                      <div className="pl-program-name">{program.name}</div>
+                      
+                      <div className="pl-program-meta">
+                        {program.categoryName && (
+                          <span className="pl-meta-badge"><Layers size={10} /> {program.categoryName}</span>
+                        )}
+                        <span className="pl-meta-badge"><Dumbbell size={10} /> {program.exercises.size} exercises</span>
+                        <span className="pl-meta-badge"><Activity size={10} /> {program.workVolume} rep volume</span>
+                        {renderPrivacyBadge(program)}
+                      </div>
+
+                    </div>
+                    <div className="pl-actions" onClick={e => e.stopPropagation()}>
+                      {/* SECURED DELETE BUTTON */}
+                      {canDelete && (
+                        <button className="pl-delete-btn" onClick={() => handleDelete(program.name)} disabled={deleting === program.name}>
+                          <Trash2 size={14} /> <span className="pl-delete-text">{deleting === program.name ? "..." : "Delete"}</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  <div className="pl-actions" onClick={e => e.stopPropagation()}>
-                    {program.ownerEmail === userEmail && (
-                      <button className="pl-delete-btn" onClick={() => handleDelete(program.name)} disabled={deleting === program.name}>
-                        <Trash2 size={14} /> <span className="pl-delete-text">{deleting === program.name ? "..." : "Delete"}</span>
-                      </button>
-                    )}
-                  </div>
+                  {expandedProgram === program.name && (
+                    <div className="pl-expand">
+                      {renderProgramPreview(program)}
+                    </div>
+                  )}
                 </div>
-                {expandedProgram === program.name && (
-                  <div className="pl-expand">
-                    {renderProgramPreview(program)}
-                  </div>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -483,4 +501,3 @@ export default function ProgramLibrary() {
     </div>
   );
 }
-

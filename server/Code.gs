@@ -195,9 +195,6 @@ function doGet(e) {
     return ContentService.createTextOutput(JSON.stringify(allData)).setMimeType(ContentService.MimeType.JSON);
   }
 
-  // ==========================================
-  // NEW STAGE 2 DEDICATED PIPES
-  // ==========================================
   if (action === "getAthletes") {
     var athletesData = getSafeSheetData(sheetApp, "Athletes");
     return ContentService.createTextOutput(JSON.stringify({ athletes: athletesData })).setMimeType(ContentService.MimeType.JSON);
@@ -212,7 +209,6 @@ function doGet(e) {
     var libraryData = loadMergedLibrary(sheetApp);
     return ContentService.createTextOutput(JSON.stringify({ library: libraryData })).setMimeType(ContentService.MimeType.JSON);
   }
-  // ==========================================
 
   if (action === "updateProgram") {
     var sheet = sheetApp.getSheetByName("Programs");
@@ -228,65 +224,147 @@ function doGet(e) {
     return ContentService.createTextOutput(JSON.stringify({ status: "Success", replaced: oldName, rowCount: programData.length })).setMimeType(ContentService.MimeType.JSON);
   }
 
+  // ==========================================
+  // UPDATED: UNIVERSAL MAX/PB ENGINE
+  // ==========================================
   if (action === "saveEntireSession") {
     var dataObj = JSON.parse(e.parameter.data || "{}");
     var athlete = String(dataObj.athlete || "").trim();
     var prog = String(dataObj.prog || "").trim();
     var dateString = new Date().toLocaleString();
     var logDateString = new Date().toLocaleDateString();
+    
+    // 1. Log Attendance
     var attSheet = sheetApp.getSheetByName("Attendance");
-    if (attSheet) { attSheet.appendRow([dateString, athlete, prog]); } else { Logger.info("Attendance sheet not found - skipping attendance log"); }
+    if (attSheet) { attSheet.appendRow([dateString, athlete, prog]); }
+    
+    // 2. Log sets to Logbook
     var sets = dataObj.sets || [];
     var logSheet = sheetApp.getSheetByName("Logbook");
     if (logSheet && sets.length > 0) {
       for (var i = 0; i < sets.length; i++) {
         logSheet.appendRow([logDateString, athlete, prog, sets[i].exercise, sets[i].intensity || "", sets[i].weight, sets[i].reps]);
       }
-    } else if (!logSheet) { Logger.error("LOGBOOK SHEET MISSING - Historical set data NOT saved!"); }
-    var library = loadMergedLibrary(sheetApp);
-    var epleyExercises = {};
-    for (var l = 0; l < library.length; l++) {
-      var libExName = String(library[l][0] || "").trim();
-      var formulaFlag = String(library[l][3] || "").trim().toLowerCase();
-      if (libExName && formulaFlag === "yes") { epleyExercises[libExName.toLowerCase()] = true; }
     }
-    var oneRMCandidates = {};
+
+    // 3. Map the Library to find which formula to use
+    var library = loadMergedLibrary(sheetApp);
+    var exCalcTypes = {};
+    for (var l = 0; l < library.length; l++) {
+      var libExName = String(library[l][0] || "").trim().toLowerCase();
+      var formulaFlag = String(library[l][3] || "").trim().toLowerCase();
+      if (libExName && formulaFlag) {
+        if (formulaFlag === "yes" || formulaFlag === "weight") exCalcTypes[libExName] = "weight";
+        else if (formulaFlag === "time") exCalcTypes[libExName] = "time";
+        else if (formulaFlag === "distance") exCalcTypes[libExName] = "distance";
+      }
+    }
+
+    // 4. Calculate PBs/Maxes across all metrics
+    var newMaxCandidates = {}; 
+    
     for (var s = 0; s < sets.length; s++) {
       var exName = String(sets[s].exercise || "").trim();
+      var lowerEx = exName.toLowerCase();
+      var calcType = exCalcTypes[lowerEx];
+      if (!calcType) continue;
+
       var intensityRaw = parseFloat(sets[s].intensity) || 0;
       var intensityVal = intensityRaw > 1 ? intensityRaw / 100 : intensityRaw;
-      var weight = parseFloat(sets[s].weight) || 0;
-      var reps = parseInt(sets[s].reps) || 0;
-      if (epleyExercises[exName.toLowerCase()] && intensityVal > 0.90 && weight > 0 && reps >= 1) {
-        var normalizedWeight = weight / intensityVal;
-        var calculated1RM = Math.round(normalizedWeight * (1 + 0.0333 * reps));
-        if (!oneRMCandidates[exName] || calculated1RM > oneRMCandidates[exName]) { oneRMCandidates[exName] = calculated1RM; }
+      if (intensityVal <= 0) continue;
+
+      // WEIGHT MATH
+      if (calcType === "weight" && intensityVal > 0.90) { // Keeping your >90% rule for weights
+        var weight = parseFloat(sets[s].weight) || 0;
+        var repsNum = parseInt(sets[s].reps) || 0; 
+        if (weight > 0 && repsNum >= 1) {
+          var normalizedWeight = weight / intensityVal;
+          var calculated1RM = Math.round(normalizedWeight * (1 + 0.0333 * repsNum));
+          if (!newMaxCandidates[exName] || calculated1RM > newMaxCandidates[exName].val) {
+            newMaxCandidates[exName] = { val: calculated1RM, type: "weight" };
+          }
+        }
+      }
+      // TIME MATH
+      else if (calcType === "time") {
+        var timeSecs = parseTimeToSecondsGAS(sets[s].reps); 
+        if (timeSecs > 0) {
+          var impliedMaxTime = timeSecs * intensityVal; // Lower is better
+          if (!newMaxCandidates[exName] || impliedMaxTime < newMaxCandidates[exName].val) {
+            newMaxCandidates[exName] = { val: impliedMaxTime, type: "time" };
+          }
+        }
+      }
+      // DISTANCE MATH
+      else if (calcType === "distance") {
+        var distMeters = parseDistanceToMetersGAS(sets[s].reps);
+        if (distMeters > 0) {
+          var impliedMaxDist = distMeters / intensityVal; // Higher is better
+          if (!newMaxCandidates[exName] || impliedMaxDist > newMaxCandidates[exName].val) {
+            newMaxCandidates[exName] = { val: impliedMaxDist, type: "distance" };
+          }
+        }
       }
     }
+
+    // 5. Compare with existing Maxes & Save
     var maxSheet = sheetApp.getSheetByName("Athlete_Maxes");
     var prList = [];
-    if (maxSheet && Object.keys(oneRMCandidates).length > 0) {
+    
+    if (maxSheet && Object.keys(newMaxCandidates).length > 0) {
       var maxData = maxSheet.getDataRange().getValues();
-      for (var ex in oneRMCandidates) {
-        var newMax = oneRMCandidates[ex];
+
+      for (var ex in newMaxCandidates) {
+        var newMaxObj = newMaxCandidates[ex];
+        var newMax = newMaxObj.val;
+        var cType = newMaxObj.type;
+
         var existingMax = 0;
         for (var m = maxData.length - 1; m >= 1; m--) {
-          if (String(maxData[m][1]).trim().toLowerCase() === athlete.toLowerCase() && String(maxData[m][2]).trim().toLowerCase() === ex.toLowerCase()) { existingMax = Number(maxData[m][3]) || 0; break; }
+          if (String(maxData[m][1]).trim().toLowerCase() === athlete.toLowerCase() &&
+              String(maxData[m][2]).trim().toLowerCase() === ex.toLowerCase()) {
+            existingMax = Number(maxData[m][3]) || 0;
+            break;
+          }
         }
-        if (newMax > existingMax) {
-          maxSheet.appendRow([new Date(), athlete, ex, newMax]);
-          prList.push(ex + ": " + newMax + "kg");
+
+        var isPR = false;
+        if (cType === "time") {
+          // Time PRs are LOWER
+          if (existingMax === 0 || newMax < existingMax) isPR = true;
+        } else {
+          // Distance & Weight PRs are HIGHER
+          if (existingMax === 0 || newMax > existingMax) isPR = true;
+        }
+
+        if (isPR) {
+          var finalMaxToSave = Math.round(newMax * 10) / 10;
+          maxSheet.appendRow([new Date(), athlete, ex, finalMaxToSave]);
+
+          var prString = "";
+          if (cType === "weight") prString = finalMaxToSave + "kg";
+          else if (cType === "distance") prString = finalMaxToSave + "m";
+          else if (cType === "time") {
+            var mns = Math.floor(finalMaxToSave / 60);
+            var scs = Math.round(finalMaxToSave % 60);
+            if (mns > 0) prString = mns + ":" + (scs < 10 ? "0" : "") + scs;
+            else prString = finalMaxToSave + "s";
+          }
+          prList.push(ex + ": " + prString);
         }
       }
-    } else if (!maxSheet && Object.keys(oneRMCandidates).length > 0) { Logger.error("ATHLETE_MAXES SHEET MISSING - Cannot store new 1RM records!"); }
+    }
+
+    // 6. Log Session Summary
     var prSummary = prList.length > 0 ? prList.join(" | ") : "None";
     var exercisesDone = {};
     for (var s2 = 0; s2 < sets.length; s2++) { exercisesDone[sets[s2].exercise] = true; }
-    var exNames = Object.keys(exercisesDone);
-    var workoutSummary = exNames.join(", ") + " (" + sets.length + " sets total)";
+    var workoutSummary = Object.keys(exercisesDone).join(", ") + " (" + sets.length + " sets total)";
+    
     var histSheet = sheetApp.getSheetByName("History");
-    if (histSheet) { histSheet.appendRow([dateString, athlete, prog, workoutSummary, prSummary]); } else { Logger.warn("History sheet not found - session summary NOT saved"); }
-    return ContentService.createTextOutput(JSON.stringify({ status: "Success", loggedSets: sets.length, prsCalculated: Object.keys(oneRMCandidates).length, prsSaved: prList.length, prDetails: prList, historySaved: !!histSheet, attendanceSaved: !!attSheet })).setMimeType(ContentService.MimeType.JSON);
+    if (histSheet) { histSheet.appendRow([dateString, athlete, prog, workoutSummary, prSummary]); }
+    
+    return ContentService.createTextOutput(JSON.stringify({ status: "Success", loggedSets: sets.length, prsCalculated: Object.keys(newMaxCandidates).length, prsSaved: prList.length, prDetails: prList })).setMimeType(ContentService.MimeType.JSON);
   }
 
   if (action === "saveFullProgram") {
@@ -408,7 +486,7 @@ function doGet(e) {
       {name: "Exercise_Library", headers: ["Exercise Name", "Bunny URL", "Muscle/Category", "Formula", "", "Owner Email", "Notes"]},
       {name: "Logbook", headers: ["Date", "Athlete", "Program", "Exercise", "Intensity (%)", "Weight", "Reps"]},
       {name: "Attendance", headers: ["Timestamp", "Athlete", "Program"]},
-      {name: "Athlete_Maxes", headers: ["Date", "Athlete", "Exercise", "1RM (kg)"]}
+      {name: "Athlete_Maxes", headers: ["Date", "Athlete", "Exercise", "1RM"]}
     ];
     requiredSheets.forEach(function(info) {
       var existingSheet = ss.getSheetByName(info.name);
@@ -417,8 +495,12 @@ function doGet(e) {
     return ContentService.createTextOutput(JSON.stringify({ status: "Success", created: created, skipped: skipped, note: created.length > 0 ? "New sheets created successfully" : "All required sheets already exist" })).setMimeType(ContentService.MimeType.JSON);
   }
 
-  return ContentService.createTextOutput(JSON.stringify({ status: "API is running", availableActions: ["getFullData", "getAthletes", "getPrograms", "getLibrary", "getAthleteByName", "getAthleteByEmail", "createAthlete", "getLogbookByAthlete", "getLatestMaxes", "getLastLoggedWeight", "updateProgram", "saveEntireSession", "saveFullProgram", "deleteProgram", "addAthlete", "deleteAthlete", "updateAssignment", "assignProgram", "addExercise", "initSheets"], version: "6.0-epley-split" })).setMimeType(ContentService.MimeType.JSON);
+  return ContentService.createTextOutput(JSON.stringify({ status: "API is running", availableActions: ["getFullData", "getAthletes", "getPrograms", "getLibrary", "getAthleteByName", "getAthleteByEmail", "createAthlete", "getLogbookByAthlete", "getLatestMaxes", "getLastLoggedWeight", "updateProgram", "saveEntireSession", "saveFullProgram", "deleteProgram", "addAthlete", "deleteAthlete", "updateAssignment", "assignProgram", "addExercise", "initSheets"], version: "7.0-universal-pb" })).setMimeType(ContentService.MimeType.JSON);
 }
+
+// ==========================================
+// UTILITY FUNCTIONS
+// ==========================================
 
 function validateRequiredSheets(sheetApp) {
   var required = ["Athletes", "Programs", "Custom_Library"];
@@ -447,7 +529,7 @@ function loadMergedLibrary(sheetApp) {
         customData.shift();
         for (var i = 0; i < customData.length; i++) { customRows.push([customData[i][0], customData[i][1], customData[i][2], customData[i][3], customData[i][4], customData[i][5], customData[i][6]]); }
       }
-    } catch(e) { Logger.error("Error reading Custom_Library: " + e.toString()); }
+    } catch(e) {}
   }
   if (masterLibExists) {
     try {
@@ -458,11 +540,44 @@ function loadMergedLibrary(sheetApp) {
         masterData.shift();
         for (var j = 0; j < masterData.length; j++) { masterRows.push([masterData[j][0], masterData[j][1], masterData[j][2], masterData[j][3], masterData[j][4], masterData[j][5], masterData[j][6]]); }
       }
-    } catch(e) { Logger.error("Error reading Exercise_Library: " + e.toString()); }
+    } catch(e) {}
   }
   var seenNames = {};
   var combinedRows = [];
   for (var i = 0; i < customRows.length; i++) { var nameKey = String(customRows[i][0] || "").trim().toLowerCase(); if (nameKey && !seenNames[nameKey]) { seenNames[nameKey] = true; combinedRows.push(customRows[i]); } }
   for (var j = 0; j < masterRows.length; j++) { var nameKey = String(masterRows[j][0] || "").trim().toLowerCase(); if (nameKey && !seenNames[nameKey]) { seenNames[nameKey] = true; combinedRows.push(masterRows[j]); } }
   return combinedRows;
+}
+
+// ------------------------------------------
+// STRING PARSERS FOR TIME & DISTANCE
+// ------------------------------------------
+function parseTimeToSecondsGAS(str) {
+  if (!str) return 0;
+  var strClean = String(str).toLowerCase();
+  var parts = strClean.split('|');
+  for (var i = 0; i < parts.length; i++) {
+    var p = parts[i].trim();
+    var colonMatch = p.match(/(\d+):(\d+)/);
+    if (colonMatch) return parseInt(colonMatch[1]) * 60 + parseInt(colonMatch[2]);
+    var secMatch = p.match(/(\d+(?:\.\d+)?)\s*s/);
+    if (secMatch) return parseFloat(secMatch[1]);
+  }
+  return 0;
+}
+
+function parseDistanceToMetersGAS(str) {
+  if (!str) return 0;
+  var strClean = String(str).toLowerCase();
+  var parts = strClean.split('|');
+  for (var i = 0; i < parts.length; i++) {
+    var p = parts[i].trim();
+    var match = p.match(/(\d+(?:\.\d+)?)\s*(m|km)/);
+    if (match) {
+      var val = parseFloat(match[1]);
+      if (match[2] === 'km') val *= 1000;
+      return val;
+    }
+  }
+  return 0;
 }
