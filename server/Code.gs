@@ -200,7 +200,7 @@ function doGet(e) {
     return ContentService.createTextOutput(JSON.stringify({ athletes: athletesData })).setMimeType(ContentService.MimeType.JSON);
   }
 
-  if (action === "getPrograms") {
+   if (action === "getPrograms") {
     var programsData = getSafeSheetData(sheetApp, "Programs");
     return ContentService.createTextOutput(JSON.stringify({ programs: programsData })).setMimeType(ContentService.MimeType.JSON);
   }
@@ -208,6 +208,15 @@ function doGet(e) {
   if (action === "getLibrary") {
     var libraryData = loadMergedLibrary(sheetApp);
     return ContentService.createTextOutput(JSON.stringify({ library: libraryData })).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  if (action === "getHelpVideos") {
+    var sheet = sheetApp.getSheetByName("Help_Videos");
+    if (!sheet) {
+      return ContentService.createTextOutput(JSON.stringify({ helpVideos: [] })).setMimeType(ContentService.MimeType.JSON);
+    }
+    var data = sheet.getDataRange().getValues();
+    return ContentService.createTextOutput(JSON.stringify({ helpVideos: data })).setMimeType(ContentService.MimeType.JSON);
   }
 
   if (action === "updateProgram") {
@@ -223,6 +232,7 @@ function doGet(e) {
     for (var k = 0; k < programData.length; k++) { sheet.appendRow(programData[k]); }
     return ContentService.createTextOutput(JSON.stringify({ status: "Success", replaced: oldName, rowCount: programData.length })).setMimeType(ContentService.MimeType.JSON);
   }
+
 
   // ==========================================
   // UPDATED: UNIVERSAL MAX/PB ENGINE
@@ -269,12 +279,14 @@ function doGet(e) {
       var calcType = exCalcTypes[lowerEx];
       if (!calcType) continue;
 
-      var intensityRaw = parseFloat(sets[s].intensity) || 0;
+           var intensityRaw = parseFloat(sets[s].intensity) || 0;
       var intensityVal = intensityRaw > 1 ? intensityRaw / 100 : intensityRaw;
-      if (intensityVal <= 0) continue;
+      
+      // STRICT PB GATEKEEPER: Only calculate PBs on 100% effort sets!
+      if (intensityVal < 1.00) continue;
 
       // WEIGHT MATH
-      if (calcType === "weight" && intensityVal > 0.90) { // Keeping your >90% rule for weights
+      if (calcType === "weight") { 
         var weight = parseFloat(sets[s].weight) || 0;
         var repsNum = parseInt(sets[s].reps) || 0; 
         if (weight > 0 && repsNum >= 1) {
