@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { HelpCircle, Loader2 } from 'lucide-react';
-import { fetchHelpVideos } from '../api';
 import './help-button.css';
+
+// We hardcode the exact URL here so it completely bypasses api.js and its caching!
+const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzIBfOpFxgmTYWlFDuKPVSx30tXJRlyWhhvZVBqkAO_nKeF1GfGTFVvTolLr-CBpoHl8A/exec";
 
 export default function HelpButton({ pageName = 'Default', position = 'bottom-right' }) {
   const [loading, setLoading] = useState(false);
@@ -9,31 +11,36 @@ export default function HelpButton({ pageName = 'Default', position = 'bottom-ri
   const handleClick = async () => {
     setLoading(true);
     try {
-      const res = await fetchHelpVideos();
+      // 1. Fetch directly from Google with a Date.now() timestamp to FORCE it to ignore the cache
+      const url = `${GOOGLE_SCRIPT_URL}?action=getHelpVideos&t=${Date.now()}`;
+      const response = await fetch(url);
+      const res = await response.json();
       const videos = res.helpVideos || [];
       
       let foundUrl = '';
       
-      const match = videos.find(row => 
-        row && row[0] && String(row[0]).trim().toLowerCase() === String(pageName).trim().toLowerCase()
-      );
+      // 2. Safety Net: Forgive the "Program View" vs "Program Viewer" typo in the sheet!
+      const searchName1 = String(pageName).trim().toLowerCase();
+      const searchName2 = searchName1 === 'program view' ? 'program viewer' : searchName1;
       
+      // 3. Find the exact matching page name in Column A
+      const match = videos.find(row => {
+        if (!row || !row[0]) return false;
+        const sheetName = String(row[0]).trim().toLowerCase();
+        return sheetName === searchName1 || sheetName === searchName2;
+      });
+      
+      // 4. Grab the Bunny link from Column B
       if (match) foundUrl = String(match[1]).trim();
 
+      // 5. Open the video
       if (foundUrl && foundUrl.startsWith('http')) {
         window.open(foundUrl, '_blank');
       } else {
-        // DIAGNOSTIC ALERT: Tells us exactly what Google sent back
-        let debugMsg = `Looking for: "${pageName}"\n\n`;
-        if (videos.length === 0) {
-          debugMsg += `ERROR: Google sent back 0 rows. \n(Check if the sheet is named exactly 'Help_Videos' and the script is deployed as a New Version).`;
-        } else {
-          debugMsg += `Google sent ${videos.length} rows.\nFirst row found: "${videos[0][0]}"\n\nPlease check for typos in the sheet!`;
-        }
-        alert(debugMsg);
+        alert(`Help video for "${pageName}" is coming soon!`);
       }
     } catch (err) {
-      alert(`API Error: Cannot reach Google Script. Check api.js URL.`);
+      alert(`Network Error: Could not load the video.`);
     }
     setLoading(false);
   };
