@@ -1,9 +1,11 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { Dumbbell, Clock, ChevronLeft } from 'lucide-react';
+import { Dumbbell, Clock, ChevronLeft, ArrowLeft } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
 import { fetchAllData, fetchLogbookByAthlete, getAthleteByEmail } from '../api';
+import HelpButton from '../components/HelpButton';
 import './my-progress.css';
+import { useNavigate } from 'react-router-dom';
 
 function normalizeString(str) {
   return String(str).toLowerCase().replace(/\./g, ' ').replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim();
@@ -22,6 +24,7 @@ export default function MyProgress() {
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const { userEmail, isLoading: authLoading } = useAuth();
   const loadedRef = useRef(false);
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (userEmail && !loadedRef.current) {
@@ -154,7 +157,6 @@ export default function MyProgress() {
     const session = sessions.find(s => s.date === selectedSession.date && s.prog === selectedSession.prog);
     if (!session) return [];
 
-    // Build exercise lookup keyed by normalized name
     const exGroups = {};
     session.sets.forEach(set => {
       const key = normalizeString(set.ex);
@@ -162,7 +164,6 @@ export default function MyProgress() {
       exGroups[key].sets.push(set);
     });
 
-    // Assign phases using program data
     Object.values(exGroups).forEach(group => {
       const lookupKey = normalizeString(selectedSession.prog) + '|' + normalizeString(group.name);
       group.phase = phaseLookup[lookupKey] || 'Other Content';
@@ -175,7 +176,6 @@ export default function MyProgress() {
       { title: 'Cool Down', items: [], color: '#ef4444' },
     ];
 
-    // Map raw phase names to section titles
     const phaseMapping = {
       'warm up': 'Warm Up', 'warmup': 'Warm Up',
       'work block': 'Work Block', 'workblock': 'Work Block',
@@ -203,7 +203,15 @@ export default function MyProgress() {
   return (
     <div className="mp-container">
       <div className="mp-body">
-        <h2 style={{ fontSize: '24px', color: '#008ed3', marginBottom: '16px', fontWeight: '700' }}>My Progress</h2>
+        
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: '20px' }}>
+          <button onClick={() => navigate(-1)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#008ed3', padding: 0, display: 'flex', marginRight: '12px' }}>
+            <ArrowLeft size={28} />
+          </button>
+          <h2 style={{ fontSize: '24px', color: '#0f172a', fontWeight: '700', margin: 0, fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+            My Progress
+          </h2>
+        </div>
 
         {error ? (
           <p className="mp-error">{error}</p>
@@ -329,7 +337,12 @@ export default function MyProgress() {
           </>
         )}
       </div>
+<<<<<<< HEAD
     <HelpButton pageName="My Progress" position="bottom-right" />
+=======
+      <HelpButton pageName="My Progress" position="bottom-right" />
+>>>>>>> dev
     </div>
   );
 }
+

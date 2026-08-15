@@ -2,6 +2,8 @@ import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
 import { fetchAthletes, fetchLogbookByAthlete } from '../api.js';
+import { ArrowLeft } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 const COLORS = {
   primaryBlue: '#008ed3',
@@ -134,6 +136,7 @@ function fmt(n) {
 
 export default function CoachResults() {
   const { userEmail: coachEmail, role, isLoading: authLoading } = useAuth();
+  const navigate = useNavigate();
 
   const [athletes, setAthletes] = useState([]);
   const [selectedAthlete, setSelectedAthlete] = useState('all');
@@ -171,7 +174,6 @@ export default function CoachResults() {
       
       let athleteList = [];
       if (rawAthletes.length > 1) {
-        // FIX: Aggressively trim headers to prevent invisible space bugs
         const headers = rawAthletes[0].map(h => String(h).trim());
         const roleColIdx = headers.findIndex(h => h.toLowerCase() === 'role');
         
@@ -180,15 +182,12 @@ export default function CoachResults() {
           headers.forEach((h, i) => { 
             obj[h] = row[i]; 
           });
-          // FIX: Hardcode Column A (index 0) as the name to guarantee a match
           obj.name = String(row[0] || '').trim();
-          
-          // FIX: Check role so we don't list Coaches in the athlete dropdown
           const roleData = roleColIdx > -1 ? String(row[roleColIdx] || '').trim().toLowerCase() : 'athlete';
           obj.isCoach = roleData === 'coach';
           
           return obj;
-        }).filter(a => a.name && !a.isCoach); // Drop empties and coaches
+        }).filter(a => a.name && !a.isCoach);
       }
 
       const maxesByName = {};
@@ -444,7 +443,14 @@ export default function CoachResults() {
   return (
     <div style={{ ...styles.page, fontFamily: '"Roboto Flex", "Roboto", sans-serif' }}>
       <div style={styles.titleWrapper}>
-        <h1 style={styles.h1}>Coach Results Dashboard</h1>
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: '20px' }}>
+          <button onClick={() => navigate(-1)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#008ed3', padding: 0, display: 'flex', marginRight: '12px' }}>
+            <ArrowLeft size={28} />
+          </button>
+          <h2 style={{ fontSize: '24px', color: '#0f172a', fontWeight: '700', margin: 0, fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+            Coach Results
+          </h2>
+        </div>
         <p style={styles.subtitle}>
           Track frequency, volume at intensity, and strength progression across all 6 CORE lifts.
         </p>
@@ -826,7 +832,7 @@ const styles = {
     minHeight: 'calc(100vh - 120px)',
   },
   titleWrapper: {
-    textAlign: 'center',
+    textAlign: 'left',
     paddingTop: '4px',
     marginBottom: '1.5rem',
   },
@@ -924,4 +930,3 @@ const styles = {
     backgroundColor: COLORS.white, color: COLORS.red, fontSize: '13px', cursor: 'pointer', fontWeight: '600',
   },
 };
-

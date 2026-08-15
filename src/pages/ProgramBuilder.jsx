@@ -1,9 +1,10 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { Plus, Save, ArrowUp, ArrowDown, Trash2, Hammer, CheckCircle, X, Library as LibIcon, Settings } from 'lucide-react';
+import { Plus, Save, ArrowUp, ArrowDown, Trash2, Hammer, CheckCircle, X, Library as LibIcon, Settings, ArrowLeft } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { fetchPrograms, fetchLibrary, saveFullProgram, updateProgram, getMediaType } from '../api';
 import './program-builder.css';
 import HelpButton from '../components/HelpButton';
+import { useNavigate } from 'react-router-dom';
 
 function MediaPlayer({ url, compact = false }) {
   if (!url) return null;
@@ -27,11 +28,12 @@ const DEFAULT_ADVANCED = {
   execution: 'bilateral', 
   setType: 'standard',    
   metrics: { weight: true, time: false, distance: false },
-  targets: { time: '', distance: '' }
+  targets: { weight: '', time: '', distance: '' }
 };
 
 export default function ProgramBuilder() {
   const { userEmail: coachEmail, isLoading: authLoading } = useAuth();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [programs, setPrograms] = useState([]);
@@ -43,6 +45,8 @@ export default function ProgramBuilder() {
   const [form, setForm] = useState({ name: '', category: '', notes: '', phase: 'Work Block', exercise: '', sets: '', reps: '', intensity: '', tempo: '', rest: '', privacyLevel: 'PRIVATE' });
   const [advanced, setAdvanced] = useState(DEFAULT_ADVANCED);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  
+  const [showExDropdown, setShowExDropdown] = useState(false);
 
   const [loadProgramName, setLoadProgramName] = useState('');
   const [mediaUrl, setMediaUrl] = useState('');
@@ -311,9 +315,27 @@ export default function ProgramBuilder() {
           border-bottom: 3px solid #008ed3;
           border-radius: 4px 0 0 4px;
         }
+        .pb-custom-dropdown {
+          position: absolute; top: 100%; left: 0; right: 0; z-index: 1000;
+          background-color: #fff; border: 1px solid #cbd5e1; border-radius: 8px;
+          max-height: 250px; overflow-y: auto; list-style: none; padding: 0; margin: 4px 0 0 0;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        .pb-custom-dropdown li {
+          padding: 10px 12px; cursor: pointer; border-bottom: 1px solid #f1f5f9; color: #0f172a;
+        }
+        .pb-custom-dropdown li:hover { background-color: #f8fafc; }
       `}</style>
 
-      <h2 style={{ fontSize: '24px', color: '#008ed3', marginBottom: '16px', fontWeight: '700' }}>Program Builder</h2>
+      {/* NEW HEADER */}
+      <div style={{ display: 'flex', alignItems: 'center', marginBottom: '20px', marginTop: '16px' }}>
+        <button onClick={() => navigate(-1)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#008ed3', padding: 0, display: 'flex', marginRight: '12px' }}>
+          <ArrowLeft size={28} />
+        </button>
+        <h2 style={{ fontSize: '24px', color: '#0f172a', fontWeight: '700', margin: 0, fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+          Program Builder
+        </h2>
+      </div>
       
       {error && <p style={{ color: '#dc3545', marginBottom: '16px', fontWeight: 'bold' }}>{error}</p>}
       
@@ -383,26 +405,41 @@ export default function ProgramBuilder() {
             </select>
           </div>
           
-          <div className="pb-field-group">
+          <div className="pb-field-group" style={{ position: 'relative' }}>
             <label className="pb-label">Select Exercise from Library:</label>
             <input
               className="pb-input"
-              list="pb-exercise-list"
               value={form.exercise}
-              onFocus={() => setForm({...form, exercise: ''})}
+              onFocus={() => { setForm({...form, exercise: ''}); setShowExDropdown(true); }}
+              onBlur={() => setShowExDropdown(false)}
               onChange={e => {
-                const val = e.target.value;
-                setForm({...form, exercise: val});
-                if (exerciseList.includes(val)) {
-                  setTimeout(() => setsInputRef.current?.focus(), 10);
-                }
+                setForm({...form, exercise: e.target.value});
+                setShowExDropdown(true);
               }}
               autoComplete="off"
               placeholder={loading ? "Loading exercise library..." : "Type to search exercises..."}
             />
-            <datalist id="pb-exercise-list">
-              {filteredExercises.map(ex => <option key={ex} value={ex} />)}
-            </datalist>
+            {showExDropdown && (
+              <ul className="pb-custom-dropdown">
+                {filteredExercises.length === 0 ? (
+                  <li style={{ padding: '10px 12px', color: '#64748b' }}>No matches found</li>
+                ) : (
+                  filteredExercises.map(ex => (
+                    <li 
+                      key={ex} 
+                      onMouseDown={(e) => {
+                        e.preventDefault(); 
+                        setForm({...form, exercise: ex});
+                        setShowExDropdown(false);
+                        setTimeout(() => setsInputRef.current?.focus(), 10);
+                      }}
+                    >
+                      {ex}
+                    </li>
+                  ))
+                )}
+              </ul>
+            )}
           </div>
           
           <div className="pb-field-row">
@@ -454,15 +491,21 @@ export default function ProgramBuilder() {
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', gap: '16px' }}>
+                <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+                  {advanced.metrics.weight && (
+                    <div style={{ flex: 1, minWidth: '120px' }}>
+                      <label className="pb-label">Target Weight (e.g. "50kg"):</label>
+                      <input className="pb-input" value={advanced.targets.weight} onChange={e => setAdvanced({...advanced, targets: {...advanced.targets, weight: e.target.value}})} placeholder="50kg" />
+                    </div>
+                  )}
                   {advanced.metrics.time && (
-                    <div style={{ flex: 1 }}>
+                    <div style={{ flex: 1, minWidth: '120px' }}>
                       <label className="pb-label">Target Time (e.g. "10s"):</label>
                       <input className="pb-input" value={advanced.targets.time} onChange={e => setAdvanced({...advanced, targets: {...advanced.targets, time: e.target.value}})} placeholder="10s" />
                     </div>
                   )}
                   {advanced.metrics.distance && (
-                    <div style={{ flex: 1 }}>
+                    <div style={{ flex: 1, minWidth: '120px' }}>
                       <label className="pb-label">Target Distance (e.g. "500m"):</label>
                       <input className="pb-input" value={advanced.targets.distance} onChange={e => setAdvanced({...advanced, targets: {...advanced.targets, distance: e.target.value}})} placeholder="500m" />
                     </div>
@@ -512,9 +555,12 @@ export default function ProgramBuilder() {
                     {item.rest ? ` | Rest: ${item.rest}` : ''}
                   </p>
                   
-                  {(item.advanced?.targets?.time || item.advanced?.targets?.distance) && (
+                  {(item.advanced?.targets?.weight || item.advanced?.targets?.time || item.advanced?.targets?.distance) && (
                     <p style={{ fontSize: '12px', color: '#0ea5e9', fontWeight: '600', margin: '4px 0 0 0' }}>
-                      Targets: {item.advanced.targets.time && `⏱️ ${item.advanced.targets.time}`} {item.advanced.targets.distance && `📏 ${item.advanced.targets.distance}`}
+                      Targets: 
+                      {item.advanced.targets.weight && ` 🏋️ ${item.advanced.targets.weight}`}
+                      {item.advanced.targets.time && ` ⏱️ ${item.advanced.targets.time}`} 
+                      {item.advanced.targets.distance && ` 📏 ${item.advanced.targets.distance}`}
                     </p>
                   )}
 
