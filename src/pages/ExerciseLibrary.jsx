@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Play, Search, X, Pencil, Trash2, Plus } from 'lucide-react';
+import { Play, Search, X, Pencil, Trash2, Plus, ArrowLeft } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { getYouTubeId, normalizeVideoUrl } from '../utils/helpers';
 import { useAuth } from '../hooks/useAuth';
 import { fetchExerciseLibrary, deleteExerciseFromLibrary, updateExerciseInLibrary, addExerciseToLibrary, getAthleteByEmail } from '../api.js';
@@ -81,6 +82,7 @@ export default function ExerciseLibrary({ viewMode: propViewMode = 'athlete' }) 
   
   // FIX: Destructured athleteName so we can pass it to the Add modal
   const { role, userEmail, athleteName, isLoading: authLoading } = useAuth();
+  const navigate = useNavigate();
 
   const queryParams = new URLSearchParams(window.location.search);
   const urlViewMode = queryParams.get('viewMode');
@@ -288,7 +290,15 @@ export default function ExerciseLibrary({ viewMode: propViewMode = 'athlete' }) 
     <div className="exlib-container">
       <div className="exlib-body">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-          <h2 style={{ fontSize: '24px', color: '#008ed3', fontWeight: '700', margin: 0 }}>Exercise Library</h2>
+                    <div style={{ display: 'flex', alignItems: 'center' }}>
+            <button onClick={() => navigate(-1)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#008ed3', padding: 0, display: 'flex', marginRight: '12px' }}>
+              <ArrowLeft size={28} />
+            </button>
+            <h2 style={{ fontSize: '24px', color: '#0f172a', fontWeight: '700', margin: 0, fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+              Exercise Library
+            </h2>
+          </div>
+
           
           {role === 'coach' && viewMode === 'coach' && (
             <button className="exlib-add-btn" onClick={() => setAdding(true)}>

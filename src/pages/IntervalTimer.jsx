@@ -318,11 +318,13 @@ export default function IntervalTimer() {
     <div style={{ padding: '16px', maxWidth: '600px', margin: '0 auto', fontFamily: '"Roboto Flex", sans-serif', backgroundColor: '#f8fafc', minHeight: '100vh', position: 'relative' }}>
       
       {/* HEADER */}
-      <div style={{ display: 'flex', alignItems: 'center', marginBottom: '24px' }}>
-        <button onClick={() => navigate(-1)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', marginRight: '16px' }}>
-          <ArrowLeft size={24} />
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '24px' }}>
+        <button onClick={() => navigate(-1)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#008ed3', padding: 0, display: 'flex', marginRight: '12px' }}>
+          <ArrowLeft size={28} />
         </button>
-        <h1 style={{ fontSize: '24px', color: '#0f172a', margin: 0, fontWeight: '700' }}>Interval Timer</h1>
+        <h2 style={{ fontSize: '24px', color: '#0f172a', fontWeight: '700', margin: 0, fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+          Interval Timer
+        </h2>
       </div>
 
       {/* PRESET LOAD */}

@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Search, Trash2, UserPlus, CheckCircle, X, Layers, Dumbbell, Activity, Lock, Globe } from 'lucide-react';
+import { Search, Trash2, UserPlus, CheckCircle, X, Layers, Dumbbell, Activity, Lock, Globe, ArrowLeft } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
 import { fetchPrograms, fetchAthletes, deleteProgram, assignProgramBulk } from '../api';
@@ -27,6 +28,8 @@ export default function ProgramLibrary() {
   const [bulkAssigning, setBulkAssigning] = useState(false);
 
   const { userEmail, role, isLoading: authLoading } = useAuth();
+  const navigate = useNavigate();
+
 
   useEffect(() => {
     loadData();
@@ -345,7 +348,20 @@ export default function ProgramLibrary() {
   return (
     <div className="pl-container">
       <div className="pl-body">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+          <div style={{ display: 'flex', alignItems: 'center' }}>
+            <button onClick={() => navigate(-1)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#008ed3', padding: 0, display: 'flex', marginRight: '12px' }}>
+              <ArrowLeft size={28} />
+            </button>
+            <h2 style={{ fontSize: '24px', color: '#0f172a', fontWeight: '700', margin: 0, fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+              Program Library
+            </h2>
+          </div>
+          <button className="pl-bulk-assign-btn" onClick={() => setAssignModalOpen(true)}>
+            <UserPlus size={16} /> Assign
+          </button>
+        </div>
+
           <h2 style={{ fontSize: '24px', color: '#008ed3', fontWeight: '700', margin: 0 }}>Program Library</h2>
           <button className="pl-bulk-assign-btn" onClick={() => setAssignModalOpen(true)}>
             <UserPlus size={16} /> Assign Programs

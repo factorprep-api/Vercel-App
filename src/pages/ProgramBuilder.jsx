@@ -329,7 +329,14 @@ export default function ProgramBuilder() {
         .pb-custom-dropdown li:hover { background-color: #f8fafc; }
       `}</style>
 
-      <h2 style={{ fontSize: '24px', color: '#008ed3', marginBottom: '16px', fontWeight: '700' }}>Program Builder</h2>
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '20px' }}>
+        <button onClick={() => navigate(-1)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#008ed3', padding: 0, display: 'flex', marginRight: '12px' }}>
+          <ArrowLeft size={28} />
+        </button>
+        <h2 style={{ fontSize: '24px', color: '#0f172a', fontWeight: '700', margin: 0, fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+          Program Builder
+        </h2>
+      </div>
       
       {error && <p style={{ color: '#dc3545', marginBottom: '16px', fontWeight: 'bold' }}>{error}</p>}
       

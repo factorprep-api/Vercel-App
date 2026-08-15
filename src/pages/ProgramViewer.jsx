@@ -598,7 +598,15 @@ export default function ProgramViewer() {
       </div>
 
       <div className="pv-body">
-        <h2 style={{ fontSize: '24px', color: '#008ed3', marginBottom: '16px', fontWeight: '700' }}>Today's Workout</h2>
+               <div style={{ display: 'flex', alignItems: 'center', marginBottom: '16px' }}>
+          <button onClick={() => navigate(-1)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#008ed3', padding: 0, display: 'flex', marginRight: '12px' }}>
+            <ArrowLeft size={28} />
+          </button>
+          <h2 style={{ fontSize: '24px', color: '#0f172a', fontWeight: '700', margin: 0, fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+            Today's Workout
+          </h2>
+        </div>
+
         {athleteName && <p style={{ color: '#666', fontSize: '15px', marginBottom: '20px', marginTop: '-8px' }}>Welcome, {athleteName}</p>}
 
         <div className="pv-search-box">
