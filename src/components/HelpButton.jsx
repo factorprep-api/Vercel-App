@@ -9,28 +9,31 @@ export default function HelpButton({ pageName = 'Default', position = 'bottom-ri
   const handleClick = async () => {
     setLoading(true);
     try {
-      // 1. Fetch directly from Google Sheets the moment they click
       const res = await fetchHelpVideos();
       const videos = res.helpVideos || [];
       
       let foundUrl = '';
       
-      // 2. Find the exact matching page name in Column A
       const match = videos.find(row => 
-        String(row[0]).trim().toLowerCase() === String(pageName).trim().toLowerCase()
+        row && row[0] && String(row[0]).trim().toLowerCase() === String(pageName).trim().toLowerCase()
       );
       
-      // 3. Grab the Bunny link from Column B
       if (match) foundUrl = String(match[1]).trim();
 
-      // 4. Open the video
       if (foundUrl && foundUrl.startsWith('http')) {
         window.open(foundUrl, '_blank');
       } else {
-        alert(`Help video for "${pageName}" is coming soon!`);
+        // DIAGNOSTIC ALERT: Tells us exactly what Google sent back
+        let debugMsg = `Looking for: "${pageName}"\n\n`;
+        if (videos.length === 0) {
+          debugMsg += `ERROR: Google sent back 0 rows. \n(Check if the sheet is named exactly 'Help_Videos' and the script is deployed as a New Version).`;
+        } else {
+          debugMsg += `Google sent ${videos.length} rows.\nFirst row found: "${videos[0][0]}"\n\nPlease check for typos in the sheet!`;
+        }
+        alert(debugMsg);
       }
     } catch (err) {
-      alert(`Error loading video. Please try again.`);
+      alert(`API Error: Cannot reach Google Script. Check api.js URL.`);
     }
     setLoading(false);
   };
@@ -49,4 +52,3 @@ export default function HelpButton({ pageName = 'Default', position = 'bottom-ri
     </button>
   );
 }
-

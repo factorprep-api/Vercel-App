@@ -328,7 +328,7 @@ export default function ProgramBuilder() {
       `}</style>
 
       {/* NEW HEADER */}
-      <div style={{ display: 'flex', alignItems: 'center', marginBottom: '20px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', marginBottom: '20px', marginTop: '16px' }}>
         <button onClick={() => navigate(-1)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#008ed3', padding: 0, display: 'flex', marginRight: '12px' }}>
           <ArrowLeft size={28} />
         </button>
