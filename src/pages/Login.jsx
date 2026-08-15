@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { supabase } from '../supabase';
 import { createAthlete } from '../api';
+import { Eye, EyeOff } from 'lucide-react';
 
 export default function Login() {
   const [isSignUp, setIsSignUp] = useState(false);
@@ -10,6 +11,7 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [showForgot, setShowForgot] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -107,7 +109,7 @@ export default function Login() {
           </form>
         ) : (
           <>
-            <form onSubmit={handleSubmit}>
+           <form onSubmit={handleSubmit}>
               {isSignUp && (
                 <div style={{ marginBottom: '20px' }}>
                   <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold', color: '#555', fontSize: '14px' }}>Name</label>
@@ -122,7 +124,42 @@ export default function Login() {
 
               <div style={{ marginBottom: '24px' }}>
                 <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold', color: '#555', fontSize: '14px' }}>Password</label>
-                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" required minLength={6} style={{ width: '100%', padding: '12px', border: '2px solid #ddd', borderRadius: '6px', fontSize: '16px', boxSizing: 'border-box' }} />
+                <div style={{ position: 'relative' }}>
+                  <input 
+                    type={showPassword ? 'text' : 'password'} 
+                    value={password} 
+                    onChange={(e) => setPassword(e.target.value)} 
+                    placeholder="••••••••" 
+                    required 
+                    minLength={6} 
+                    style={{ 
+                      width: '100%', 
+                      padding: '12px 45px 12px 12px', 
+                      border: '2px solid #ddd', 
+                      borderRadius: '6px', 
+                      fontSize: '16px', 
+                      boxSizing: 'border-box' 
+                    }} 
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    style={{
+                      position: 'absolute',
+                      right: '12px',
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      color: '#666',
+                      padding: 0,
+                      display: 'flex'
+                    }}
+                  >
+                    {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                  </button>
+                </div>
               </div>
 
               <button type="submit" disabled={loading} style={{ width: '100%', padding: '14px', background: loading ? '#9ca3af' : '#008ed3', color: 'white', border: 'none', borderRadius: '6px', fontSize: '16px', fontWeight: 'bold', cursor: loading ? 'not-allowed' : 'pointer', marginBottom: '20px' }}>
