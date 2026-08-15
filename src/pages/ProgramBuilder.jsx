@@ -1,9 +1,10 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { Plus, Save, ArrowUp, ArrowDown, Trash2, Hammer, CheckCircle, X, Library as LibIcon, Settings } from 'lucide-react';
+import { Plus, Save, ArrowUp, ArrowDown, Trash2, Hammer, CheckCircle, X, Library as LibIcon, Settings, ArrowLeft } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { fetchPrograms, fetchLibrary, saveFullProgram, updateProgram, getMediaType } from '../api';
 import './program-builder.css';
 import HelpButton from '../components/HelpButton';
+import { useNavigate } from 'react-router-dom';
 
 function MediaPlayer({ url, compact = false }) {
   if (!url) return null;
@@ -23,7 +24,6 @@ function MediaPlayer({ url, compact = false }) {
   );
 }
 
-// FIX: Added 'weight' to the default targets list
 const DEFAULT_ADVANCED = {
   execution: 'bilateral', 
   setType: 'standard',    
@@ -33,6 +33,7 @@ const DEFAULT_ADVANCED = {
 
 export default function ProgramBuilder() {
   const { userEmail: coachEmail, isLoading: authLoading } = useAuth();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [programs, setPrograms] = useState([]);
@@ -45,7 +46,6 @@ export default function ProgramBuilder() {
   const [advanced, setAdvanced] = useState(DEFAULT_ADVANCED);
   const [showAdvanced, setShowAdvanced] = useState(false);
   
-  // FIX: Custom Dropdown state
   const [showExDropdown, setShowExDropdown] = useState(false);
 
   const [loadProgramName, setLoadProgramName] = useState('');
@@ -315,8 +315,6 @@ export default function ProgramBuilder() {
           border-bottom: 3px solid #008ed3;
           border-radius: 4px 0 0 4px;
         }
-        
-        /* Custom Dropdown Styling */
         .pb-custom-dropdown {
           position: absolute; top: 100%; left: 0; right: 0; z-index: 1000;
           background-color: #fff; border: 1px solid #cbd5e1; border-radius: 8px;
@@ -329,7 +327,8 @@ export default function ProgramBuilder() {
         .pb-custom-dropdown li:hover { background-color: #f8fafc; }
       `}</style>
 
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '20px' }}>
+      {/* NEW HEADER */}
+      <div style={{ display: 'flex', alignItems: 'center', marginBottom: '20px' }}>
         <button onClick={() => navigate(-1)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#008ed3', padding: 0, display: 'flex', marginRight: '12px' }}>
           <ArrowLeft size={28} />
         </button>
@@ -408,7 +407,6 @@ export default function ProgramBuilder() {
           
           <div className="pb-field-group" style={{ position: 'relative' }}>
             <label className="pb-label">Select Exercise from Library:</label>
-            {/* FIX: Replaced native datalist with Custom React Dropdown */}
             <input
               className="pb-input"
               value={form.exercise}
@@ -430,7 +428,7 @@ export default function ProgramBuilder() {
                     <li 
                       key={ex} 
                       onMouseDown={(e) => {
-                        e.preventDefault(); // Prevents input blur from closing it too early
+                        e.preventDefault(); 
                         setForm({...form, exercise: ex});
                         setShowExDropdown(false);
                         setTimeout(() => setsInputRef.current?.focus(), 10);
@@ -493,7 +491,6 @@ export default function ProgramBuilder() {
                   </div>
                 </div>
 
-                {/* FIX: Target Weight box added to match Time and Distance */}
                 <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
                   {advanced.metrics.weight && (
                     <div style={{ flex: 1, minWidth: '120px' }}>
@@ -558,7 +555,6 @@ export default function ProgramBuilder() {
                     {item.rest ? ` | Rest: ${item.rest}` : ''}
                   </p>
                   
-                  {/* FIX: Included Weight in the Target display list */}
                   {(item.advanced?.targets?.weight || item.advanced?.targets?.time || item.advanced?.targets?.distance) && (
                     <p style={{ fontSize: '12px', color: '#0ea5e9', fontWeight: '600', margin: '4px 0 0 0' }}>
                       Targets: 

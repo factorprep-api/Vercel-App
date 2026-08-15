@@ -1,35 +1,38 @@
+import { useState } from 'react';
 import { HelpCircle, Loader2 } from 'lucide-react';
-import { useHelpVideos } from '../context/HelpVideosContext';
+import { fetchHelpVideos } from '../api';
 import './help-button.css';
 
 export default function HelpButton({ pageName = 'Default', position = 'bottom-right' }) {
-  const { helpVideos, loading } = useHelpVideos();
+  const [loading, setLoading] = useState(false);
 
-  const handleClick = () => {
-    let foundUrl = '';
-
-    // Safely check if helpVideos is a raw Google Sheets array or a formatted object
-    if (Array.isArray(helpVideos)) {
-      // It's an array (raw spreadsheet data)
-      const match = helpVideos.find(row => 
+  const handleClick = async () => {
+    setLoading(true);
+    try {
+      // 1. Fetch directly from Google Sheets the moment they click
+      const res = await fetchHelpVideos();
+      const videos = res.helpVideos || [];
+      
+      let foundUrl = '';
+      
+      // 2. Find the exact matching page name in Column A
+      const match = videos.find(row => 
         String(row[0]).trim().toLowerCase() === String(pageName).trim().toLowerCase()
       );
-      if (match) foundUrl = String(match[1]).trim();
       
-    } else if (typeof helpVideos === 'object' && helpVideos !== null) {
-      // It's a dictionary object
-      const key = Object.keys(helpVideos).find(k => 
-        String(k).trim().toLowerCase() === String(pageName).trim().toLowerCase()
-      );
-      if (key) foundUrl = String(helpVideos[key]).trim();
-    }
+      // 3. Grab the Bunny link from Column B
+      if (match) foundUrl = String(match[1]).trim();
 
-    // Open the video, or show a fallback alert
-    if (foundUrl && foundUrl.startsWith('http')) {
-      window.open(foundUrl, '_blank');
-    } else {
-      alert(`Help video for "${pageName}" is coming soon!`);
+      // 4. Open the video
+      if (foundUrl && foundUrl.startsWith('http')) {
+        window.open(foundUrl, '_blank');
+      } else {
+        alert(`Help video for "${pageName}" is coming soon!`);
+      }
+    } catch (err) {
+      alert(`Error loading video. Please try again.`);
     }
+    setLoading(false);
   };
 
   if (loading) {

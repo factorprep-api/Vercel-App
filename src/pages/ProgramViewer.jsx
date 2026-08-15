@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Play, ChevronDown, ChevronUp, Video, Image as ImageIcon, Save, CheckCircle, MessageSquare, UserPlus, Globe, Timer, Pause, RotateCcw, Plus, Minus, X } from 'lucide-react';
+import { Play, ChevronDown, ChevronUp, Video, Image as ImageIcon, Save, CheckCircle, MessageSquare, UserPlus, Globe, Timer, Pause, RotateCcw, Plus, Minus, X, ArrowLeft } from 'lucide-react';
 import { getYouTubeId } from '../utils/helpers';
 import { useAuth } from '../hooks/useAuth';
 import { fetchAllData, getAthleteByEmail, saveSession, getMediaType, getLatestMaxes, fetchLogbookByAthlete } from '../api';
@@ -34,9 +34,6 @@ function extractMediaUrl(rawVid) {
   return '';
 }
 
-// =====================================
-// TIME & DISTANCE PARSING UTILS
-// =====================================
 function parseTimeToSeconds(str) {
   if (!str) return 0;
   const colonMatch = str.match(/(\d+):(\d+)/);
@@ -64,9 +61,6 @@ function parseDistance(str) {
   return { val: 0, unit: 'm' };
 }
 
-// =====================================
-// UNIVERSAL TARGET LOAD ENGINE
-// =====================================
 function calculateTargetLoad(libraryData, athleteMaxes, lastWeights, exerciseName, reps, intensity) {
   if (!intensity || isNaN(parseFloat(intensity)) || parseFloat(intensity) <= 0) return { text: '', val: '', source: 'none', metric: '' };
 
@@ -75,29 +69,26 @@ function calculateTargetLoad(libraryData, athleteMaxes, lastWeights, exerciseNam
 
   const exInfo = libraryData.find(ex => normalizeString(ex[0]) === normalizeString(exerciseName));
   
-  // Read Column D to determine the calculation type
   let calcType = String(exInfo?.[3] || '').trim().toLowerCase();
-  if (calcType === 'yes') calcType = 'weight'; // Legacy fallback
+  if (calcType === 'yes') calcType = 'weight';
 
   let source = 'none';
   let targetText = '';
   let targetVal = '';
   let metricType = calcType;
 
-  // 1. TIME MATH (Inverse Division)
   if (calcType === 'time') {
     const lastEntry = lastWeights[normalizeString(exerciseName)];
     if (lastEntry && lastEntry.repsString) {
       let prevSeconds = parseTimeToSeconds(lastEntry.repsString);
       if (prevSeconds > 0) {
-        const targetSeconds = prevSeconds / intensityDecimal; // Inverse math!
+        const targetSeconds = prevSeconds / intensityDecimal; 
         targetText = formatSecondsToTime(targetSeconds);
         targetVal = targetText;
         source = 'history';
       }
     }
   } 
-  // 2. DISTANCE MATH (Standard Multiplication)
   else if (calcType === 'distance') {
     const lastEntry = lastWeights[normalizeString(exerciseName)];
     if (lastEntry && lastEntry.repsString) {
@@ -110,7 +101,6 @@ function calculateTargetLoad(libraryData, athleteMaxes, lastWeights, exerciseNam
       }
     }
   }
-  // 3. WEIGHT MATH (Epley Formula)
   else if (calcType === 'weight') {
     let oneRM = 0;
     const maxEntry = athleteMaxes[normalizeString(exerciseName)];
@@ -172,7 +162,6 @@ export default function ProgramViewer() {
   const [showProgramMedia, setShowProgramMedia] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   
-  // Timer State
   const [timerExpanded, setTimerExpanded] = useState(false);
   const [timerActive, setTimerActive] = useState(false);
   const [timeLeft, setTimeLeft] = useState(90); 
@@ -471,7 +460,6 @@ export default function ProgramViewer() {
         
         const targetData = targetCalcs[key] || { val: '', metric: '' };
         
-        // Auto-save logic routes to the correct metric
         const wt = input.wt || (metrics.weight ? (parseFloat(targets.weight) || (targetData.metric === 'weight' ? targetData.val : '')) : '');
         const rp = input.reps || set.reps || '';
         const tm = input.time || targets.time || (targetData.metric === 'time' ? targetData.val : '');
@@ -503,7 +491,6 @@ export default function ProgramViewer() {
     setSaving(false);
   }
 
-  // Input Field Class Routing
   const getInputClass = (targetData, inputType, overrideExists) => {
     let base = "pv-input pv-input-text";
     if (inputType === 'weight') base = "pv-input pv-input-kg";
@@ -598,7 +585,9 @@ export default function ProgramViewer() {
       </div>
 
       <div className="pv-body">
-               <div style={{ display: 'flex', alignItems: 'center', marginBottom: '16px' }}>
+        
+        {/* NEW HEADER */}
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: '16px' }}>
           <button onClick={() => navigate(-1)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#008ed3', padding: 0, display: 'flex', marginRight: '12px' }}>
             <ArrowLeft size={28} />
           </button>
@@ -721,7 +710,6 @@ export default function ProgramViewer() {
                       if (targets.time) customTargetDisplay += `⏱️ ${targets.time} `;
                       if (targets.distance) customTargetDisplay += `📏 ${targets.distance} `;
 
-                      // Only display calculated string if a custom target wasn't explicitly typed for that metric
                       let calcDisplay = '';
                       if (targetData.text && !targets[targetData.metric]) {
                         if (targetData.metric === 'weight') calcDisplay = `🏋️ ${targetData.text}`;
