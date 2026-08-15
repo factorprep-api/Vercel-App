@@ -4,10 +4,32 @@ import './help-button.css';
 
 export default function HelpButton({ pageName = 'Default', position = 'bottom-right' }) {
   const { helpVideos, loading } = useHelpVideos();
-  const videoUrl = helpVideos[pageName] || 'https://youtube.com/';
 
   const handleClick = () => {
-    window.open(videoUrl, '_blank');
+    let foundUrl = '';
+
+    // Safely check if helpVideos is a raw Google Sheets array or a formatted object
+    if (Array.isArray(helpVideos)) {
+      // It's an array (raw spreadsheet data)
+      const match = helpVideos.find(row => 
+        String(row[0]).trim().toLowerCase() === String(pageName).trim().toLowerCase()
+      );
+      if (match) foundUrl = String(match[1]).trim();
+      
+    } else if (typeof helpVideos === 'object' && helpVideos !== null) {
+      // It's a dictionary object
+      const key = Object.keys(helpVideos).find(k => 
+        String(k).trim().toLowerCase() === String(pageName).trim().toLowerCase()
+      );
+      if (key) foundUrl = String(helpVideos[key]).trim();
+    }
+
+    // Open the video, or show a fallback alert
+    if (foundUrl && foundUrl.startsWith('http')) {
+      window.open(foundUrl, '_blank');
+    } else {
+      alert(`Help video for "${pageName}" is coming soon!`);
+    }
   };
 
   if (loading) {
@@ -24,3 +46,4 @@ export default function HelpButton({ pageName = 'Default', position = 'bottom-ri
     </button>
   );
 }
+
