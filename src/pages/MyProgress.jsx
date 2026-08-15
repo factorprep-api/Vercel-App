@@ -340,4 +340,3 @@ export default function MyProgress() {
     </div>
   );
 }
-
