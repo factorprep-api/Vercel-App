@@ -165,6 +165,7 @@ export default function ProgramViewer() {
   const [timerExpanded, setTimerExpanded] = useState(false);
   const [timerActive, setTimerActive] = useState(false);
   const [timeLeft, setTimeLeft] = useState(90); 
+  const [baseTime, setBaseTime] = useState(90); 
   const [isEditingTimer, setIsEditingTimer] = useState(false);
   const [timerInputValue, setTimerInputValue] = useState('');
   
@@ -177,10 +178,15 @@ export default function ProgramViewer() {
       interval = setInterval(() => { setTimeLeft((prev) => prev - 1); }, 1000);
     } else if (timerActive && timeLeft === 0) {
       setTimerActive(false);
-      try { const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3'); audio.play(); } catch (e) {}
+      try { 
+        const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/995/995-preview.mp3'); 
+        audio.volume = 1.0; 
+        audio.play(); 
+      } catch (e) {}
+      setTimeLeft(baseTime);
     }
     return () => clearInterval(interval);
-  }, [timerActive, timeLeft]);
+  }, [timerActive, timeLeft, baseTime]);
 
   const formatTimeStr = (seconds) => {
     const m = Math.floor(seconds / 60);
@@ -188,7 +194,13 @@ export default function ProgramViewer() {
     return `${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
-  const adjustTimer = (amount) => { setTimeLeft((prev) => Math.max(0, prev + amount)); };
+  const adjustTimer = (amount) => { 
+    setTimeLeft((prev) => {
+      const newVal = Math.max(0, prev + amount);
+      setBaseTime(newVal); 
+      return newVal;
+    });
+  };
 
   const handleTimerClick = () => {
     setTimerActive(false);
@@ -207,6 +219,7 @@ export default function ProgramViewer() {
     }
     if (!isNaN(newSeconds)) {
       setTimeLeft(newSeconds);
+      setBaseTime(newSeconds);
     }
     setIsEditingTimer(false);
   };
@@ -432,8 +445,16 @@ export default function ProgramViewer() {
       const counts = {}; let maxCount = 0; let mostCommon = '90s';
       restTimes.forEach(rt => { counts[rt] = (counts[rt] || 0) + 1; if (counts[rt] > maxCount) { maxCount = counts[rt]; mostCommon = rt; } });
       const secMatch = mostCommon.match(/(\d+)/);
-      if (secMatch) { let secs = parseInt(secMatch[1], 10); if (mostCommon.toLowerCase().includes('m')) secs *= 60; setTimeLeft(secs); }
-    } else { setTimeLeft(90); }
+      if (secMatch) { 
+        let secs = parseInt(secMatch[1], 10); 
+        if (mostCommon.toLowerCase().includes('m')) secs *= 60; 
+        setTimeLeft(secs); 
+        setBaseTime(secs);
+      }
+    } else { 
+      setTimeLeft(90); 
+      setBaseTime(90);
+    }
   }
 
   function toggleMedia(groupId) {
@@ -586,7 +607,6 @@ export default function ProgramViewer() {
 
       <div className="pv-body">
         
-        {/* NEW HEADER */}
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: '16px' }}>
           <button onClick={() => navigate(-1)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#008ed3', padding: 0, display: 'flex', marginRight: '12px' }}>
             <ArrowLeft size={28} />
@@ -639,17 +659,22 @@ export default function ProgramViewer() {
               {programMediaUrl && ( <button className="pv-media-inline-btn" onClick={() => setShowProgramMedia(!showProgramMedia)}>{getMediaType(programMediaUrl) === 'audio' ? '🎙️' : '🎬'} {showProgramMedia ? 'Hide' : 'Play'}</button> )}
             </div>
             {coachNote && <p>{coachNote}</p>}
+            
             {programMediaUrl && showProgramMedia && (
-              <div className="pv-media-player-wrap">
+              <div style={{ marginTop: '12px' }}>
                 {getYouTubeId(programMediaUrl) ? (
                   <div style={{ position: 'relative', paddingBottom: '56.25%', height: 0, overflow: 'hidden', borderRadius: '8px' }}>
-                    <iframe src={'https://www.youtube.com/embed/' + getYouTubeId(programMediaUrl) + '?autoplay=1&rel=0'} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 0 }} allowFullScreen title="Coach Program Media" />
+                    <iframe src={`https://www.youtube.com/embed/${getYouTubeId(programMediaUrl)}?autoplay=1&rel=0`} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 0 }} allowFullScreen title="Coach Program Media" />
                   </div>
                 ) : (programMediaUrl.toLowerCase().includes('.png') || programMediaUrl.toLowerCase().includes('.jpg')) ? (
-                  <img src={programMediaUrl} alt="Program Media" style={{ maxWidth: '100%', maxHeight: '400px', objectFit: 'contain', borderRadius: '8px' }} />
+                  <img src={programMediaUrl} alt="Program Media" style={{ width: '100%', maxHeight: '400px', objectFit: 'contain', borderRadius: '8px' }} />
                 ) : getMediaType(programMediaUrl) === 'audio' ? (
-                  <audio src={programMediaUrl} controls preload="metadata" className="pv-media-audio" />
-                ) : ( <video src={programMediaUrl} controls playsInline preload="metadata" className="pv-media-video" /> )}
+                  <audio src={programMediaUrl} controls preload="metadata" style={{ width: '100%' }} />
+                ) : ( 
+                  <video controls playsInline preload="metadata" controlsList="nodownload" style={{ width: '100%', borderRadius: '8px' }}>
+                    <source src={programMediaUrl} type="video/mp4" />
+                  </video> 
+                )}
               </div>
             )}
           </div>
@@ -689,13 +714,17 @@ export default function ProgramViewer() {
                     </div>
                     
                     {hasMedia && expandedVideos.has(group.id) && (
-                      <div className="pv-video-container" style={{ padding: isImage ? '10px' : '0' }}>
+                      <div style={{ padding: isImage ? '10px' : '0', marginTop: '8px' }}>
                         {group.ytId ? ( 
                           <div style={{ position: 'relative', paddingBottom: '56.25%', height: 0, overflow: 'hidden', borderRadius: '4px' }}>
                             <iframe src={`https://www.youtube.com/embed/${group.ytId}?autoplay=1&rel=0`} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 0 }} allowFullScreen title={group.name} />
                           </div>
                         ) : isImage ? ( <img src={group.videoUrl} alt={group.name} style={{ width: '100%', maxHeight: '40vh', objectFit: 'contain', borderRadius: '4px' }} />
-                        ) : ( <video key={group.videoUrl} src={group.videoUrl} autoPlay controls playsInline preload="metadata" controlsList="nodownload" style={{ width: '100%', borderRadius: '4px' }}></video> )}
+                        ) : ( 
+                          <video key={group.videoUrl} autoPlay controls playsInline preload="metadata" controlsList="nodownload" style={{ width: '100%', borderRadius: '4px' }}>
+                            <source src={group.videoUrl} type="video/mp4" />
+                          </video> 
+                        )}
                       </div>
                     )}
                     
@@ -798,4 +827,3 @@ export default function ProgramViewer() {
     </div>
   );
 }
-
