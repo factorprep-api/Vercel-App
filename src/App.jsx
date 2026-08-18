@@ -15,7 +15,8 @@ const ProgramLibrary = lazy(() => import('./pages/ProgramLibrary'));
 const Shop = lazy(() => import('./pages/Shop'));
 const Whiteboard = lazy(() => import('./pages/Whiteboard'));
 const CoachResults = lazy(() => import('./pages/CoachResults'));
-const IntervalTimer = lazy(() => import('./pages/IntervalTimer')); // NEW: Interval Timer
+const IntervalTimer = lazy(() => import('./pages/IntervalTimer')); 
+const TeamWellness = lazy(() => import('./pages/TeamWellness')); // NEW: Wellness Pod (Hidden)
 
 const LoadingFallback = () => (
   <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', fontFamily: '"Roboto Flex", sans-serif' }}>
@@ -125,10 +126,16 @@ export default function App() {
           </ProtectedRoute>
         } />
 
-        {/* NEW ROUTE: Interval Timer */}
         <Route path="/interval-timer" element={
           <ProtectedRoute allowedRoles={['athlete', 'coach']}>
             <Suspense fallback={<LoadingFallback />}><IntervalTimer /></Suspense>
+          </ProtectedRoute>
+        } />
+
+        {/* GHOST ROUTE: Wellness Pod */}
+        <Route path="/wellness" element={
+          <ProtectedRoute allowedRoles={['coach']}>
+            <Suspense fallback={<LoadingFallback />}><TeamWellness /></Suspense>
           </ProtectedRoute>
         } />
       </Routes>
