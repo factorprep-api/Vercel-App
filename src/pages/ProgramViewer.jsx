@@ -586,7 +586,6 @@ export default function ProgramViewer() {
 
       <div className="pv-body">
         
-        {/* NEW HEADER */}
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: '16px' }}>
           <button onClick={() => navigate(-1)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#008ed3', padding: 0, display: 'flex', marginRight: '12px' }}>
             <ArrowLeft size={28} />
@@ -636,7 +635,11 @@ export default function ProgramViewer() {
           <div className="pv-coach-note" style={{ marginBottom: '20px' }}>
             <div className="pv-coach-note-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h4><MessageSquare size={14} /> Coach's Notes</h4>
-                        {programMediaUrl && showProgramMedia && (
+              {programMediaUrl && ( <button className="pv-media-inline-btn" onClick={() => setShowProgramMedia(!showProgramMedia)}>{getMediaType(programMediaUrl) === 'audio' ? '🎙️' : '🎬'} {showProgramMedia ? 'Hide' : 'Play'}</button> )}
+            </div>
+            {coachNote && <p>{coachNote}</p>}
+            
+            {programMediaUrl && showProgramMedia && (
               <div className="pv-media-player-wrap">
                 {getYouTubeId(programMediaUrl) ? (
                   <div style={{ position: 'relative', paddingBottom: '56.25%', height: 0, overflow: 'hidden', borderRadius: '8px' }}>
@@ -653,7 +656,8 @@ export default function ProgramViewer() {
                 )}
               </div>
             )}
-
+          </div>
+        )}
 
         {workoutGroups.length === 0 && selectedProgram && ( <p className="pv-placeholder">No exercises found for this program.</p> )}
         {!selectedProgram && ( <p className="pv-placeholder">Select a program from above to view your workout.</p> )}
@@ -688,7 +692,7 @@ export default function ProgramViewer() {
                       {hasMedia && ( <button className="pv-video-toggle" style={{ color: section.color, borderColor: section.color, background: `${section.color}0D` }} onClick={() => toggleMedia(group.id)}>{isImage ? <ImageIcon size={12} /> : <Video size={12} />} Media</button> )}
                     </div>
                     
-                                       {hasMedia && expandedVideos.has(group.id) && (
+                    {hasMedia && expandedVideos.has(group.id) && (
                       <div className="pv-video-container" style={{ padding: isImage ? '10px' : '0' }}>
                         {group.ytId ? ( 
                           <div style={{ position: 'relative', paddingBottom: '56.25%', height: 0, overflow: 'hidden', borderRadius: '4px' }}>
@@ -802,4 +806,3 @@ export default function ProgramViewer() {
     </div>
   );
 }
-
