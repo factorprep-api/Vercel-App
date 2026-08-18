@@ -165,6 +165,7 @@ export default function ProgramViewer() {
   const [timerExpanded, setTimerExpanded] = useState(false);
   const [timerActive, setTimerActive] = useState(false);
   const [timeLeft, setTimeLeft] = useState(90); 
+  const [baseTime, setBaseTime] = useState(90); 
   const [isEditingTimer, setIsEditingTimer] = useState(false);
   const [timerInputValue, setTimerInputValue] = useState('');
   
@@ -177,10 +178,15 @@ export default function ProgramViewer() {
       interval = setInterval(() => { setTimeLeft((prev) => prev - 1); }, 1000);
     } else if (timerActive && timeLeft === 0) {
       setTimerActive(false);
-      try { const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3'); audio.play(); } catch (e) {}
+      try { 
+        const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/995/995-preview.mp3'); 
+        audio.volume = 1.0; 
+        audio.play(); 
+      } catch (e) {}
+      setTimeLeft(baseTime);
     }
     return () => clearInterval(interval);
-  }, [timerActive, timeLeft]);
+  }, [timerActive, timeLeft, baseTime]);
 
   const formatTimeStr = (seconds) => {
     const m = Math.floor(seconds / 60);
@@ -188,7 +194,13 @@ export default function ProgramViewer() {
     return `${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
-  const adjustTimer = (amount) => { setTimeLeft((prev) => Math.max(0, prev + amount)); };
+  const adjustTimer = (amount) => { 
+    setTimeLeft((prev) => {
+      const newVal = Math.max(0, prev + amount);
+      setBaseTime(newVal); 
+      return newVal;
+    });
+  };
 
   const handleTimerClick = () => {
     setTimerActive(false);
@@ -207,6 +219,7 @@ export default function ProgramViewer() {
     }
     if (!isNaN(newSeconds)) {
       setTimeLeft(newSeconds);
+      setBaseTime(newSeconds);
     }
     setIsEditingTimer(false);
   };
@@ -432,8 +445,16 @@ export default function ProgramViewer() {
       const counts = {}; let maxCount = 0; let mostCommon = '90s';
       restTimes.forEach(rt => { counts[rt] = (counts[rt] || 0) + 1; if (counts[rt] > maxCount) { maxCount = counts[rt]; mostCommon = rt; } });
       const secMatch = mostCommon.match(/(\d+)/);
-      if (secMatch) { let secs = parseInt(secMatch[1], 10); if (mostCommon.toLowerCase().includes('m')) secs *= 60; setTimeLeft(secs); }
-    } else { setTimeLeft(90); }
+      if (secMatch) { 
+        let secs = parseInt(secMatch[1], 10); 
+        if (mostCommon.toLowerCase().includes('m')) secs *= 60; 
+        setTimeLeft(secs); 
+        setBaseTime(secs);
+      }
+    } else { 
+      setTimeLeft(90); 
+      setBaseTime(90);
+    }
   }
 
   function toggleMedia(groupId) {
@@ -639,11 +660,11 @@ export default function ProgramViewer() {
             </div>
             {coachNote && <p>{coachNote}</p>}
             
-                {programMediaUrl && showProgramMedia && (
+            {programMediaUrl && showProgramMedia && (
               <div style={{ marginTop: '12px' }}>
                 {getYouTubeId(programMediaUrl) ? (
                   <div style={{ position: 'relative', paddingBottom: '56.25%', height: 0, overflow: 'hidden', borderRadius: '8px' }}>
-                    <iframe src={'https://www.youtube.com/embed/' + getYouTubeId(programMediaUrl) + '?autoplay=1&rel=0'} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 0 }} allowFullScreen title="Coach Program Media" />
+                    <iframe src={`https://www.youtube.com/embed/${getYouTubeId(programMediaUrl)}?autoplay=1&rel=0`} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 0 }} allowFullScreen title="Coach Program Media" />
                   </div>
                 ) : (programMediaUrl.toLowerCase().includes('.png') || programMediaUrl.toLowerCase().includes('.jpg')) ? (
                   <img src={programMediaUrl} alt="Program Media" style={{ width: '100%', maxHeight: '400px', objectFit: 'contain', borderRadius: '8px' }} />
@@ -656,7 +677,6 @@ export default function ProgramViewer() {
                 )}
               </div>
             )}
-
           </div>
         )}
 
@@ -693,7 +713,7 @@ export default function ProgramViewer() {
                       {hasMedia && ( <button className="pv-video-toggle" style={{ color: section.color, borderColor: section.color, background: `${section.color}0D` }} onClick={() => toggleMedia(group.id)}>{isImage ? <ImageIcon size={12} /> : <Video size={12} />} Media</button> )}
                     </div>
                     
-                                       {hasMedia && expandedVideos.has(group.id) && (
+                    {hasMedia && expandedVideos.has(group.id) && (
                       <div style={{ padding: isImage ? '10px' : '0', marginTop: '8px' }}>
                         {group.ytId ? ( 
                           <div style={{ position: 'relative', paddingBottom: '56.25%', height: 0, overflow: 'hidden', borderRadius: '4px' }}>
@@ -707,7 +727,6 @@ export default function ProgramViewer() {
                         )}
                       </div>
                     )}
-
                     
                     {group.details.map((set, idx) => {
                       const inputKey = group.id + '_' + idx;
