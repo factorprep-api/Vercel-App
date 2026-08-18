@@ -639,16 +639,16 @@ export default function ProgramViewer() {
             </div>
             {coachNote && <p>{coachNote}</p>}
             
-            {programMediaUrl && showProgramMedia && (
-              <div className="pv-media-player-wrap">
+                {programMediaUrl && showProgramMedia && (
+              <div style={{ marginTop: '12px' }}>
                 {getYouTubeId(programMediaUrl) ? (
                   <div style={{ position: 'relative', paddingBottom: '56.25%', height: 0, overflow: 'hidden', borderRadius: '8px' }}>
                     <iframe src={'https://www.youtube.com/embed/' + getYouTubeId(programMediaUrl) + '?autoplay=1&rel=0'} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 0 }} allowFullScreen title="Coach Program Media" />
                   </div>
                 ) : (programMediaUrl.toLowerCase().includes('.png') || programMediaUrl.toLowerCase().includes('.jpg')) ? (
-                  <img src={programMediaUrl} alt="Program Media" style={{ maxWidth: '100%', maxHeight: '400px', objectFit: 'contain', borderRadius: '8px' }} />
+                  <img src={programMediaUrl} alt="Program Media" style={{ width: '100%', maxHeight: '400px', objectFit: 'contain', borderRadius: '8px' }} />
                 ) : getMediaType(programMediaUrl) === 'audio' ? (
-                  <audio src={programMediaUrl} controls preload="metadata" className="pv-media-audio" />
+                  <audio src={programMediaUrl} controls preload="metadata" style={{ width: '100%' }} />
                 ) : ( 
                   <video controls playsInline preload="metadata" controlsList="nodownload" style={{ width: '100%', borderRadius: '8px' }}>
                     <source src={programMediaUrl} type="video/mp4" />
@@ -656,6 +656,7 @@ export default function ProgramViewer() {
                 )}
               </div>
             )}
+
           </div>
         )}
 
@@ -692,8 +693,8 @@ export default function ProgramViewer() {
                       {hasMedia && ( <button className="pv-video-toggle" style={{ color: section.color, borderColor: section.color, background: `${section.color}0D` }} onClick={() => toggleMedia(group.id)}>{isImage ? <ImageIcon size={12} /> : <Video size={12} />} Media</button> )}
                     </div>
                     
-                    {hasMedia && expandedVideos.has(group.id) && (
-                      <div className="pv-video-container" style={{ padding: isImage ? '10px' : '0' }}>
+                                       {hasMedia && expandedVideos.has(group.id) && (
+                      <div style={{ padding: isImage ? '10px' : '0', marginTop: '8px' }}>
                         {group.ytId ? ( 
                           <div style={{ position: 'relative', paddingBottom: '56.25%', height: 0, overflow: 'hidden', borderRadius: '4px' }}>
                             <iframe src={`https://www.youtube.com/embed/${group.ytId}?autoplay=1&rel=0`} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 0 }} allowFullScreen title={group.name} />
@@ -706,6 +707,7 @@ export default function ProgramViewer() {
                         )}
                       </div>
                     )}
+
                     
                     {group.details.map((set, idx) => {
                       const inputKey = group.id + '_' + idx;

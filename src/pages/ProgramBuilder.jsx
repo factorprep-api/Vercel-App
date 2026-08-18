@@ -12,19 +12,20 @@ function MediaPlayer({ url, compact = false }) {
   const mediaType = getMediaType(url);
   
   return (
-    <div className={compact ? 'media-player-compact' : 'media-player'}>
+    <div style={{ marginTop: '10px' }}>
       {isImg ? (
-        <img src={url} alt="Program Media" style={{ maxWidth: '100%', maxHeight: '400px', objectFit: 'contain', borderRadius: '4px' }} />
+        <img src={url} alt="Program Media" style={{ width: '100%', maxHeight: '400px', objectFit: 'contain', borderRadius: '4px' }} />
       ) : mediaType === 'video' ? (
-        <video controls preload="metadata" className="media-video" controlsList="nodownload" style={{ width: '100%', borderRadius: '4px' }}>
+        <video controls preload="metadata" controlsList="nodownload" style={{ width: '100%', borderRadius: '4px' }}>
           <source src={url} type="video/mp4" />
         </video>
       ) : (
-        <audio src={url} controls preload="metadata" className="media-audio" />
+        <audio src={url} controls preload="metadata" style={{ width: '100%' }} />
       )}
     </div>
   );
 }
+
 
 const DEFAULT_ADVANCED = {
   execution: 'bilateral', 
