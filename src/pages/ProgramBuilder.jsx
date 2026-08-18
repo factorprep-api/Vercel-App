@@ -16,7 +16,9 @@ function MediaPlayer({ url, compact = false }) {
       {isImg ? (
         <img src={url} alt="Program Media" style={{ maxWidth: '100%', maxHeight: '400px', objectFit: 'contain', borderRadius: '4px' }} />
       ) : mediaType === 'video' ? (
-        <video src={url} controls preload="metadata" className="media-video" />
+        <video controls preload="metadata" className="media-video" controlsList="nodownload" style={{ width: '100%', borderRadius: '4px' }}>
+          <source src={url} type="video/mp4" />
+        </video>
       ) : (
         <audio src={url} controls preload="metadata" className="media-audio" />
       )}

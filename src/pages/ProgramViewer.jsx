@@ -636,10 +636,7 @@ export default function ProgramViewer() {
           <div className="pv-coach-note" style={{ marginBottom: '20px' }}>
             <div className="pv-coach-note-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h4><MessageSquare size={14} /> Coach's Notes</h4>
-              {programMediaUrl && ( <button className="pv-media-inline-btn" onClick={() => setShowProgramMedia(!showProgramMedia)}>{getMediaType(programMediaUrl) === 'audio' ? '🎙️' : '🎬'} {showProgramMedia ? 'Hide' : 'Play'}</button> )}
-            </div>
-            {coachNote && <p>{coachNote}</p>}
-            {programMediaUrl && showProgramMedia && (
+                        {programMediaUrl && showProgramMedia && (
               <div className="pv-media-player-wrap">
                 {getYouTubeId(programMediaUrl) ? (
                   <div style={{ position: 'relative', paddingBottom: '56.25%', height: 0, overflow: 'hidden', borderRadius: '8px' }}>
@@ -649,11 +646,14 @@ export default function ProgramViewer() {
                   <img src={programMediaUrl} alt="Program Media" style={{ maxWidth: '100%', maxHeight: '400px', objectFit: 'contain', borderRadius: '8px' }} />
                 ) : getMediaType(programMediaUrl) === 'audio' ? (
                   <audio src={programMediaUrl} controls preload="metadata" className="pv-media-audio" />
-                ) : ( <video src={programMediaUrl} controls playsInline preload="metadata" className="pv-media-video" /> )}
+                ) : ( 
+                  <video controls playsInline preload="metadata" controlsList="nodownload" style={{ width: '100%', borderRadius: '8px' }}>
+                    <source src={programMediaUrl} type="video/mp4" />
+                  </video> 
+                )}
               </div>
             )}
-          </div>
-        )}
+
 
         {workoutGroups.length === 0 && selectedProgram && ( <p className="pv-placeholder">No exercises found for this program.</p> )}
         {!selectedProgram && ( <p className="pv-placeholder">Select a program from above to view your workout.</p> )}
@@ -688,14 +688,18 @@ export default function ProgramViewer() {
                       {hasMedia && ( <button className="pv-video-toggle" style={{ color: section.color, borderColor: section.color, background: `${section.color}0D` }} onClick={() => toggleMedia(group.id)}>{isImage ? <ImageIcon size={12} /> : <Video size={12} />} Media</button> )}
                     </div>
                     
-                    {hasMedia && expandedVideos.has(group.id) && (
+                                       {hasMedia && expandedVideos.has(group.id) && (
                       <div className="pv-video-container" style={{ padding: isImage ? '10px' : '0' }}>
                         {group.ytId ? ( 
                           <div style={{ position: 'relative', paddingBottom: '56.25%', height: 0, overflow: 'hidden', borderRadius: '4px' }}>
                             <iframe src={`https://www.youtube.com/embed/${group.ytId}?autoplay=1&rel=0`} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 0 }} allowFullScreen title={group.name} />
                           </div>
                         ) : isImage ? ( <img src={group.videoUrl} alt={group.name} style={{ width: '100%', maxHeight: '40vh', objectFit: 'contain', borderRadius: '4px' }} />
-                        ) : ( <video key={group.videoUrl} src={group.videoUrl} autoPlay controls playsInline preload="metadata" controlsList="nodownload" style={{ width: '100%', borderRadius: '4px' }}></video> )}
+                        ) : ( 
+                          <video key={group.videoUrl} autoPlay controls playsInline preload="metadata" controlsList="nodownload" style={{ width: '100%', borderRadius: '4px' }}>
+                            <source src={group.videoUrl} type="video/mp4" />
+                          </video> 
+                        )}
                       </div>
                     )}
                     
