@@ -103,21 +103,12 @@ export default function ProgramLibrary() {
 
   const athleteOptions = useMemo(() => {
     if (!athletesData.length) return [];
-    const headers = athletesData[0] || [];
-    let roleCol = -1;
-    for (let i = 0; i < headers.length; i++) {
-      if (String(headers[i] || '').trim().toLowerCase() === 'role') { roleCol = i; break; }
-    }
+    
+    // FIX: Removed the "role !== 'coach'" restriction. 
+    // Now it returns EVERYONE in the database so Coaches can assign programs to themselves.
     return athletesData.slice(1)
       .map((row, i) => ({ row: i + 1, name: String(row[0] || '').trim(), rawData: row }))
-      .filter(a => {
-        if (!a.name) return false;
-        if (roleCol !== -1) {
-          const role = String(a.rawData[roleCol] || '').trim().toLowerCase();
-          return role !== 'coach';
-        }
-        return true;
-      })
+      .filter(a => a.name) // Only filter out blank rows
       .map(a => ({ row: a.row, name: a.name }));
   }, [athletesData]);
 
