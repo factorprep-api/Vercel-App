@@ -104,7 +104,7 @@ export default function CoachResults() {
   const navigate = useNavigate();
 
   // FIX: Default is now Wellness!
-  const [mainTab, setMainTab] = useState('wellness'); 
+  const [mainTab, setMainTab] = useState('performance'); // 'performance' | 'wellness'
 
   const [athletes, setAthletes] = useState([]);
   const [selectedAthlete, setSelectedAthlete] = useState('all');
@@ -117,7 +117,7 @@ export default function CoachResults() {
 
   const [wellnessRoster, setWellnessRoster] = useState([]);
   const [wellnessLoading, setWellnessLoading] = useState(true);
-  const [wellnessViewMode, setWellnessViewMode] = useState('grid');
+  const [mainTab, setMainTab] = useState('performance');
   const [wellnessSearch, setWellnessSearch] = useState('');
   const [activeWellnessMetric, setActiveWellnessMetric] = useState('grip');
   const [selectedChartUser, setSelectedChartUser] = useState('team');
@@ -228,12 +228,19 @@ export default function CoachResults() {
             });
           }
         }
-        setWellnessRoster(roster.sort((a, b) => a.name.localeCompare(b.name)));
+                setWellnessRoster(roster.sort((a, b) => a.name.localeCompare(b.name)));
+        
+        // The Smart Switch: If anyone has Wellness access, flip the tab!
+        if (roster.length > 0) {
+          setMainTab('wellness');
+        }
+
       } catch (err) { console.error("Failed to load athletes", err); }
       setWellnessLoading(false);
     }
     loadWellnessAthletes();
   }, []);
+
 
   const filteredLogbook = useMemo(() => {
     let entries = logbook;
