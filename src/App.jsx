@@ -16,7 +16,7 @@ const Shop = lazy(() => import('./pages/Shop'));
 const Whiteboard = lazy(() => import('./pages/Whiteboard'));
 const CoachResults = lazy(() => import('./pages/CoachResults'));
 const IntervalTimer = lazy(() => import('./pages/IntervalTimer')); 
-const TeamWellness = lazy(() => import('./pages/TeamWellness')); // NEW: Wellness Pod (Hidden)
+const AthleteWellness = lazy(() => import('./pages/AthleteWellness'));
 
 const LoadingFallback = () => (
   <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', fontFamily: '"Roboto Flex", sans-serif' }}>
@@ -132,10 +132,9 @@ export default function App() {
           </ProtectedRoute>
         } />
 
-        {/* GHOST ROUTE: Wellness Pod */}
-        <Route path="/wellness" element={
-          <ProtectedRoute allowedRoles={['coach']}>
-            <Suspense fallback={<LoadingFallback />}><TeamWellness /></Suspense>
+        <Route path="/athlete-wellness" element={
+          <ProtectedRoute allowedRoles={['athlete', 'coach']}>
+            <Suspense fallback={<LoadingFallback />}><AthleteWellness /></Suspense>
           </ProtectedRoute>
         } />
       </Routes>
