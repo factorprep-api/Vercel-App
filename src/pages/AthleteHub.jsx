@@ -17,11 +17,9 @@ export default function AthleteHub() {
         const data = await fetchAllData();
         const athletes = data.athletes || [];
         
-        // Find the user's row based on email (Column J / Index 9)
         const userRow = athletes.find(row => String(row[9] || '').toLowerCase().trim() === userEmail.toLowerCase().trim());
         
         if (userRow) {
-          // Parse Column L (Index 11) for comma-separated pods
           const podsString = String(userRow[11] || '').toLowerCase();
           const podsArray = podsString.split(',').map(s => s.trim());
           setActivePods(podsArray);
@@ -40,16 +38,14 @@ export default function AthleteHub() {
     </div>
   );
 
-  // The podId determines if it requires a purchase. If podId is null, it's always visible (Free Version).
   const allCards = [
-    { title: 'Wellness Center', desc: 'Daily readiness log', icon: Activity, path: '/athlete-wellness', color: '#0ea5e9', bgImage: '', podId: 'wellness' },
+    { title: 'Wellness Center', desc: 'Daily readiness log', icon: Activity, path: '/athlete-wellness', color: '#0ea5e9', bgImage: '/athlete-wellness-card.png', podId: 'wellness' },
     { title: 'My Programs', desc: 'View assigned workouts', icon: ClipboardList, path: '/program-viewer', color: '#008ed3', bgImage: '/program-view-card.png', podId: null },
     { title: 'My Progress', desc: 'Track your workouts', icon: TrendingUp, path: '/progress', color: '#2e7d32', bgImage: '/my-progress-card.png', podId: null },
     { title: 'Exercise Library', desc: 'Browse exercises with videos', icon: Dumbbell, path: '/exercise-library', color: '#d3ca17', bgImage: '/exercise-library-card-v2.png', podId: null },
     { title: 'Interval Timer', desc: 'Custom work/rest intervals', icon: Timer, path: '/interval-timer', color: '#ef4444', bgImage: '/interval-timer-card.png', podId: null }
   ];
 
-  // Filter cards based on their Active Pods
   const visibleCards = allCards.filter(card => !card.podId || activePods.includes(card.podId));
 
   return (
