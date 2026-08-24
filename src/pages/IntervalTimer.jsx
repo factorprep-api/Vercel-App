@@ -259,11 +259,7 @@ export default function IntervalTimer() {
             <X size={28} />
           </button>
           
-          {isLooping && !isFinished && (
-            <div style={{ background: 'rgba(0,0,0,0.2)', padding: '8px 16px', borderRadius: '20px', fontWeight: '800', letterSpacing: '1px' }}>
-              ROUND {loopCount}
-            </div>
-          )}
+          <div style={{ flex: 1 }}></div>
 
           <button onClick={() => setSoundEnabled(!soundEnabled)} style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer' }}>
             {soundEnabled ? <Volume2 size={28} /> : <VolumeX size={28} />}
@@ -272,17 +268,24 @@ export default function IntervalTimer() {
 
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
           
-          <h2 style={{ fontSize: '28px', textTransform: 'uppercase', letterSpacing: '2px', margin: '0 0 10px 0', opacity: 0.9 }}>
+          {/* MASSIVE ROUND COUNTER FOR COACH VISIBILITY */}
+          {isLooping && !isFinished && (
+            <div style={{ fontSize: '56px', fontWeight: '900', letterSpacing: '4px', margin: '0 0 24px 0', padding: '12px 40px', backgroundColor: 'rgba(255, 255, 255, 0.25)', borderRadius: '24px', textShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
+              ROUND {loopCount}
+            </div>
+          )}
+
+          <h2 style={{ fontSize: '32px', textTransform: 'uppercase', letterSpacing: '2px', margin: '0 0 10px 0', opacity: 0.9 }}>
             {isFinished ? 'Workout Complete!' : `${isWork ? 'WORK' : 'REST'} INTERVAL`}
           </h2>
           
           {!isFinished && (
-            <p style={{ fontSize: '18px', margin: '0 0 40px 0', opacity: 0.8 }}>
+            <p style={{ fontSize: '20px', margin: '0 0 40px 0', opacity: 0.8, fontWeight: '600' }}>
               Step {currentStepIndex + 1} of {activeSequence.length}
             </p>
           )}
 
-          <div style={{ fontSize: '120px', fontWeight: '800', lineHeight: 1, textShadow: '0 4px 20px rgba(0,0,0,0.2)', fontVariantNumeric: 'tabular-nums' }}>
+          <div style={{ fontSize: '130px', fontWeight: '800', lineHeight: 1, textShadow: '0 8px 32px rgba(0,0,0,0.2)', fontVariantNumeric: 'tabular-nums' }}>
             {isFinished ? 'DONE' : formatTime(timeLeft)}
           </div>
           
@@ -466,7 +469,6 @@ export default function IntervalTimer() {
         </div>
       )}
       
-      {/* HELP BUTTON ADDED HERE */}
       <HelpButton pageName="Interval Timer" position="bottom-right" />
     </div>
   );
