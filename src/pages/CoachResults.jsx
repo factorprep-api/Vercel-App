@@ -6,31 +6,69 @@ import { fetchAthletes, fetchLogbookByAthlete, fetchAllData } from '../api';
 import { ArrowLeft, Search, AlertCircle, Heart, Moon, Utensils, HandMetal, Smile, BarChart2, LayoutGrid, Dumbbell, Activity } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
+// ==========================================
+// PERFORMANCE TRACKING CONSTANTS
+// ==========================================
 const COLORS = {
-  primaryBlue: '#008ed3', darkText: '#333', bodyGray: '#666', lightBg: '#f5f5f5', cardBg: '#f8fafc',
-  border: '#e2e8f0', white: '#ffffff', green: '#16a34a', red: '#dc2626', amber: '#d97706',
-  zone1: '#bae0ef', zone2: '#7cc0e3', zone3: '#3da0d7', zone4: '#008ed3', zone5: '#005d8a', 
+  primaryBlue: '#008ed3',
+  darkText: '#333',
+  bodyGray: '#666',
+  lightBg: '#f5f5f5',
+  cardBg: '#f8fafc',
+  border: '#e2e8f0',
+  white: '#ffffff',
+  green: '#16a34a',
+  red: '#dc2626',
+  amber: '#d97706',
+  zone1: '#bae0ef', 
+  zone2: '#7cc0e3', 
+  zone3: '#3da0d7', 
+  zone4: '#008ed3', 
+  zone5: '#005d8a', 
 };
 
 const CACHE_KEY = 'fp_coach_results_v2';
 
 const CORE_LIFTS = {
-  backSquat: 'Back Squat With Barbell - (CORE)', deadlift: 'Deadlift With Barbell.v (CORE)', benchPress: 'Bench Press With Barbell - (CORE)',
-  shoulderPress: 'Shoulder Press Seated With Barbell - (CORE)', barbellRow: 'Barbell Row On Bench - Back.v (CORE)', latPulldown: 'Lat Pulldown On Machine - Back (CORE)',
+  backSquat: 'Back Squat With Barbell - (CORE)',
+  deadlift: 'Deadlift With Barbell.v (CORE)',
+  benchPress: 'Bench Press With Barbell - (CORE)',
+  shoulderPress: 'Shoulder Press Seated With Barbell - (CORE)',
+  barbellRow: 'Barbell Row On Bench - Back.v (CORE)',
+  latPulldown: 'Lat Pulldown On Machine - Back (CORE)',
 };
+
 const CORE_KEYS = ['backSquat', 'deadlift', 'benchPress', 'shoulderPress', 'barbellRow', 'latPulldown'];
 
 const MULTIPLIER_EXERCISES = {
-  'Front Squat': 'backSquat', 'Overhead Squat': 'backSquat', 'Trap Bar Deadlift': 'deadlift', 'Romanian Deadlift': 'deadlift',
-  'Incline Bench Press': 'benchPress', 'Push Press': 'shoulderPress', 'Arnold Press': 'shoulderPress', 'Bent-Over Row': 'barbellRow',
-  'Pull-Up': 'latPulldown', 'Chin-Up': 'latPulldown',
+  'Front Squat': 'backSquat',
+  'Overhead Squat': 'backSquat',
+  'Trap Bar Deadlift': 'deadlift',
+  'Romanian Deadlift': 'deadlift',
+  'Incline Bench Press': 'benchPress',
+  'Push Press': 'shoulderPress',
+  'Arnold Press': 'shoulderPress',
+  'Bent-Over Row': 'barbellRow',
+  'Pull-Up': 'latPulldown',
+  'Chin-Up': 'latPulldown',
 };
 
 const MULTIPLIERS = {
-  'Front Squat': 0.85, 'Overhead Squat': 0.80, 'Trap Bar Deadlift': 1.05, 'Romanian Deadlift': 0.90, 'Incline Bench Press': 0.85,
-  'Push Press': 0.85, 'Arnold Press': 0.80, 'Bent-Over Row': 0.95, 'Pull-Up': 0.75, 'Chin-Up': 0.75,
+  'Front Squat': 0.85,
+  'Overhead Squat': 0.80,
+  'Trap Bar Deadlift': 1.05,
+  'Romanian Deadlift': 0.90,
+  'Incline Bench Press': 0.85,
+  'Push Press': 0.85,
+  'Arnold Press': 0.80,
+  'Bent-Over Row': 0.95,
+  'Pull-Up': 0.75,
+  'Chin-Up': 0.75,
 };
 
+// ==========================================
+// WELLNESS MOCK DATA (Phase 1)
+// ==========================================
 const generateMockHistory = () => [
   { date: 'Mon', grip: 42, sleep: 7.5, soreness: 5, nutrition: 8, feeling: 7 },
   { date: 'Tue', grip: 43, sleep: 8.0, soreness: 4, nutrition: 8, feeling: 8 },
@@ -41,10 +79,17 @@ const generateMockHistory = () => [
   { date: 'Sun', grip: 45, sleep: 7.5, soreness: 5, nutrition: 8, feeling: 7 },
 ];
 
+// ==========================================
+// PERFORMANCE HELPERS
+// ==========================================
 function getIntensityZone(pct) {
   const num = parseFloat(pct);
   if (isNaN(num)) return null;
-  if (num < 70) return 0; if (num < 80) return 1; if (num < 85) return 2; if (num < 90) return 3; return 4;
+  if (num < 70) return 0;
+  if (num < 80) return 1;
+  if (num < 85) return 2;
+  if (num < 90) return 3;
+  return 4;
 }
 
 const ZONE_LABELS = ['<70%', '70-80%', '80-85%', '85-90%', '90%+'];
@@ -103,9 +148,12 @@ export default function CoachResults() {
   const { userEmail: coachEmail, role, isLoading: authLoading } = useAuth();
   const navigate = useNavigate();
 
-  // FIX: Default is now Wellness!
-  const [mainTab, setMainTab] = useState('performance'); // 'performance' | 'wellness'
+  // Master Tab State - Defaults to Performance
+  const [mainTab, setMainTab] = useState('performance'); 
 
+  // ==========================================
+  // PERFORMANCE STATE
+  // ==========================================
   const [athletes, setAthletes] = useState([]);
   const [selectedAthlete, setSelectedAthlete] = useState('all');
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
@@ -115,13 +163,19 @@ export default function CoachResults() {
   const [error, setError] = useState(null);
   const [showLogbook, setShowLogbook] = useState(false);
 
+  // ==========================================
+  // WELLNESS STATE
+  // ==========================================
   const [wellnessRoster, setWellnessRoster] = useState([]);
   const [wellnessLoading, setWellnessLoading] = useState(true);
-  const [mainTab, setMainTab] = useState('performance');
+  const [wellnessViewMode, setWellnessViewMode] = useState('grid');
   const [wellnessSearch, setWellnessSearch] = useState('');
   const [activeWellnessMetric, setActiveWellnessMetric] = useState('grip');
   const [selectedChartUser, setSelectedChartUser] = useState('team');
 
+  // ==========================================
+  // EFFECT: LOAD PERFORMANCE
+  // ==========================================
   useEffect(() => {
     if (!coachEmail) return;
     loadData();
@@ -210,28 +264,42 @@ export default function CoachResults() {
     } catch (err) { console.error('Logbook refresh failed:', err); }
   }
 
+  // ==========================================
+  // EFFECT: LOAD WELLNESS ROSTER
+  // ==========================================
   useEffect(() => {
     async function loadWellnessAthletes() {
       try {
         const data = await fetchAllData();
         const rawAthletes = data.athletes || [];
         const roster = [];
+        
         for (let i = 1; i < rawAthletes.length; i++) {
           const row = rawAthletes[i];
           const name = String(row[0] || '').trim();
           const pods = String(row[11] || '').toLowerCase(); // Column L
+          
           if (name && pods.includes('wellness')) {
             const randomScore = () => Math.floor(Math.random() * 5) + 5; 
             roster.push({
-              id: i, name: name, grip: 40 + Math.random() * 10, feeling: randomScore(), soreness: randomScore(), sleep: 5 + Math.random() * 4, nutrition: randomScore(),
-              status: Math.random() > 0.8 ? 'fatigued' : 'normal', history: generateMockHistory()
+              id: i,
+              name: name,
+              grip: 40 + Math.random() * 10,
+              feeling: randomScore(),
+              soreness: randomScore(),
+              sleep: 5 + Math.random() * 4,
+              nutrition: randomScore(),
+              status: Math.random() > 0.8 ? 'fatigued' : 'normal',
+              history: generateMockHistory()
             });
           }
         }
-                setWellnessRoster(roster.sort((a, b) => a.name.localeCompare(b.name)));
         
-        // The Smart Switch: If anyone has Wellness access, flip the tab!
-        if (roster.length > 0) {
+        const sortedRoster = roster.sort((a, b) => a.name.localeCompare(b.name));
+        setWellnessRoster(sortedRoster);
+        
+        // Smart Switch: If anyone has wellness, default to the Wellness tab
+        if (sortedRoster.length > 0) {
           setMainTab('wellness');
         }
 
@@ -241,7 +309,9 @@ export default function CoachResults() {
     loadWellnessAthletes();
   }, []);
 
-
+  // ==========================================
+  // PERFORMANCE MEMOS
+  // ==========================================
   const filteredLogbook = useMemo(() => {
     let entries = logbook;
     if (selectedAthlete !== 'all') entries = entries.filter((e) => e.name === selectedAthlete);
@@ -367,6 +437,9 @@ export default function CoachResults() {
     URL.revokeObjectURL(url);
   }
 
+  // ==========================================
+  // WELLNESS LOGIC
+  // ==========================================
   const getColorClass = (val, type) => {
     if (type === 'grip') {
       if (val >= 45) return 'status-green';
@@ -398,30 +471,40 @@ export default function CoachResults() {
   const avgSleep = (wellnessChartData.reduce((acc, curr) => acc + curr.sleep, 0) / 7).toFixed(1);
   const avgNutrition = (wellnessChartData.reduce((acc, curr) => acc + curr.nutrition, 0) / 7).toFixed(1);
 
-  if (authLoading) return <div style={{ ...styles.page, display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}><p style={{ color: COLORS.bodyGray }}>Loading...</p></div>;
-  if (!coachEmail) return <div style={{ ...styles.page, display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}><p style={{ color: COLORS.bodyGray }}>Please log in.</p></div>;
+  if (authLoading) {
+    return <div style={{ ...styles.page, display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}><p style={{ color: COLORS.bodyGray }}>Loading...</p></div>;
+  }
+  if (!coachEmail) {
+    return <div style={{ ...styles.page, display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}><p style={{ color: COLORS.bodyGray }}>Please log in.</p></div>;
+  }
 
   const maxFreq = Math.max(...weeklyFrequency.map((w) => w.sessionCount), 1);
 
   return (
     <div style={{ ...styles.page, fontFamily: '"Roboto Flex", "Roboto", sans-serif' }}>
+      
       <style>{`
+        /* Wellness Specific CSS */
         .cr-toggle-bg { display: flex; background: #e2e8f0; padding: 4px; border-radius: 8px; margin-bottom: 24px; display: inline-flex; }
         .cr-toggle-btn { display: flex; align-items: center; gap: 6px; padding: 8px 16px; border: none; background: transparent; border-radius: 6px; font-weight: 600; font-size: 14px; color: #64748b; cursor: pointer; transition: all 0.2s; }
         .cr-toggle-btn.active { background: #fff; color: #008ed3; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        
         .cr-search-box { display: flex; align-items: center; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 16px; width: 300px; margin-bottom: 24px; }
         .cr-search-box input { border: none; outline: none; margin-left: 8px; width: 100%; font-size: 14px; }
+        
         .cr-grid-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); overflow-x: auto; margin-bottom: 24px; }
         .cr-table { width: 100%; border-collapse: collapse; text-align: center; }
         .cr-table th { padding: 16px; background: #f8fafc; color: #64748b; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; border-bottom: 2px solid #e2e8f0; }
         .cr-table td { padding: 12px 16px; border-bottom: 1px solid #f1f5f9; font-weight: 600; font-size: 15px; }
         .cr-athlete-name { display: flex; align-items: center; gap: 12px; text-align: left; font-weight: 700; color: #0f172a; font-size: 15px; }
         .cr-avatar { width: 32px; height: 32px; border-radius: 50%; background: #008ed3; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: bold; text-transform: uppercase; }
+        
         .status-badge { display: inline-flex; align-items: center; justify-content: center; padding: 6px 12px; border-radius: 6px; font-weight: 700; width: 100%; }
         .status-green { background-color: #d1fae5; color: #059669; }
         .status-amber { background-color: #fef3c7; color: #d97706; }
         .status-red { background-color: #fee2e2; color: #dc2626; border: 1px solid #fca5a5; }
         .cr-alert-row { background-color: #fff1f2 !important; }
+        
         .cr-metrics { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; margin-bottom: 24px; }
         @media (max-width: 768px) { .cr-metrics { grid-template-columns: repeat(2, 1fr); } }
         .cr-metric-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; cursor: pointer; transition: all 0.2s ease; text-align: left; }
@@ -431,31 +514,46 @@ export default function CoachResults() {
         .cr-metric-card.active-soreness { background: #fef2f2; border-color: #fecaca; box-shadow: 0 0 0 2px #ef4444; }
         .cr-metric-card.active-sleep { background: #eef2ff; border-color: #e0e7ff; box-shadow: 0 0 0 2px #6366f1; }
         .cr-metric-card.active-nutrition { background: #ecfdf5; border-color: #d1fae5; box-shadow: 0 0 0 2px #10b981; }
+        
         .cr-metric-label { display: flex; align-items: center; gap: 8px; color: #64748b; font-size: 12px; font-weight: 700; text-transform: uppercase; margin-bottom: 8px; }
         .cr-metric-value { font-size: 24px; font-weight: 900; color: #0f172a; }
         .cr-metric-unit { font-size: 14px; font-weight: 500; color: #94a3b8; margin-left: 4px; }
+        
         .cr-chart-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
         .cr-select { padding: 8px 16px; border-radius: 8px; border: 1px solid #e2e8f0; background: #f8fafc; font-size: 14px; font-weight: 600; cursor: pointer; outline: none; }
       `}</style>
 
+      {/* NATIVE HEADER */}
       <div style={styles.titleWrapper}>
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: '20px' }}>
           <button onClick={() => navigate(-1)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#008ed3', padding: 0, display: 'flex', marginRight: '12px' }}>
             <ArrowLeft size={28} />
           </button>
-          <h2 style={{ fontSize: '24px', color: '#0f172a', fontWeight: '700', margin: 0 }}>Coach Results</h2>
+          <h2 style={{ fontSize: '24px', color: '#0f172a', fontWeight: '700', margin: 0, fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+            Coach Results
+          </h2>
         </div>
         
+        {/* MASTER TABS */}
         <div style={{ display: 'flex', gap: '8px', marginBottom: '24px' }}>
-          <button onClick={() => setMainTab('wellness')} style={{ padding: '10px 20px', borderRadius: '8px', border: 'none', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '700', cursor: 'pointer', backgroundColor: mainTab === 'wellness' ? '#0ea5e9' : '#e2e8f0', color: mainTab === 'wellness' ? 'white' : '#64748b' }}>
-            <Activity size={18} /> Wellness Center
-          </button>
-          <button onClick={() => setMainTab('performance')} style={{ padding: '10px 20px', borderRadius: '8px', border: 'none', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '700', cursor: 'pointer', backgroundColor: mainTab === 'performance' ? '#008ed3' : '#e2e8f0', color: mainTab === 'performance' ? 'white' : '#64748b' }}>
+          <button 
+            onClick={() => setMainTab('performance')} 
+            style={{ padding: '10px 20px', borderRadius: '8px', border: 'none', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '700', cursor: 'pointer', backgroundColor: mainTab === 'performance' ? '#008ed3' : '#e2e8f0', color: mainTab === 'performance' ? 'white' : '#64748b' }}
+          >
             <Dumbbell size={18} /> Performance Engine
+          </button>
+          <button 
+            onClick={() => setMainTab('wellness')} 
+            style={{ padding: '10px 20px', borderRadius: '8px', border: 'none', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '700', cursor: 'pointer', backgroundColor: mainTab === 'wellness' ? '#0ea5e9' : '#e2e8f0', color: mainTab === 'wellness' ? 'white' : '#64748b' }}
+          >
+            <Activity size={18} /> Wellness Center
           </button>
         </div>
       </div>
 
+      {/* ==========================================
+          TAB 1: PERFORMANCE ENGINE (ORIGINAL CODE)
+          ========================================== */}
       {mainTab === 'performance' && (
         <div>
           <div style={styles.card}>
@@ -628,7 +726,7 @@ export default function CoachResults() {
       )}
 
       {/* ==========================================
-          TAB 2: WELLNESS CENTER
+          TAB 2: WELLNESS CENTER (NEW TRAFFIC LIGHTS)
           ========================================== */}
       {mainTab === 'wellness' && (
         <div>
