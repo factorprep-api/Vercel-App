@@ -3,9 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Save, Heart, Moon, Utensils, Smile, HandMetal, CheckCircle } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
+import { saveWellnessLog } from '../api';
 
 export default function AthleteWellness() {
-  const { userEmail } = useAuth();
+  const { userEmail, athleteName } = useAuth();
   const navigate = useNavigate();
 
   // The 5 Metrics
@@ -17,15 +18,38 @@ export default function AthleteWellness() {
 
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [error, setError] = useState(null);
 
-  // MOCK SAVE
   async function handleSave() {
     if (!grip) { alert("Please enter your Grip Strength."); return; }
+    
     setSaving(true);
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    setError(null);
+
+    const nameToSave = athleteName || userEmail.split('@')[0];
+
+    const payload = {
+      email: userEmail,
+      athlete: nameToSave,
+      grip: parseFloat(grip),
+      feeling: parseInt(feeling),
+      soreness: parseInt(soreness),
+      sleep: parseFloat(sleep),
+      nutrition: parseInt(nutrition)
+    };
+
+    try {
+      const res = await saveWellnessLog(payload);
+      if (res.status === 'Success') {
+        setSaveSuccess(true);
+        setTimeout(() => navigate(-1), 1500);
+      } else {
+        setError('Failed to save log. ' + (res.message || ''));
+      }
+    } catch (err) {
+      setError('Network error. Please try again.');
+    }
     setSaving(false);
-    setSaveSuccess(true);
-    setTimeout(() => navigate(-1), 1500);
   }
 
   if (saveSuccess) {
@@ -82,16 +106,13 @@ export default function AthleteWellness() {
       </div>
       <p className="aw-subtitle">Log your morning metrics to help us optimize your training load today.</p>
 
+      {error && <div style={{ padding: '12px', backgroundColor: '#fef2f2', color: '#ef4444', borderRadius: '8px', marginBottom: '16px', fontWeight: 'bold', fontSize: '14px' }}>{error}</div>}
+
       <div className="aw-card">
         <div className="aw-card-header">
           <h3 className="aw-card-title"><HandMetal size={20} color="#3b82f6" /> Grip Strength (Dyno)</h3>
         </div>
-        <input 
-          type="number" step="0.1" 
-          className="aw-input-grip" 
-          placeholder="Enter kg (e.g. 45.2)" 
-          value={grip} onChange={(e) => setGrip(e.target.value)} 
-        />
+        <input type="number" step="0.1" className="aw-input-grip" placeholder="Enter kg (e.g. 45.2)" value={grip} onChange={(e) => setGrip(e.target.value)} />
       </div>
 
       <div className="aw-card">
@@ -99,11 +120,7 @@ export default function AthleteWellness() {
           <h3 className="aw-card-title"><Smile size={20} color="#0ea5e9" /> 1. How are you feeling?</h3>
           <span className="aw-card-value" style={{ color: '#0ea5e9' }}>{feeling}/10</span>
         </div>
-        <input 
-          type="range" min="1" max="10" step="1" 
-          className="aw-slider slider-feeling" 
-          value={feeling} onChange={(e) => setFeeling(e.target.value)} 
-        />
+        <input type="range" min="1" max="10" step="1" className="aw-slider slider-feeling" value={feeling} onChange={(e) => setFeeling(e.target.value)} />
         <div className="aw-slider-labels"><span>1 (Terrible)</span><span>10 (Prime)</span></div>
       </div>
 
@@ -112,11 +129,7 @@ export default function AthleteWellness() {
           <h3 className="aw-card-title"><Heart size={20} color="#ef4444" /> 2. Muscle Soreness</h3>
           <span className="aw-card-value" style={{ color: '#ef4444' }}>{soreness}/10</span>
         </div>
-        <input 
-          type="range" min="1" max="10" step="1" 
-          className="aw-slider slider-soreness" 
-          value={soreness} onChange={(e) => setSoreness(e.target.value)} 
-        />
+        <input type="range" min="1" max="10" step="1" className="aw-slider slider-soreness" value={soreness} onChange={(e) => setSoreness(e.target.value)} />
         <div className="aw-slider-labels"><span>1 (Extreme)</span><span>10 (None)</span></div>
       </div>
 
@@ -125,11 +138,7 @@ export default function AthleteWellness() {
           <h3 className="aw-card-title"><Moon size={20} color="#6366f1" /> 3. How was your Sleep?</h3>
           <span className="aw-card-value" style={{ color: '#6366f1' }}>{sleep} hrs</span>
         </div>
-        <input 
-          type="range" min="0" max="12" step="0.5" 
-          className="aw-slider slider-sleep" 
-          value={sleep} onChange={(e) => setSleep(e.target.value)} 
-        />
+        <input type="range" min="0" max="12" step="0.5" className="aw-slider slider-sleep" value={sleep} onChange={(e) => setSleep(e.target.value)} />
         <div className="aw-slider-labels"><span>0 hrs</span><span>12 hrs</span></div>
       </div>
 
@@ -138,11 +147,7 @@ export default function AthleteWellness() {
           <h3 className="aw-card-title"><Utensils size={20} color="#10b981" /> 4. How was your Nutrition?</h3>
           <span className="aw-card-value" style={{ color: '#10b981' }}>{nutrition}/10</span>
         </div>
-        <input 
-          type="range" min="1" max="10" step="1" 
-          className="aw-slider slider-nutrition" 
-          value={nutrition} onChange={(e) => setNutrition(e.target.value)} 
-        />
+        <input type="range" min="1" max="10" step="1" className="aw-slider slider-nutrition" value={nutrition} onChange={(e) => setNutrition(e.target.value)} />
         <div className="aw-slider-labels"><span>1 (Poor)</span><span>10 (Perfect)</span></div>
       </div>
 
