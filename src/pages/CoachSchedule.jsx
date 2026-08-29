@@ -3,8 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
 import { fetchAllData, fetchSchedule, saveScheduleSession } from '../api';
-import { ArrowLeft, Calendar, BarChart2, Plus, AlertCircle, CheckCircle, Clock } from 'lucide-react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
+import { ArrowLeft, Calendar, BarChart2, Plus, AlertCircle, CheckCircle, Clock, X } from 'lucide-react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 export default function CoachSchedule() {
   const { userEmail, role, isLoading: authLoading } = useAuth();
@@ -37,6 +37,7 @@ export default function CoachSchedule() {
       const validRoster = [];
       
       for (let i = 1; i < athletes.length; i++) {
+        if (!athletes[i]) continue;
         const name = String(athletes[i][0] || '').trim();
         const pods = String(athletes[i][11] || '').toLowerCase();
         if (name && pods.includes('schedule')) validRoster.push({ name });
@@ -47,9 +48,10 @@ export default function CoachSchedule() {
       if (rawLogs.length > 1) {
         const parsed = [];
         rawLogs.slice(1).forEach(r => {
-          if (!r[0]) return;
+          if (!r || !r[0]) return; // Bulletproof shield
           let d = new Date(r[0]);
-          if (isNaN(d.getTime())) d = new Date();
+          if (isNaN(d.getTime())) return; // Skip invalid rows
+          
           parsed.push({
             rawDate: d,
             athlete: String(r[2]).trim(),
@@ -59,7 +61,9 @@ export default function CoachSchedule() {
         });
         setScheduleLogs(parsed);
       }
-    } catch (e) {}
+    } catch (e) {
+      console.error(e);
+    }
     setLoading(false);
   }
 
@@ -83,6 +87,7 @@ export default function CoachSchedule() {
         const d = new Date(today); d.setDate(today.getDate() - i);
         chartMap[d.toLocaleDateString('en-US', {month:'short', day:'numeric'})] = 0;
       }
+      
       athLogs.filter(l => l.rawDate >= new Date(today.getTime() - 14*24*60*60*1000)).forEach(l => {
         const dStr = l.rawDate.toLocaleDateString('en-US', {month:'short', day:'numeric'});
         if(chartMap[dStr] !== undefined) chartMap[dStr] += l.load;
@@ -158,9 +163,11 @@ export default function CoachSchedule() {
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          {/* FIXED: Blue Arrow */}
           <button onClick={() => navigate(-1)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#008ed3' }}><ArrowLeft size={28} /></button>
           <h1 style={{ fontSize: '24px', fontWeight: '700', color: '#0f172a', margin: 0 }}>Team Load Engine (ACWR)</h1>
         </div>
+        {/* FIXED: Green Button */}
         <button onClick={() => setShowModal(true)} style={{ background: '#16a34a', color: 'white', border: 'none', padding: '10px 16px', borderRadius: '8px', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
           <Plus size={18}/> Propose Session
         </button>
@@ -215,7 +222,7 @@ export default function CoachSchedule() {
                                     <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 11 }} />
                                     <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 11 }} />
                                     <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
-                                    <Line type="monotone" dataKey="load" stroke="#16a34a" strokeWidth={3} dot={{ r: 4, strokeWidth: 2 }} />
+                                    <Line type="monotone" dataKey="load" stroke="#f59e0b" strokeWidth={3} dot={{ r: 4, strokeWidth: 2 }} />
                                   </LineChart>
                                 </ResponsiveContainer>
                               </div>
@@ -264,6 +271,7 @@ export default function CoachSchedule() {
               <div style={{ flex: 1 }}>
                  <label style={{ fontSize: '12px', fontWeight: '700', color: '#64748b' }}>Type</label>
                  <select className="modal-input" value={form.type} onChange={e=>setForm({...form, type: e.target.value})}>
+                    {/* FIXED: The exact types you requested */}
                     <option value="Field Session">Field Session</option>
                     <option value="Competition">Competition</option>
                     <option value="Conditioning">Conditioning</option>
@@ -287,6 +295,7 @@ export default function CoachSchedule() {
               </div>
             </div>
 
+            {/* FIXED: Added Location and Notes Fields */}
             <label style={{ fontSize: '12px', fontWeight: '700', color: '#64748b' }}>Location / Venue</label>
             <input type="text" className="modal-input" placeholder="e.g. Main Pitch" value={form.location} onChange={e=>setForm({...form, location: e.target.value})} />
 
