@@ -19,7 +19,9 @@ export default function CoachSchedule() {
   // Propose Session Modal
   const [showModal, setShowModal] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ athlete: 'All Athletes', date: '', type: 'Field Practice', duration: 60, rpe: 7, location: '', notes: '' });
+  
+  const [selectedAthletes, setSelectedAthletes] = useState([]);
+  const [form, setForm] = useState({ date: '', type: 'Field Session', duration: 60, rpe: 7, location: '', notes: '' });
 
   const coachEmail = userEmail;
 
@@ -99,26 +101,33 @@ export default function CoachSchedule() {
     return { text: 'Danger Zone', color: '#dc2626', bg: '#fef2f2' };
   };
 
+  const handleToggleAthlete = (athName) => {
+    if (selectedAthletes.includes(athName)) {
+      setSelectedAthletes(selectedAthletes.filter(n => n !== athName));
+    } else {
+      setSelectedAthletes([...selectedAthletes, athName]);
+    }
+  };
+
+  const selectAllAthletes = () => {
+    if (selectedAthletes.length === roster.length) setSelectedAthletes([]);
+    else setSelectedAthletes(roster.map(a => a.name));
+  };
+
   async function handlePropose() {
+    if (selectedAthletes.length === 0) return alert("Select at least one athlete.");
     if (!form.date) return alert("Please select a date.");
     setSaving(true);
     try {
-      if (form.athlete === 'All Athletes') {
-        for (const ath of roster) {
-          const payload = {
-            email: coachEmail, athlete: ath.name, type: form.type, duration: form.duration,
-            rpe: form.rpe, load: form.duration * form.rpe, location: form.location, notes: form.notes, status: 'Proposed'
-          };
-          await saveScheduleSession(payload);
-        }
-      } else {
+      for (const athName of selectedAthletes) {
         const payload = {
-          email: coachEmail, athlete: form.athlete, type: form.type, duration: form.duration,
+          email: coachEmail, athlete: athName, type: form.type, duration: form.duration,
           rpe: form.rpe, load: form.duration * form.rpe, location: form.location, notes: form.notes, status: 'Proposed'
         };
         await saveScheduleSession(payload);
       }
       setShowModal(false);
+      setSelectedAthletes([]);
       setForm({ ...form, notes: '', location: '' }); 
       loadData(); 
     } catch(e) { alert("Failed to save."); }
@@ -141,6 +150,10 @@ export default function CoachSchedule() {
         .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15,23,42,0.8); display: flex; justify-content: center; align-items: center; z-index: 1000; padding: 16px; }
         .modal-content { background: white; border-radius: 16px; width: 100%; max-width: 450px; padding: 24px; box-shadow: 0 20px 40px rgba(0,0,0,0.2); max-height: 90vh; overflow-y: auto; }
         .modal-input { width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 8px; margin-bottom: 16px; font-size: 14px; outline: none; }
+        
+        .roster-list { max-height: 150px; overflow-y: auto; border: 1px solid #cbd5e1; border-radius: 8px; padding: 8px; margin-bottom: 16px; background: #f8fafc; }
+        .roster-item { display: flex; align-items: center; gap: 8px; padding: 6px; border-radius: 4px; cursor: pointer; }
+        .roster-item:hover { background: #e2e8f0; }
       `}</style>
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
@@ -202,7 +215,7 @@ export default function CoachSchedule() {
                                     <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 11 }} />
                                     <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 11 }} />
                                     <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
-                                    <Line type="monotone" dataKey="load" stroke="#f59e0b" strokeWidth={3} dot={{ r: 4, strokeWidth: 2 }} />
+                                    <Line type="monotone" dataKey="load" stroke="#16a34a" strokeWidth={3} dot={{ r: 4, strokeWidth: 2 }} />
                                   </LineChart>
                                 </ResponsiveContainer>
                               </div>
@@ -222,13 +235,26 @@ export default function CoachSchedule() {
       {showModal && (
         <div className="modal-overlay" onClick={() => !saving && setShowModal(false)}>
           <div className="modal-content" onClick={e=>e.stopPropagation()}>
-            <h2 style={{ margin: '0 0 16px 0' }}>Propose Session</h2>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h2 style={{ margin: 0 }}>Propose Session</h2>
+              <button onClick={() => setShowModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}><X size={20}/></button>
+            </div>
             
-            <label style={{ fontSize: '12px', fontWeight: '700', color: '#64748b' }}>Assign To</label>
-            <select className="modal-input" value={form.athlete} onChange={e=>setForm({...form, athlete: e.target.value})}>
-              <option value="All Athletes">All Athletes (Entire Roster)</option>
-              {roster.map(a => <option key={a.name} value={a.name}>{a.name}</option>)}
-            </select>
+            <label style={{ fontSize: '12px', fontWeight: '700', color: '#64748b', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              Assign To:
+              <button onClick={selectAllAthletes} style={{ background: 'none', border: 'none', color: '#008ed3', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}>
+                {selectedAthletes.length === roster.length ? 'Deselect All' : 'Select All'}
+              </button>
+            </label>
+            
+            <div className="roster-list">
+              {roster.map(a => (
+                <div key={a.name} className="roster-item" onClick={() => handleToggleAthlete(a.name)}>
+                  <input type="checkbox" checked={selectedAthletes.includes(a.name)} readOnly style={{ cursor: 'pointer' }} />
+                  <span style={{ fontSize: '14px', color: '#0f172a' }}>{a.name}</span>
+                </div>
+              ))}
+            </div>
 
             <div style={{ display: 'flex', gap: '12px' }}>
               <div style={{ flex: 1 }}>
@@ -238,10 +264,14 @@ export default function CoachSchedule() {
               <div style={{ flex: 1 }}>
                  <label style={{ fontSize: '12px', fontWeight: '700', color: '#64748b' }}>Type</label>
                  <select className="modal-input" value={form.type} onChange={e=>setForm({...form, type: e.target.value})}>
-                    <option value="Field Practice">Field Practice</option>
-                    <option value="Match / Game">Match / Game</option>
-                    <option value="Conditioning / Running">Conditioning</option>
-                    <option value="Rehab / Recovery">Rehab / Recovery</option>
+                    <option value="Field Session">Field Session</option>
+                    <option value="Competition">Competition</option>
+                    <option value="Conditioning">Conditioning</option>
+                    <option value="Rehabilitation">Rehabilitation</option>
+                    <option value="Recovery">Recovery</option>
+                    <option value="Speed / Agility">Speed / Agility</option>
+                    <option value="Prehabilitation">Prehabilitation</option>
+                    <option value="Other">Other</option>
                  </select>
               </div>
             </div>
@@ -263,7 +293,7 @@ export default function CoachSchedule() {
             <label style={{ fontSize: '12px', fontWeight: '700', color: '#64748b' }}>Notes / Requirements</label>
             <textarea className="modal-input" placeholder="e.g. Bring cleats and running shoes." value={form.notes} onChange={e=>setForm({...form, notes: e.target.value})} style={{ minHeight: '60px', resize: 'vertical' }} />
 
-            <button onClick={handlePropose} disabled={saving} style={{ width: '100%', background: '#16a34a', color: 'white', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', marginTop: '8px' }}>
+            <button onClick={handlePropose} disabled={saving || selectedAthletes.length === 0} style={{ width: '100%', background: '#16a34a', color: 'white', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: '700', cursor: (saving || selectedAthletes.length === 0) ? 'not-allowed' : 'pointer', marginTop: '8px', opacity: selectedAthletes.length === 0 ? 0.5 : 1 }}>
               {saving ? 'Saving...' : `Send Proposed Load (${form.duration * form.rpe} AU)`}
             </button>
           </div>

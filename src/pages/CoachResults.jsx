@@ -78,14 +78,18 @@ function calcSetVolume(entry, maxesByAthlete = {}) {
   return sets * reps * weightPerRep;
 }
 
-// BULLETPROOF DATE PARSER
+// BULLETPROOF DATE FIX
 function getWeekKey(dateStr) {
-  if (!dateStr) return '1970-01-01';
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return '1970-01-01';
-  const monday = new Date(d);
-  monday.setDate(d.getDate() - ((d.getDay() + 6) % 7));
-  try { return monday.toISOString().split('T')[0]; } catch(e) { return '1970-01-01'; }
+  try {
+    if (!dateStr) return '1970-01-01';
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return '1970-01-01';
+    const monday = new Date(d);
+    monday.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+    return monday.toISOString().split('T')[0];
+  } catch (e) {
+    return '1970-01-01';
+  }
 }
 
 function fmt(n) { return Math.round(n).toLocaleString(); }
@@ -194,11 +198,10 @@ export default function CoachResults() {
       const medByAthlete = {};
       if (medLogs.length > 1) {
         medLogs.slice(1).forEach(m => {
-          if (!m[0]) return; // Skip empty rows
+          if (!m[0]) return;
           const athName = String(m[2]).trim();
           if(!medByAthlete[athName]) medByAthlete[athName] = [];
           
-          // Bulletproof date parsing
           let d = new Date(m[0]);
           if (isNaN(d.getTime())) d = new Date();
 
@@ -487,7 +490,6 @@ export default function CoachResults() {
         </div>
       </div>
 
-      {/* PERFORMANCE ENGINE TAB */}
       {mainTab === 'performance' && (
         <div>
           <div style={styles.card}>
@@ -693,7 +695,6 @@ export default function CoachResults() {
                   {filteredWellnessRoster.map(athlete => {
                     const isAlert = athlete.status === 'fatigued';
                     
-                    // Medical Badge Logic
                     let medBadge = null;
                     if (athlete.medicalStatus === 'Cannot Train') {
                       medBadge = <span style={{ fontSize:'10px', background:'#fef2f2', color:'#dc2626', padding:'2px 6px', borderRadius:'4px', border:'1px solid #fca5a5', marginLeft:'8px', display:'flex', alignItems:'center', gap:'4px' }}><ShieldAlert size={10}/> OUT</span>;
@@ -886,3 +887,4 @@ function ProgressionChart({ data, weeklyData }) {
     </div>
   );
 }
+
