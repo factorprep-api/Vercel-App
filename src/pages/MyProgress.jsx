@@ -22,7 +22,7 @@ export default function MyProgress() {
   const [selectedSession, setSelectedSession] = useState(null);
   const [historyLoaded, setHistoryLoaded] = useState(false);
   
-  // Wellness State
+  // --- NEW WELLNESS STATE ---
   const [wellnessMetric, setWellnessMetric] = useState('grip');
   const [activePods, setActivePods] = useState([]);
   const [wellnessLogs, setWellnessLogs] = useState([]);
@@ -86,31 +86,31 @@ export default function MyProgress() {
       setLoading(false);
 
       // Fetch All Data AND Wellness Data
-      const [allData, wLogs] = await Promise.all([
+      Promise.all([
         fetchAllData(),
         fetchWellnessLogs()
-      ]);
+      ]).then(([allData, wLogs]) => {
+        const athletes = allData.athletes;
+        const programs = allData.programs || [];
+        setProgramsData(programs);
 
-      const athletes = allData.athletes;
-      const programs = allData.programs || [];
-      setProgramsData(programs);
-
-      if (athletes && athletes.length) {
+        if (!athletes || !athletes.length) return;
         const headers = athletes[0] || [];
         let athleteRow = null;
         for (let i = 1; i < athletes.length; i++) {
-          if (String(athletes[i][0] || '').trim().toLowerCase() === name.toLowerCase() || 
-              String(athletes[i][9] || '').trim().toLowerCase() === userEmail.toLowerCase()) {
+          if (String(athletes[i][0] || '').trim().toLowerCase() === name.toLowerCase()) {
             athleteRow = athletes[i];
             break;
           }
         }
+        
         const parsedMaxes = [];
         if (athleteRow) {
-          // Parse Active Pods
+          // Parse Active Pods from Column L (Index 11)
           const podsString = String(athleteRow[11] || '').toLowerCase();
           setActivePods(podsString.split(',').map(s => s.trim()));
 
+          // Ensure 'active pods' is skipped so it doesn't try to parse it as a 1RM weight!
           const skipCols = ['pin', 'email', 'role', 'coach', 'notes', 'phone', 'password', 'program assignment', 'active pods'];
           for (let c = 1; c < headers.length; c++) {
             const liftName = String(headers[c] || '').trim();
@@ -122,6 +122,34 @@ export default function MyProgress() {
           }
         }
         setMaxes(parsedMaxes);
+        
+        // Parse Wellness Logs
+        const rawLogs = wLogs.data || [];
+        if (rawLogs.length > 1) {
+          const myLogs = [];
+          rawLogs.slice(1).forEach(r => {
+            if (!r || !r[0]) return;
+            const athName = String(r[2]).trim().toLowerCase();
+            const email = String(r[1]).trim().toLowerCase();
+            if (athName === name.toLowerCase() || email === userEmail.toLowerCase()) {
+              let d = new Date(r[0]);
+              if (!isNaN(d.getTime())) {
+                myLogs.push({
+                  date: d.toLocaleDateString('en-US', {weekday: 'short'}),
+                  rawDate: d,
+                  grip: Number(r[3]) || 0,
+                  feeling: Number(r[4]) || 0,
+                  soreness: Number(r[5]) || 0,
+                  sleep: Number(r[6]) || 0,
+                  nutrition: Number(r[7]) || 0
+                });
+              }
+            }
+          });
+          myLogs.sort((a,b) => a.rawDate - b.rawDate);
+          setWellnessLogs(myLogs.slice(-7)); // Keep last 7 days
+        }
+
         localStorage.setItem('fp_progress_data', JSON.stringify({
           email: userEmail,
           athleteName: name,
@@ -130,31 +158,7 @@ export default function MyProgress() {
           programs: programs,
           cachedAt: new Date().toISOString()
         }));
-      }
-
-      // Parse Wellness Logs
-      const rawLogs = wLogs.data || [];
-      if (rawLogs.length > 1) {
-        const myLogs = rawLogs.slice(1)
-          .filter(r => String(r[2]).trim().toLowerCase() === name.toLowerCase() || String(r[1]).trim().toLowerCase() === userEmail.toLowerCase())
-          .map(r => {
-             let d = new Date(r[0]);
-             if(isNaN(d.getTime())) d = new Date();
-             return {
-               date: d.toLocaleDateString('en-US', {weekday: 'short'}),
-               rawDate: d,
-               grip: Number(r[3]) || 0,
-               feeling: Number(r[4]) || 0,
-               soreness: Number(r[5]) || 0,
-               sleep: Number(r[6]) || 0,
-               nutrition: Number(r[7]) || 0
-             };
-          })
-          .sort((a,b) => a.rawDate - b.rawDate)
-          .slice(-7);
-        setWellnessLogs(myLogs);
-      }
-
+      }).catch(() => {});
     } catch (err) {
       setError('Failed to load progress data. Please refresh.');
       setLoading(false);
@@ -253,6 +257,7 @@ export default function MyProgress() {
         .mp-well-btn.active-nutrition { background: #ecfdf5; border-color: #d1fae5; color: #10b981; }
         .mp-chart-box { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; height: 300px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
       `}</style>
+
       <div className="mp-body">
         <h2 style={{ fontSize: '24px', color: '#008ed3', marginBottom: '16px', fontWeight: '700' }}>My Progress</h2>
 
