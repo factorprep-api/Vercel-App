@@ -147,7 +147,7 @@ export default function CoachResults() {
   const navigate = useNavigate();
 
   // THE MASTER SWITCH
-  const [mainTab, setMainTab] = useState('performance'); 
+  const [mainTab, setMainTab] = useState('wellness'); 
 
   // --- ORIGINAL PERFORMANCE STATE ---
   const [athletes, setAthletes] = useState([]);
@@ -354,7 +354,7 @@ export default function CoachResults() {
       
       const sortedRoster = roster.sort((a, b) => a.name.localeCompare(b.name));
       setWellnessRoster(sortedRoster);
-      if (sortedRoster.length > 0) setMainTab('wellness');
+      if (sortedRoster.length === 0) setMainTab('performance');
 
       const teamHistoryMap = {};
       parsedLogs.forEach(l => {
