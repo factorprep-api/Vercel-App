@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
-import { ClipboardList, TrendingUp, Dumbbell, Timer, Activity } from 'lucide-react';
+import { ClipboardList, TrendingUp, Dumbbell, Timer, Activity, AlertCircle, Calendar } from 'lucide-react';
 import { fetchAllData } from '../api';
 
 export default function AthleteHub() {
@@ -16,7 +16,6 @@ export default function AthleteHub() {
       try {
         const data = await fetchAllData();
         const athletes = data.athletes || [];
-        
         const userRow = athletes.find(row => String(row[9] || '').toLowerCase().trim() === userEmail.toLowerCase().trim());
         
         if (userRow) {
@@ -40,9 +39,11 @@ export default function AthleteHub() {
 
   const allCards = [
     { title: 'Wellness Center', desc: 'Daily readiness log', icon: Activity, path: '/athlete-wellness', color: '#0ea5e9', bgImage: '/athlete-wellness-card.png', podId: 'wellness' },
+    { title: 'Medical Vault', desc: 'Report & track injuries', icon: AlertCircle, path: '/athlete-medical', color: '#dc2626', bgImage: '', podId: 'medical' },
+    { title: 'Training Schedule', desc: 'Log field & track sessions', icon: Calendar, path: '/athlete-schedule', color: '#f59e0b', bgImage: '', podId: 'schedule' }, // NEW POD
     { title: 'My Programs', desc: 'View assigned workouts', icon: ClipboardList, path: '/program-viewer', color: '#008ed3', bgImage: '/program-view-card.png', podId: null },
     { title: 'My Progress', desc: 'Track your workouts', icon: TrendingUp, path: '/progress', color: '#2e7d32', bgImage: '/my-progress-card.png', podId: null },
-   // { title: 'Exercise Library', desc: 'Browse exercises with videos', icon: Dumbbell, path: '/exercise-library', color: '#d3ca17', bgImage: '/exercise-library-card-v2.png', podId: null },
+    // { title: 'Exercise Library', desc: 'Browse exercises with videos', icon: Dumbbell, path: '/exercise-library', color: '#d3ca17', bgImage: '/exercise-library-card-v2.png', podId: null },
     { title: 'Interval Timer', desc: 'Custom work/rest intervals', icon: Timer, path: '/interval-timer', color: '#ef4444', bgImage: '/interval-timer-card.png', podId: null }
   ];
 

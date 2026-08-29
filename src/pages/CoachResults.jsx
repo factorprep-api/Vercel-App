@@ -2,8 +2,8 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
-import { fetchAthletes, fetchLogbookByAthlete, fetchAllData, fetchWellnessLogs } from '../api';
-import { ArrowLeft, Search, AlertCircle, Heart, Moon, Utensils, HandMetal, Smile, BarChart2, LayoutGrid, Dumbbell, Activity } from 'lucide-react';
+import { fetchAthletes, fetchLogbookByAthlete, fetchAllData, fetchWellnessLogs, fetchMedicalLogs, saveMedicalLog } from '../api';
+import { ArrowLeft, Search, AlertCircle, Heart, Moon, Utensils, HandMetal, Smile, BarChart2, LayoutGrid, Dumbbell, Activity, ShieldAlert, X } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 // ==========================================
@@ -44,8 +44,7 @@ const ZONE_LABELS = ['<70%', '70-80%', '80-85%', '85-90%', '90%+'];
 const ZONE_COLORS = [COLORS.zone1, COLORS.zone2, COLORS.zone3, COLORS.zone4, COLORS.zone5];
 
 function normalizeExerciseName(exercise) {
-  if (!exercise) return '';
-  return exercise.toLowerCase().replace(/[.-]/g, '').replace(/\s+/g, ' ').trim();
+  if (!exercise) return ''; return exercise.toLowerCase().replace(/[.-]/g, '').replace(/\s+/g, ' ').trim();
 }
 
 function findCoreMatch(exercise) {
@@ -107,7 +106,7 @@ export default function CoachResults() {
   const [error, setError] = useState(null);
   const [showLogbook, setShowLogbook] = useState(false);
 
-  // WELLNESS STATE (Live Data)
+  // WELLNESS & MEDICAL STATE
   const [wellnessRoster, setWellnessRoster] = useState([]);
   const [teamWellnessHistory, setTeamWellnessHistory] = useState([]);
   const [wellnessLoading, setWellnessLoading] = useState(true);
@@ -115,6 +114,13 @@ export default function CoachResults() {
   const [wellnessSearch, setWellnessSearch] = useState('');
   const [activeWellnessMetric, setActiveWellnessMetric] = useState('grip');
   const [selectedChartUser, setSelectedChartUser] = useState('team');
+  
+  // MEDICAL MODAL STATE
+  const [medicalModalOpen, setMedicalModalOpen] = useState(false);
+  const [selectedMedicalAthlete, setSelectedMedicalAthlete] = useState(null);
+  const [medFormStatus, setMedFormStatus] = useState('');
+  const [medFormNotes, setMedFormNotes] = useState('');
+  const [medSaving, setMedSaving] = useState(false);
 
   useEffect(() => {
     if (!coachEmail) return;
@@ -124,27 +130,14 @@ export default function CoachResults() {
   async function loadData() {
     setError(null);
     try {
-      const cached = localStorage.getItem(CACHE_KEY);
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        setAthletes(parsed.athletes || []);
-        setMaxes(parsed.maxes || []);
-        setLogbook(parsed.logbook || []);
-        setLoading(false);
-      }
-    } catch (e) { console.warn('Cache read failed:', e); }
-
-    try {
       const athRes = await fetchAthletes();
       const rawAthletes = athRes.athletes || [];
-      
       let athleteList = [];
       if (rawAthletes.length > 1) {
         const headers = rawAthletes[0].map(h => String(h).trim());
         const roleColIdx = headers.findIndex(h => h.toLowerCase() === 'role');
         athleteList = rawAthletes.slice(1).map(row => {
-          const obj = {};
-          headers.forEach((h, i) => { obj[h] = row[i]; });
+          const obj = {}; headers.forEach((h, i) => { obj[h] = row[i]; });
           obj.name = String(row[0] || '').trim();
           const roleData = roleColIdx > -1 ? String(row[roleColIdx] || '').trim().toLowerCase() : 'athlete';
           obj.isCoach = roleData === 'coach';
@@ -155,162 +148,123 @@ export default function CoachResults() {
       const maxesByName = {};
       athleteList.forEach(a => {
         maxesByName[a.name] = {
-          backSquat: parseFloat(a['Back Squat With Barbell - (CORE)']) || 0,
-          deadlift: parseFloat(a['Deadlift With Barbell.v (CORE)']) || 0,
-          benchPress: parseFloat(a['Bench Press With Barbell - (CORE)']) || 0,
-          shoulderPress: parseFloat(a['Shoulder Press Seated With Barbell - (CORE)']) || 0,
-          barbellRow: parseFloat(a['Barbell Row On Bench - Back.v (CORE)']) || 0,
-          latPulldown: parseFloat(a['Lat Pulldown On Machine - Back (CORE)']) || 0,
+          backSquat: parseFloat(a['Back Squat With Barbell - (CORE)']) || 0, deadlift: parseFloat(a['Deadlift With Barbell.v (CORE)']) || 0,
+          benchPress: parseFloat(a['Bench Press With Barbell - (CORE)']) || 0, shoulderPress: parseFloat(a['Shoulder Press Seated With Barbell - (CORE)']) || 0,
+          barbellRow: parseFloat(a['Barbell Row On Bench - Back.v (CORE)']) || 0, latPulldown: parseFloat(a['Lat Pulldown On Machine - Back (CORE)']) || 0,
         };
       });
 
-      const results = await Promise.all(
-        athleteList.map((a) =>
-          fetchLogbookByAthlete(a.name)
-            .then((res) => (res.data || []).map((e) => ({ ...e, name: a.name, maxes: maxesByName[a.name] })))
-            .catch(() => [])
-        )
-      );
-      const allLogbook = results.flat();
-
-      setAthletes(athleteList);
-      setMaxes(athleteList);
-      setLogbook(allLogbook);
-      setLoading(false);
-
-      localStorage.setItem(
-        CACHE_KEY,
-        JSON.stringify({ athletes: athleteList, maxes: athleteList, logbook: allLogbook, timestamp: Date.now() })
-      );
-    } catch (err) {
-      console.error('Failed to load coach results:', err);
-      if (!logbook.length) setError('Unable to load results. Please try again.');
-      setLoading(false);
-    }
+      const results = await Promise.all( athleteList.map((a) => fetchLogbookByAthlete(a.name).then((res) => (res.data || []).map((e) => ({ ...e, name: a.name, maxes: maxesByName[a.name] }))).catch(() => [])) );
+      setAthletes(athleteList); setMaxes(athleteList); setLogbook(results.flat()); setLoading(false);
+    } catch (err) { setLoading(false); }
   }
 
   useEffect(() => {
-    if (!coachEmail || !selectedAthlete) return;
-    refreshLogbook();
+    if (selectedAthlete !== 'all') {
+      fetchLogbookByAthlete(selectedAthlete).then(res => {
+        setLogbook((res.data || []).map((e) => ({ ...e, name: selectedAthlete })));
+      });
+    }
   }, [selectedAthlete]);
 
-  async function refreshLogbook() {
-    if (selectedAthlete === 'all') return;
-    try {
-      const res = await fetchLogbookByAthlete(selectedAthlete);
-      const tagged = (res.data || []).map((e) => ({ ...e, name: selectedAthlete }));
-      setLogbook(tagged);
-    } catch (err) { console.error('Logbook refresh failed:', err); }
-  }
-
-  // ==========================================
-  // EFFECT: LIVE WELLNESS DATA
-  // ==========================================
+  // COMBINED WELLNESS & MEDICAL FETCH
   useEffect(() => {
-    async function loadWellnessData() {
-      try {
-        const [data, wellnessData] = await Promise.all([
-          fetchAllData(),
-          fetchWellnessLogs()
-        ]);
-        
-        const rawAthletes = data.athletes || [];
-        const logs = wellnessData.data || [];
-        
-        const parsedLogs = logs.length > 1 ? logs.slice(1).map(r => ({
-          date: new Date(r[0]).toLocaleDateString('en-US', {weekday: 'short'}),
-          rawDate: new Date(r[0]),
-          athlete: String(r[2]).trim(),
-          grip: Number(r[3]) || 0,
-          feeling: Number(r[4]) || 0,
-          soreness: Number(r[5]) || 0,
-          sleep: Number(r[6]) || 0,
-          nutrition: Number(r[7]) || 0
-        })) : [];
-
-        // Group logs by athlete
-        const logsByAthlete = {};
-        parsedLogs.forEach(l => {
-          if (!logsByAthlete[l.athlete]) logsByAthlete[l.athlete] = [];
-          logsByAthlete[l.athlete].push(l);
-        });
-        Object.values(logsByAthlete).forEach(arr => arr.sort((a,b) => a.rawDate - b.rawDate));
-
-        const roster = [];
-        for (let i = 1; i < rawAthletes.length; i++) {
-          const row = rawAthletes[i];
-          const name = String(row[0] || '').trim();
-          const pods = String(row[11] || '').toLowerCase(); // Column L
-          
-          if (name && pods.includes('wellness')) {
-            const athLogs = logsByAthlete[name] || [];
-            // Last logged score for the grid
-            const latest = athLogs.length > 0 ? athLogs[athLogs.length - 1] : { grip: 0, feeling: 0, soreness: 0, sleep: 0, nutrition: 0 };
-            
-            let isFatigued = false;
-            if (latest.feeling > 0 && (latest.feeling <= 4 || latest.soreness <= 4 || latest.sleep <= 5.5)) isFatigued = true;
-
-            roster.push({
-              id: i,
-              name: name,
-              grip: latest.grip,
-              feeling: latest.feeling,
-              soreness: latest.soreness,
-              sleep: latest.sleep,
-              nutrition: latest.nutrition,
-              status: isFatigued ? 'fatigued' : 'normal',
-              history: athLogs.slice(-7) // Last 7 entries for their chart
-            });
-          }
-        }
-        
-        const sortedRoster = roster.sort((a, b) => a.name.localeCompare(b.name));
-        setWellnessRoster(sortedRoster);
-        if (sortedRoster.length > 0) setMainTab('wellness');
-
-        // Calculate Team Averages (Combine all logs by day)
-        const teamHistoryMap = {};
-        parsedLogs.forEach(l => {
-          const d = l.rawDate.toLocaleDateString();
-          if(!teamHistoryMap[d]) teamHistoryMap[d] = { rawDate: l.rawDate, date: l.date, count: 0, grip: 0, feeling: 0, soreness: 0, sleep: 0, nutrition: 0 };
-          teamHistoryMap[d].grip += l.grip;
-          teamHistoryMap[d].feeling += l.feeling;
-          teamHistoryMap[d].soreness += l.soreness;
-          teamHistoryMap[d].sleep += l.sleep;
-          teamHistoryMap[d].nutrition += l.nutrition;
-          teamHistoryMap[d].count += 1;
-        });
-        
-        const teamHistory = Object.values(teamHistoryMap).map(day => ({
-          date: day.date,
-          rawDate: day.rawDate,
-          grip: day.grip / day.count,
-          feeling: day.feeling / day.count,
-          soreness: day.soreness / day.count,
-          sleep: day.sleep / day.count,
-          nutrition: day.nutrition / day.count,
-        })).sort((a,b) => a.rawDate - b.rawDate).slice(-7);
-        
-        setTeamWellnessHistory(teamHistory);
-
-      } catch (err) { console.error("Failed to load wellness", err); }
-      setWellnessLoading(false);
-    }
-    loadWellnessData();
+    loadWellnessAndMedical();
   }, []);
 
+  async function loadWellnessAndMedical() {
+    setWellnessLoading(true);
+    try {
+      const [data, wellnessData, medicalData] = await Promise.all([ fetchAllData(), fetchWellnessLogs(), fetchMedicalLogs() ]);
+      
+      const rawAthletes = data.athletes || [];
+      const logs = wellnessData.data || [];
+      const medLogs = medicalData.data || [];
+      
+      // Parse Medical
+      const medByAthlete = {};
+      if (medLogs.length > 1) {
+        medLogs.slice(1).forEach(m => {
+          const athName = String(m[2]).trim();
+          if(!medByAthlete[athName]) medByAthlete[athName] = [];
+          medByAthlete[athName].push({
+            dateStr: new Date(m[0]).toLocaleDateString(),
+            rawDate: new Date(m[0]),
+            bodyPart: m[3], pain: m[4], mechanism: m[5], status: m[6], notes: m[7], isResolved: m[8] === 'Yes'
+          });
+        });
+      }
+
+      // Parse Wellness
+      const parsedLogs = logs.length > 1 ? logs.slice(1).map(r => ({
+        date: new Date(r[0]).toLocaleDateString('en-US', {weekday: 'short'}),
+        rawDate: new Date(r[0]), athlete: String(r[2]).trim(),
+        grip: Number(r[3]) || 0, feeling: Number(r[4]) || 0, soreness: Number(r[5]) || 0, sleep: Number(r[6]) || 0, nutrition: Number(r[7]) || 0
+      })) : [];
+
+      const logsByAthlete = {};
+      parsedLogs.forEach(l => { if (!logsByAthlete[l.athlete]) logsByAthlete[l.athlete] = []; logsByAthlete[l.athlete].push(l); });
+      Object.values(logsByAthlete).forEach(arr => arr.sort((a,b) => a.rawDate - b.rawDate));
+
+      const roster = [];
+      for (let i = 1; i < rawAthletes.length; i++) {
+        const row = rawAthletes[i];
+        const name = String(row[0] || '').trim();
+        const pods = String(row[11] || '').toLowerCase();
+        
+        if (name && pods.includes('wellness')) {
+          const athLogs = logsByAthlete[name] || [];
+          const latest = athLogs.length > 0 ? athLogs[athLogs.length - 1] : { grip: 0, feeling: 0, soreness: 0, sleep: 0, nutrition: 0 };
+          let isFatigued = false;
+          if (latest.feeling > 0 && (latest.feeling <= 4 || latest.soreness <= 4 || latest.sleep <= 5.5)) isFatigued = true;
+
+          // Check Medical Status
+          let medicalStatus = 'Fully Fit';
+          let activeInjury = null;
+          const athMed = medByAthlete[name] || [];
+          athMed.sort((a,b) => b.rawDate - a.rawDate); // newest first
+          
+          if (athMed.length > 0 && !athMed[0].isResolved) {
+            medicalStatus = athMed[0].status;
+            activeInjury = athMed[0];
+          }
+
+          roster.push({
+            id: i, name: name, grip: latest.grip, feeling: latest.feeling, soreness: latest.soreness, sleep: latest.sleep, nutrition: latest.nutrition,
+            status: isFatigued ? 'fatigued' : 'normal',
+            medicalStatus, activeInjury, medicalHistory: athMed,
+            history: athLogs.slice(-7)
+          });
+        }
+      }
+      
+      const sortedRoster = roster.sort((a, b) => a.name.localeCompare(b.name));
+      setWellnessRoster(sortedRoster);
+      if (sortedRoster.length > 0) setMainTab('wellness');
+
+      const teamHistoryMap = {};
+      parsedLogs.forEach(l => {
+        const d = l.rawDate.toLocaleDateString();
+        if(!teamHistoryMap[d]) teamHistoryMap[d] = { rawDate: l.rawDate, date: l.date, count: 0, grip: 0, feeling: 0, soreness: 0, sleep: 0, nutrition: 0 };
+        teamHistoryMap[d].grip += l.grip; teamHistoryMap[d].feeling += l.feeling; teamHistoryMap[d].soreness += l.soreness; teamHistoryMap[d].sleep += l.sleep; teamHistoryMap[d].nutrition += l.nutrition; teamHistoryMap[d].count += 1;
+      });
+      const teamHistory = Object.values(teamHistoryMap).map(day => ({
+        date: day.date, rawDate: day.rawDate, grip: day.grip / day.count, feeling: day.feeling / day.count, soreness: day.soreness / day.count, sleep: day.sleep / day.count, nutrition: day.nutrition / day.count,
+      })).sort((a,b) => a.rawDate - b.rawDate).slice(-7);
+      
+      setTeamWellnessHistory(teamHistory);
+    } catch (err) {}
+    setWellnessLoading(false);
+  }
+
+  // --- PERFORMANCE MEMOS ---
   const filteredLogbook = useMemo(() => {
     let entries = logbook;
     if (selectedAthlete !== 'all') entries = entries.filter((e) => e.name === selectedAthlete);
     if (dateRange.start || dateRange.end) {
       const start = dateRange.start ? new Date(dateRange.start) : null;
       const end = dateRange.end ? new Date(dateRange.end) : null;
-      entries = entries.filter((e) => {
-        const d = new Date(e.date);
-        if (start && d < start) return false;
-        if (end && d > end) return false;
-        return true;
-      });
+      entries = entries.filter((e) => { const d = new Date(e.date); if (start && d < start) return false; if (end && d > end) return false; return true; });
     }
     return entries;
   }, [logbook, selectedAthlete, dateRange]);
@@ -320,6 +274,17 @@ export default function CoachResults() {
     return maxes.filter((m) => m.name === selectedAthlete);
   }, [maxes, selectedAthlete]);
 
+  const maxesByAthlete = useMemo(() => {
+    const map = {};
+    filteredMaxes.forEach(a => {
+      map[a.name] = {
+        backSquat: parseFloat(a['Back Squat With Barbell - (CORE)']) || 0, deadlift: parseFloat(a['Deadlift With Barbell.v (CORE)']) || 0, benchPress: parseFloat(a['Bench Press With Barbell - (CORE)']) || 0,
+        shoulderPress: parseFloat(a['Shoulder Press Seated With Barbell - (CORE)']) || 0, barbellRow: parseFloat(a['Barbell Row On Bench - Back.v (CORE)']) || 0, latPulldown: parseFloat(a['Lat Pulldown On Machine - Back (CORE)']) || 0,
+      };
+    });
+    return map;
+  }, [filteredMaxes]);
+
   const summary = useMemo(() => {
     const entries = filteredLogbook;
     if (!entries.length) return { totalVolume: 0, sessions: 0, volAt85: 0, avgPerWeek: 0, weeksCovered: 0, zoneVolumes: [0,0,0,0,0] };
@@ -327,10 +292,8 @@ export default function CoachResults() {
     const zoneVolumes = [0, 0, 0, 0, 0];
     let totalVolume = 0;
     entries.forEach((e) => {
-      const vol = calcSetVolume(e, maxesByAthlete);
-      totalVolume += vol;
-      const zone = getIntensityZone(e.percentIntensity || e.intensity);
-      if (zone !== null) zoneVolumes[zone] += vol;
+      const vol = calcSetVolume(e, maxesByAthlete); totalVolume += vol;
+      const zone = getIntensityZone(e.percentIntensity || e.intensity); if (zone !== null) zoneVolumes[zone] += vol;
     });
     const volAt85Plus = zoneVolumes[3] + zoneVolumes[4];
     const pctAt85Plus = totalVolume > 0 ? (volAt85Plus / totalVolume) * 100 : 0;
@@ -345,8 +308,7 @@ export default function CoachResults() {
     filteredLogbook.forEach((e) => {
       const wk = getWeekKey(e.date);
       if (!weekMap[wk]) weekMap[wk] = { week: wk, sessions: new Set(), volume: 0 };
-      weekMap[wk].sessions.add(e.date);
-      weekMap[wk].volume += calcSetVolume(e, maxesByAthlete);
+      weekMap[wk].sessions.add(e.date); weekMap[wk].volume += calcSetVolume(e, maxesByAthlete);
     });
     return Object.values(weekMap).sort((a, b) => a.week.localeCompare(b.week)).map((w) => ({ ...w, sessionCount: w.sessions.size }));
   }, [filteredLogbook, maxesByAthlete]);
@@ -359,9 +321,7 @@ export default function CoachResults() {
       if (!weekMap[wk]) weekMap[wk] = { week: wk };
       const coreKey = findCoreMatch(e.exercise);
       if (coreKey) {
-        const sets = parseInt(e.sets) || 0;
-        const reps = parseInt(e.reps) || 0;
-        const pct = parseFloat(e.percentIntensity || e.intensity || 0) / 100;
+        const sets = parseInt(e.sets) || 0; const reps = parseInt(e.reps) || 0; const pct = parseFloat(e.percentIntensity || e.intensity || 0) / 100;
         if (sets && reps && pct) {
           const weightPerRep = parseFloat(e.weight) || (pct * (maxesByAthlete[e.name]?.[coreKey] || 0));
           if (weightPerRep) {
@@ -380,50 +340,30 @@ export default function CoachResults() {
       const entries = filteredLogbook.filter((e) => e.name === a.name);
       const sessionDays = new Set(entries.map((e) => e.date));
       const weekKeys = new Set(entries.map((e) => getWeekKey(e.date)));
-      const weeksCovered = weekKeys.size || 1;
-      let totalVol = 0;
-      let vol85 = 0;
+      let totalVol = 0; let vol85 = 0;
       entries.forEach((e) => {
-        const vol = calcSetVolume(e, maxesByAthlete);
-        totalVol += vol;
-        const pct = parseFloat(e.percentIntensity || e.intensity || 0);
-        if (pct >= 85) vol85 += vol;
+        const vol = calcSetVolume(e, maxesByAthlete); totalVol += vol;
+        const pct = parseFloat(e.percentIntensity || e.intensity || 0); if (pct >= 85) vol85 += vol;
       });
-      return { name: a.name, sessions: sessionDays.size, avgPerWeek: sessionDays.size / weeksCovered, totalVol, pctAt85: totalVol > 0 ? (vol85 / totalVol) * 100 : 0 };
+      return { name: a.name, sessions: sessionDays.size, avgPerWeek: sessionDays.size / (weekKeys.size || 1), totalVol, pctAt85: totalVol > 0 ? (vol85 / totalVol) * 100 : 0 };
     }).filter((a) => a.sessions > 0);
   }, [athletes, filteredLogbook, selectedAthlete, maxesByAthlete]);
 
   function exportCSV() {
     const headers = ['Athlete', 'Date', 'Exercise', 'Sets', 'Reps', '% Intensity', 'Tempo', 'Rest', 'Weight(kg)', 'Set Volume(kg)'];
-    const rows = filteredLogbook.map((e) => [
-      e.name || '', e.date || '', e.exercise || '', e.sets || '', e.reps || '', e.percentIntensity || e.intensity || '',
-      e.tempo || '', e.rest || '', e.weight || '', Math.round(calcSetVolume(e, maxesByAthlete)),
-    ]);
+    const rows = filteredLogbook.map((e) => [ e.name || '', e.date || '', e.exercise || '', e.sets || '', e.reps || '', e.percentIntensity || e.intensity || '', e.tempo || '', e.rest || '', e.weight || '', Math.round(calcSetVolume(e, maxesByAthlete)) ]);
     const csv = [headers, ...rows].map((r) => r.map((c) => `"${c}"`).join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `factorprep_coach_results_${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const a = document.createElement('a'); a.href = url; a.download = `factorprep_coach_results_${new Date().toISOString().split('T')[0]}.csv`; a.click(); URL.revokeObjectURL(url);
   }
 
+  // --- WELLNESS LOGIC ---
   const getColorClass = (val, type) => {
-    if (val === 0) return 'status-amber'; // Not logged yet
-    if (type === 'grip') {
-      if (val >= 45) return 'status-green';
-      if (val <= 40) return 'status-red';
-      return 'status-amber';
-    }
-    if (type === 'sleep') {
-      if (val >= 7.5) return 'status-green';
-      if (val <= 5.5) return 'status-red';
-      return 'status-amber';
-    }
-    if (val >= 8) return 'status-green';
-    if (val <= 4) return 'status-red';
-    return 'status-amber';
+    if (val === 0) return 'status-amber'; 
+    if (type === 'grip') { if (val >= 45) return 'status-green'; if (val <= 40) return 'status-red'; return 'status-amber'; }
+    if (type === 'sleep') { if (val >= 7.5) return 'status-green'; if (val <= 5.5) return 'status-red'; return 'status-amber'; }
+    if (val >= 8) return 'status-green'; if (val <= 4) return 'status-red'; return 'status-amber';
   };
 
   const filteredWellnessRoster = wellnessRoster.filter(p => p.name.toLowerCase().includes(wellnessSearch.toLowerCase()));
@@ -440,6 +380,32 @@ export default function CoachResults() {
   const avgSoreness = wellnessChartData.length ? (wellnessChartData.reduce((acc, curr) => acc + curr.soreness, 0) / wellnessChartData.length).toFixed(1) : 0;
   const avgSleep = wellnessChartData.length ? (wellnessChartData.reduce((acc, curr) => acc + curr.sleep, 0) / wellnessChartData.length).toFixed(1) : 0;
   const avgNutrition = wellnessChartData.length ? (wellnessChartData.reduce((acc, curr) => acc + curr.nutrition, 0) / wellnessChartData.length).toFixed(1) : 0;
+
+  // --- MEDICAL HANDLERS ---
+  const openMedicalModal = (athlete) => {
+    setSelectedMedicalAthlete(athlete);
+    setMedFormStatus(athlete.activeInjury ? athlete.activeInjury.status : 'Fully Fit (Cleared)');
+    setMedFormNotes('');
+    setMedicalModalOpen(true);
+  };
+
+  const handleSaveMedical = async () => {
+    setMedSaving(true);
+    const bodyPart = selectedMedicalAthlete.activeInjury ? selectedMedicalAthlete.activeInjury.bodyPart : 'General Update';
+    const isResolved = medFormStatus === 'Fully Fit (Cleared)' ? 'Yes' : 'No';
+    
+    const payload = {
+      email: coachEmail, athlete: selectedMedicalAthlete.name, bodyPart: bodyPart, pain: 0,
+      mechanism: 'Coach/Physio Update', trainingStatus: medFormStatus, notes: medFormNotes, isResolved: isResolved
+    };
+
+    try {
+      await saveMedicalLog(payload);
+      setMedicalModalOpen(false);
+      loadWellnessAndMedical(); // refresh
+    } catch(e) {}
+    setMedSaving(false);
+  };
 
   if (authLoading) return <div style={{ ...styles.page, display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}><p style={{ color: COLORS.bodyGray }}>Loading...</p></div>;
   if (!coachEmail) return <div style={{ ...styles.page, display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}><p style={{ color: COLORS.bodyGray }}>Please log in.</p></div>;
@@ -458,7 +424,7 @@ export default function CoachResults() {
         .cr-table { width: 100%; border-collapse: collapse; text-align: center; }
         .cr-table th { padding: 16px; background: #f8fafc; color: #64748b; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; border-bottom: 2px solid #e2e8f0; }
         .cr-table td { padding: 12px 16px; border-bottom: 1px solid #f1f5f9; font-weight: 600; font-size: 15px; }
-        .cr-athlete-name { display: flex; align-items: center; gap: 12px; text-align: left; font-weight: 700; color: #0f172a; font-size: 15px; }
+        .cr-athlete-name { display: flex; align-items: center; gap: 12px; text-align: left; font-weight: 700; color: #0f172a; font-size: 15px; cursor: pointer; }
         .cr-avatar { width: 32px; height: 32px; border-radius: 50%; background: #008ed3; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: bold; text-transform: uppercase; }
         .status-badge { display: inline-flex; align-items: center; justify-content: center; padding: 6px 12px; border-radius: 6px; font-weight: 700; width: 100%; }
         .status-green { background-color: #d1fae5; color: #059669; }
@@ -479,6 +445,10 @@ export default function CoachResults() {
         .cr-metric-unit { font-size: 14px; font-weight: 500; color: #94a3b8; margin-left: 4px; }
         .cr-chart-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
         .cr-select { padding: 8px 16px; border-radius: 8px; border: 1px solid #e2e8f0; background: #f8fafc; font-size: 14px; font-weight: 600; cursor: pointer; outline: none; }
+        
+        /* Modal */
+        .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15,23,42,0.8); display: flex; justify-content: center; align-items: center; z-index: 1000; padding: 16px; }
+        .modal-content { background: white; border-radius: 16px; width: 100%; max-width: 500px; padding: 24px; box-shadow: 0 20px 40px rgba(0,0,0,0.2); max-height: 90vh; overflow-y: auto; }
       `}</style>
 
       <div style={styles.titleWrapper}>
@@ -499,6 +469,7 @@ export default function CoachResults() {
         </div>
       </div>
 
+      {/* PERFORMANCE ENGINE TAB */}
       {mainTab === 'performance' && (
         <div>
           <div style={styles.card}>
@@ -670,22 +641,23 @@ export default function CoachResults() {
         </div>
       )}
 
+      {/* WELLNESS CENTER TAB */}
       {mainTab === 'wellness' && (
         <div>
           <div className="cr-toggle-bg">
-            <button className={`cr-toggle-btn ${wellnessViewMode === 'grid' ? 'active' : ''}`} onClick={() => setWellnessViewMode('grid')}><LayoutGrid size={16} /> Traffic Light</button>
-            <button className={`cr-toggle-btn ${wellnessViewMode === 'charts' ? 'active' : ''}`} onClick={() => setWellnessViewMode('charts')}><BarChart2 size={16} /> Deep Analysis</button>
+            <button className={`cr-toggle-btn ${wellnessViewMode === 'grid' ? 'active' : ''}`} onClick={() => setWellnessViewMode('grid')}><LayoutGrid size={16} /> Readiness Grid</button>
+            <button className={`cr-toggle-btn ${wellnessViewMode === 'charts' ? 'active' : ''}`} onClick={() => setWellnessViewMode('charts')}><BarChart2 size={16} /> Analytics</button>
           </div>
           
           {wellnessViewMode === 'grid' && (
             <div className="cr-search-box">
               <Search size={18} color="#94a3b8" />
-              <input type="text" placeholder="Search active wellness athlete..." value={wellnessSearch} onChange={(e) => setWellnessSearch(e.target.value)} />
+              <input type="text" placeholder="Search roster..." value={wellnessSearch} onChange={(e) => setWellnessSearch(e.target.value)} />
             </div>
           )}
 
           {wellnessLoading ? (
-            <div style={{ textAlign: 'center', padding: '40px', color: '#64748b' }}>Loading Live Wellness Data...</div>
+            <div style={{ textAlign: 'center', padding: '40px', color: '#64748b' }}>Loading Roster Data...</div>
           ) : wellnessViewMode === 'grid' ? (
             <div className="cr-grid-card">
               <table className="cr-table">
@@ -702,13 +674,23 @@ export default function CoachResults() {
                 <tbody>
                   {filteredWellnessRoster.map(athlete => {
                     const isAlert = athlete.status === 'fatigued';
+                    
+                    // Medical Badge Logic
+                    let medBadge = null;
+                    if (athlete.medicalStatus === 'Cannot Train') {
+                      medBadge = <span style={{ fontSize:'10px', background:'#fef2f2', color:'#dc2626', padding:'2px 6px', borderRadius:'4px', border:'1px solid #fca5a5', marginLeft:'8px', display:'flex', alignItems:'center', gap:'4px' }}><ShieldAlert size={10}/> OUT</span>;
+                    } else if (athlete.medicalStatus === 'Modified Training') {
+                      medBadge = <span style={{ fontSize:'10px', background:'#fffbeb', color:'#d97706', padding:'2px 6px', borderRadius:'4px', border:'1px solid #fcd34d', marginLeft:'8px' }}>MODIFIED</span>;
+                    }
+
                     return (
                       <tr key={athlete.id} className={isAlert ? 'cr-alert-row' : ''}>
                         <td>
-                          <div className="cr-athlete-name">
+                          <div className="cr-athlete-name" onClick={() => openMedicalModal(athlete)}>
                             <div className="cr-avatar">{athlete.name.charAt(0)}</div>
                             {athlete.name}
-                            {isAlert && <AlertCircle size={16} color="#dc2626" title="Fatigue Warning" />}
+                            {medBadge}
+                            {isAlert && !medBadge && <AlertCircle size={16} color="#dc2626" title="Fatigue Warning" style={{marginLeft:'8px'}} />}
                           </div>
                         </td>
                         <td><span className={`status-badge ${getColorClass(athlete.grip, 'grip')}`}>{athlete.grip ? athlete.grip.toFixed(1) : '--'}</span></td>
@@ -719,7 +701,7 @@ export default function CoachResults() {
                       </tr>
                     );
                   })}
-                  {filteredWellnessRoster.length === 0 && <tr><td colSpan="6" style={{ padding: '32px', color: '#64748b' }}>No wellness logs found for roster.</td></tr>}
+                  {filteredWellnessRoster.length === 0 && <tr><td colSpan="6" style={{ padding: '32px', color: '#64748b' }}>No athletes found in active roster.</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -769,6 +751,7 @@ export default function CoachResults() {
                         <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} dy={10} />
                         <YAxis domain={['dataMin - 1', 'dataMax + 1']} axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} />
                         <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} itemStyle={{ fontWeight: 'bold' }} formatter={(value) => [value.toFixed(1), '']} />
+                        
                         {activeWellnessMetric === 'grip' && <Line type="monotone" dataKey="grip" stroke="#3b82f6" strokeWidth={3} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 6 }} />}
                         {activeWellnessMetric === 'feeling' && <Line type="monotone" dataKey="feeling" stroke="#0ea5e9" strokeWidth={3} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 6 }} />}
                         {activeWellnessMetric === 'soreness' && <Line type="monotone" dataKey="soreness" stroke="#ef4444" strokeWidth={3} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 6 }} />}
@@ -783,6 +766,55 @@ export default function CoachResults() {
           )}
         </div>
       )}
+
+      {/* MEDICAL CLINICAL FILE MODAL */}
+      {medicalModalOpen && selectedMedicalAthlete && (
+        <div className="modal-overlay" onClick={() => !medSaving && setMedicalModalOpen(false)}>
+          <div className="modal-content" onClick={e=>e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', paddingBottom: '16px', borderBottom: '1px solid #e2e8f0' }}>
+              <h2 style={{ margin: 0, fontSize: '20px', color: '#0f172a' }}>{selectedMedicalAthlete.name} - Clinical File</h2>
+              <button onClick={() => setMedicalModalOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}><X size={24}/></button>
+            </div>
+
+            <div style={{ maxHeight: '40vh', overflowY: 'auto', marginBottom: '20px' }}>
+              {selectedMedicalAthlete.medicalHistory.length === 0 ? <p style={{ color: '#64748b' }}>No medical history.</p> : 
+                selectedMedicalAthlete.medicalHistory.map((m, i) => (
+                  <div key={i} style={{ padding: '12px', border: '1px solid #e2e8f0', borderRadius: '8px', marginBottom: '8px', background: '#f8fafc' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                      <strong style={{ color: '#0f172a' }}>{m.bodyPart}</strong>
+                      <span style={{ fontSize: '12px', color: '#64748b' }}>{m.dateStr}</span>
+                    </div>
+                    <div style={{ fontSize: '12px', marginBottom: '8px' }}>
+                      <span style={{ background: '#fef2f2', color: '#dc2626', padding: '2px 6px', borderRadius: '4px', marginRight: '6px' }}>Pain: {m.pain}</span>
+                      <span style={{ background: '#e0f2fe', color: '#0284c7', padding: '2px 6px', borderRadius: '4px' }}>{m.status}</span>
+                    </div>
+                    {m.notes && <p style={{ fontSize: '13px', color: '#475569', margin: 0 }}>"{m.notes}"</p>}
+                  </div>
+                ))
+              }
+            </div>
+
+            <div style={{ background: '#f1f5f9', padding: '16px', borderRadius: '8px' }}>
+              <h4 style={{ margin: '0 0 12px 0', fontSize: '14px' }}>Update Treatment / Clearance</h4>
+              
+              <label style={{ fontSize: '12px', fontWeight: '700', color: '#64748b', display: 'block', marginBottom: '4px' }}>Status</label>
+              <select value={medFormStatus} onChange={e=>setMedFormStatus(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', marginBottom: '12px' }}>
+                <option value="Cannot Train">Cannot Train (Full Rehab)</option>
+                <option value="Modified Training">Modified Training</option>
+                <option value="Fully Fit (Cleared)">Fully Fit (Cleared)</option>
+              </select>
+
+              <label style={{ fontSize: '12px', fontWeight: '700', color: '#64748b', display: 'block', marginBottom: '4px' }}>Clinical Notes</label>
+              <textarea value={medFormNotes} onChange={e=>setMedFormNotes(e.target.value)} placeholder="e.g. Swelling reduced. Cleared for bike." style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', marginBottom: '16px', minHeight: '60px', resize: 'vertical' }} />
+
+              <button onClick={handleSaveMedical} disabled={medSaving} style={{ width: '100%', padding: '12px', background: '#008ed3', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '700', cursor: 'pointer' }}>
+                {medSaving ? 'Saving...' : 'Save Clinical Update'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <HelpButton pageName="Coach Results" position="bottom-right" />
     </div>
   );
@@ -836,47 +868,3 @@ function ProgressionChart({ data, weeklyData }) {
     </div>
   );
 }
-
-const styles = {
-  page: { padding: '4px', backgroundColor: COLORS.cardBg, minHeight: 'calc(100vh - 120px)' },
-  titleWrapper: { textAlign: 'left', paddingTop: '4px', marginBottom: '1.5rem' },
-  card: { backgroundColor: COLORS.white, borderRadius: '12px', padding: '1.25rem', marginBottom: '1rem', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', border: `1px solid ${COLORS.border}` },
-  h2: { fontSize: '18px', fontWeight: '700', color: COLORS.darkText, margin: '0 0 0.75rem 0' },
-  body: { fontSize: '15px', color: COLORS.bodyGray },
-  filterRow: { display: 'flex', flexWrap: 'wrap', gap: '1rem', alignItems: 'flex-end' },
-  filterGroup: { display: 'flex', flexDirection: 'column', gap: '4px' },
-  filterActions: { display: 'flex', gap: '0.5rem', marginLeft: 'auto' },
-  label: { fontSize: '13px', fontWeight: '600', color: COLORS.darkText },
-  select: { padding: '8px 12px', borderRadius: '8px', border: `1px solid ${COLORS.border}`, fontSize: '15px', color: COLORS.darkText, backgroundColor: COLORS.white, cursor: 'pointer', minWidth: '160px' },
-  input: { padding: '8px 12px', borderRadius: '8px', border: `1px solid ${COLORS.border}`, fontSize: '15px', color: COLORS.darkText, backgroundColor: COLORS.white, cursor: 'pointer' },
-  btnSecondary: { padding: '8px 16px', borderRadius: '8px', border: `1px solid ${COLORS.primaryBlue}`, backgroundColor: COLORS.white, color: COLORS.primaryBlue, fontSize: '13px', fontWeight: '600', cursor: 'pointer' },
-  summaryGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '1rem' },
-  summaryCard: { backgroundColor: COLORS.white, borderRadius: '12px', padding: '1.25rem', border: `1px solid ${COLORS.border}`, boxShadow: '0 1px 3px rgba(0,0,0,0.08)', display: 'flex', flexDirection: 'column', gap: '4px' },
-  summaryLabel: { fontSize: '13px', color: COLORS.bodyGray, fontWeight: '600' },
-  summaryValue: { fontSize: '26px', fontWeight: '700', color: COLORS.primaryBlue },
-  summarySub: { fontSize: '12px', color: COLORS.bodyGray },
-  barChartContainer: { display: 'flex', alignItems: 'flex-end', gap: '0.75rem', height: '220px', paddingTop: '1.5rem' },
-  barCol: { display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1, height: '100%' },
-  barValueLabel: { fontSize: '13px', fontWeight: '700', color: COLORS.darkText, marginBottom: '4px' },
-  barTrack: { flex: 1, width: '100%', maxWidth: '80px', display: 'flex', flexDirection: 'column-reverse' },
-  barFill: { width: '100%', borderRadius: '6px 6px 0 0', minHeight: '4px', transition: 'height 0.3s ease' },
-  barLabel: { fontSize: '13px', fontWeight: '600', color: COLORS.darkText, marginTop: '6px' },
-  barSubLabel: { fontSize: '11px', color: COLORS.bodyGray },
-  freqChart: { display: 'flex', alignItems: 'flex-end', gap: '0.5rem', height: '180px', overflowX: 'auto', paddingTop: '0.5rem' },
-  freqCol: { display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '48px', height: '100%' },
-  freqBarWrapper: { flex: 1, width: '32px', display: 'flex', flexDirection: 'column-reverse' },
-  freqBar: { width: '100%', backgroundColor: COLORS.primaryBlue, borderRadius: '6px 6px 0 0', minHeight: '8px', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: '4px' },
-  freqCount: { fontSize: '11px', fontWeight: '700', color: COLORS.white },
-  freqLabel: { fontSize: '10px', color: COLORS.bodyGray, marginTop: '4px', textAlign: 'center' },
-  tableWrapper: { overflowX: 'auto' },
-  table: { width: '100%', borderCollapse: 'collapse', fontSize: '15px' },
-  th: { textAlign: 'left', padding: '10px 12px', backgroundColor: COLORS.primaryBlue, color: COLORS.white, fontWeight: '600', fontSize: '13px', whiteSpace: 'nowrap' },
-  tr: { borderBottom: `1px solid ${COLORS.border}` },
-  td: { padding: '10px 12px', color: COLORS.darkText, fontSize: '14px', whiteSpace: 'nowrap' },
-  miniBarTrack: { width: '80px', height: '10px', backgroundColor: COLORS.lightBg, borderRadius: '5px', overflow: 'hidden' },
-  miniBarFill: { height: '100%', borderRadius: '5px', transition: 'width 0.3s ease' },
-  collapsibleHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', userSelect: 'none' },
-  chevron: { fontSize: '14px', color: COLORS.bodyGray },
-  errorBanner: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', padding: '12px 16px', marginBottom: '1rem', color: COLORS.red, fontSize: '14px' },
-  retryBtn: { padding: '4px 12px', borderRadius: '6px', border: `1px solid ${COLORS.red}`, backgroundColor: COLORS.white, color: COLORS.red, fontSize: '13px', cursor: 'pointer', fontWeight: '600' },
-};
