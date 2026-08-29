@@ -6,9 +6,6 @@ import { fetchAthletes, fetchLogbookByAthlete, fetchAllData, fetchWellnessLogs, 
 import { ArrowLeft, Search, AlertCircle, Heart, Moon, Utensils, HandMetal, Smile, BarChart2, LayoutGrid, Dumbbell, Activity, ShieldAlert, X } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
-// ==========================================
-// PERFORMANCE TRACKING CONSTANTS
-// ==========================================
 const COLORS = {
   primaryBlue: '#008ed3', darkText: '#333', bodyGray: '#666', lightBg: '#f5f5f5', cardBg: '#f8fafc',
   border: '#e2e8f0', white: '#ffffff', green: '#16a34a', red: '#dc2626', amber: '#d97706',
@@ -81,11 +78,14 @@ function calcSetVolume(entry, maxesByAthlete = {}) {
   return sets * reps * weightPerRep;
 }
 
+// BULLETPROOF DATE PARSER
 function getWeekKey(dateStr) {
+  if (!dateStr) return '1970-01-01';
   const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return '1970-01-01';
   const monday = new Date(d);
   monday.setDate(d.getDate() - ((d.getDay() + 6) % 7));
-  return monday.toISOString().split('T')[0];
+  try { return monday.toISOString().split('T')[0]; } catch(e) { return '1970-01-01'; }
 }
 
 function fmt(n) { return Math.round(n).toLocaleString(); }
@@ -194,21 +194,35 @@ export default function CoachResults() {
       const medByAthlete = {};
       if (medLogs.length > 1) {
         medLogs.slice(1).forEach(m => {
+          if (!m[0]) return; // Skip empty rows
           const athName = String(m[2]).trim();
           if(!medByAthlete[athName]) medByAthlete[athName] = [];
+          
+          // Bulletproof date parsing
+          let d = new Date(m[0]);
+          if (isNaN(d.getTime())) d = new Date();
+
           medByAthlete[athName].push({
-            dateStr: new Date(m[0]).toLocaleDateString(),
-            rawDate: new Date(m[0]),
+            dateStr: d.toLocaleDateString(),
+            rawDate: d,
             bodyPart: m[3], pain: m[4], mechanism: m[5], status: m[6], notes: m[7], isResolved: m[8] === 'Yes'
           });
         });
       }
 
-      const parsedLogs = logs.length > 1 ? logs.slice(1).map(r => ({
-        date: new Date(r[0]).toLocaleDateString('en-US', {weekday: 'short'}),
-        rawDate: new Date(r[0]), athlete: String(r[2]).trim(),
-        grip: Number(r[3]) || 0, feeling: Number(r[4]) || 0, soreness: Number(r[5]) || 0, sleep: Number(r[6]) || 0, nutrition: Number(r[7]) || 0
-      })) : [];
+      const parsedLogs = [];
+      if (logs.length > 1) {
+        logs.slice(1).forEach(r => {
+          if (!r[0]) return;
+          let d = new Date(r[0]);
+          if (isNaN(d.getTime())) d = new Date();
+          parsedLogs.push({
+            date: d.toLocaleDateString('en-US', {weekday: 'short'}),
+            rawDate: d, athlete: String(r[2]).trim(),
+            grip: Number(r[3]) || 0, feeling: Number(r[4]) || 0, soreness: Number(r[5]) || 0, sleep: Number(r[6]) || 0, nutrition: Number(r[7]) || 0
+          });
+        });
+      }
 
       const logsByAthlete = {};
       parsedLogs.forEach(l => { if (!logsByAthlete[l.athlete]) logsByAthlete[l.athlete] = []; logsByAthlete[l.athlete].push(l); });
@@ -473,6 +487,7 @@ export default function CoachResults() {
         </div>
       </div>
 
+      {/* PERFORMANCE ENGINE TAB */}
       {mainTab === 'performance' && (
         <div>
           <div style={styles.card}>

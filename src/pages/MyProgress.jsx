@@ -208,9 +208,15 @@ export default function MyProgress() {
 
             {activeTab === 'history' && (
               <div className="mp-history-card">
-                <div style={{ marginBottom: '24px' }}>
+                               <div style={{ marginBottom: '24px' }}>
                   <h3 style={{ fontSize: '18px', color: '#333', marginBottom: '12px' }}>Past Sessions</h3>
-                  {!historyLoaded ? <p className="mp-placeholder">Loading sessions...</p> : sessions.length === 0 ? <p className="mp-placeholder">No sessions recorded yet.</p> : (
+                  
+                  <div className="mp-search-box" style={{ marginBottom: '16px' }}>
+                    <input type="text" placeholder="Search exercises..." value={exerciseFilter} onChange={e => setExerciseFilter(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0', outline: 'none' }} />
+                  </div>
+
+                  {!historyLoaded ? <p className="mp-placeholder">Loading sessions...</p> : filteredHistory.length === 0 ? <p className="mp-placeholder">No sessions recorded yet.</p> : (
+
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                       {sessions.map((session, i) => (
                         <div key={i} style={{ padding: '14px 16px', border: '1px solid #ddd', borderRadius: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

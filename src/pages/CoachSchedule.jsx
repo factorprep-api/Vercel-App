@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
@@ -19,13 +19,13 @@ export default function CoachSchedule() {
   // Propose Session Modal
   const [showModal, setShowModal] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ athlete: '', date: '', type: 'Field Practice', duration: 60, rpe: 7, notes: '' });
+  const [form, setForm] = useState({ athlete: 'All Athletes', date: '', type: 'Field Practice', duration: 60, rpe: 7, location: '', notes: '' });
+
+  const coachEmail = userEmail;
 
   useEffect(() => {
     if (coachEmail) loadData();
   }, [userEmail]);
-
-  const coachEmail = userEmail;
 
   async function loadData() {
     try {
@@ -43,22 +43,24 @@ export default function CoachSchedule() {
 
       const rawLogs = schedData.data || [];
       if (rawLogs.length > 1) {
-        const parsed = rawLogs.slice(1).map(r => ({
-          rawDate: new Date(r[0]),
-          athlete: String(r[2]).trim(),
-          type: r[3],
-          duration: Number(r[4]),
-          rpe: Number(r[5]),
-          load: Number(r[6]),
-          status: String(r[9] || 'Actual').trim()
-        }));
+        const parsed = [];
+        rawLogs.slice(1).forEach(r => {
+          if (!r[0]) return;
+          let d = new Date(r[0]);
+          if (isNaN(d.getTime())) d = new Date();
+          parsed.push({
+            rawDate: d,
+            athlete: String(r[2]).trim(),
+            type: r[3], duration: Number(r[4]), rpe: Number(r[5]), load: Number(r[6]),
+            status: String(r[9] || 'Actual').trim()
+          });
+        });
         setScheduleLogs(parsed);
       }
     } catch (e) {}
     setLoading(false);
   }
 
-  // ACWR MATH ENGINE
   const rosterWithLoads = useMemo(() => {
     const today = new Date();
     const sevenDaysAgo = new Date(today); sevenDaysAgo.setDate(today.getDate() - 7);
@@ -69,12 +71,11 @@ export default function CoachSchedule() {
       
       const acuteLoad = athLogs.filter(l => l.rawDate >= sevenDaysAgo).reduce((sum, l) => sum + l.load, 0);
       const chronicTotal = athLogs.filter(l => l.rawDate >= twentyEightDaysAgo).reduce((sum, l) => sum + l.load, 0);
-      const chronicLoad = chronicTotal / 4; // 4-week average
+      const chronicLoad = chronicTotal / 4; 
       
       let acwr = 0;
       if (chronicLoad > 0) acwr = acuteLoad / chronicLoad;
 
-      // Calculate Daily Chart for last 14 days
       const chartMap = {};
       for(let i=13; i>=0; i--) {
         const d = new Date(today); d.setDate(today.getDate() - i);
@@ -99,18 +100,28 @@ export default function CoachSchedule() {
   };
 
   async function handlePropose() {
-    if (!form.athlete || !form.date) return alert("Athlete and Date required");
+    if (!form.date) return alert("Please select a date.");
     setSaving(true);
-    const payload = {
-      email: coachEmail, athlete: form.athlete, type: form.type, duration: form.duration,
-      rpe: form.rpe, load: form.duration * form.rpe, location: 'Coach Proposed', notes: form.notes, status: 'Proposed'
-    };
     try {
-      await saveScheduleSession(payload);
+      if (form.athlete === 'All Athletes') {
+        for (const ath of roster) {
+          const payload = {
+            email: coachEmail, athlete: ath.name, type: form.type, duration: form.duration,
+            rpe: form.rpe, load: form.duration * form.rpe, location: form.location, notes: form.notes, status: 'Proposed'
+          };
+          await saveScheduleSession(payload);
+        }
+      } else {
+        const payload = {
+          email: coachEmail, athlete: form.athlete, type: form.type, duration: form.duration,
+          rpe: form.rpe, load: form.duration * form.rpe, location: form.location, notes: form.notes, status: 'Proposed'
+        };
+        await saveScheduleSession(payload);
+      }
       setShowModal(false);
-      setForm({ ...form, notes: '' }); // reset notes
-      loadData(); // refresh
-    } catch(e) {}
+      setForm({ ...form, notes: '', location: '' }); 
+      loadData(); 
+    } catch(e) { alert("Failed to save."); }
     setSaving(false);
   }
 
@@ -128,22 +139,22 @@ export default function CoachSchedule() {
         .cs-badge { padding: 4px 8px; border-radius: 6px; font-size: 12px; font-weight: 800; display: inline-block; text-align: center; }
         
         .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15,23,42,0.8); display: flex; justify-content: center; align-items: center; z-index: 1000; padding: 16px; }
-        .modal-content { background: white; border-radius: 16px; width: 100%; max-width: 450px; padding: 24px; box-shadow: 0 20px 40px rgba(0,0,0,0.2); }
+        .modal-content { background: white; border-radius: 16px; width: 100%; max-width: 450px; padding: 24px; box-shadow: 0 20px 40px rgba(0,0,0,0.2); max-height: 90vh; overflow-y: auto; }
         .modal-input { width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 8px; margin-bottom: 16px; font-size: 14px; outline: none; }
       `}</style>
 
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <button onClick={() => navigate(-1)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#f59e0b' }}><ArrowLeft size={28} /></button>
+          <button onClick={() => navigate(-1)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#008ed3' }}><ArrowLeft size={28} /></button>
           <h1 style={{ fontSize: '24px', fontWeight: '700', color: '#0f172a', margin: 0 }}>Team Load Engine (ACWR)</h1>
         </div>
-        <button onClick={() => setShowModal(true)} style={{ background: '#f59e0b', color: 'white', border: 'none', padding: '10px 16px', borderRadius: '8px', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+        <button onClick={() => setShowModal(true)} style={{ background: '#16a34a', color: 'white', border: 'none', padding: '10px 16px', borderRadius: '8px', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
           <Plus size={18}/> Propose Session
         </button>
       </div>
 
       <div className="cs-card">
-        <input type="text" placeholder="Search athlete..." value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} style={{ width: '100%', maxWidth: '300px', padding: '10px', border: '1px solid #e2e8f0', borderRadius: '8px', marginBottom: '16px' }} />
+        <input type="text" placeholder="Search athlete..." value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} style={{ width: '100%', maxWidth: '300px', padding: '10px', border: '1px solid #e2e8f0', borderRadius: '8px', marginBottom: '16px', outline: 'none' }} />
         
         {loading ? <p style={{ color: '#64748b' }}>Calculating ACWR metrics...</p> : (
           <div style={{ overflowX: 'auto' }}>
@@ -158,7 +169,8 @@ export default function CoachSchedule() {
                 </tr>
               </thead>
               <tbody>
-                {filteredRoster.map((ath, idx) => {
+                {filteredRoster.length === 0 ? <tr><td colSpan="5" style={{ color: '#64748b', textAlign: 'center' }}>No athletes found with Schedule Pod active.</td></tr> : 
+                  filteredRoster.map((ath, idx) => {
                   const status = getAcwrStatus(ath.acwr);
                   const isExpanded = expandedAthlete === ath.name;
                   return (
@@ -212,14 +224,27 @@ export default function CoachSchedule() {
           <div className="modal-content" onClick={e=>e.stopPropagation()}>
             <h2 style={{ margin: '0 0 16px 0' }}>Propose Session</h2>
             
-            <label style={{ fontSize: '12px', fontWeight: '700', color: '#64748b' }}>Athlete</label>
+            <label style={{ fontSize: '12px', fontWeight: '700', color: '#64748b' }}>Assign To</label>
             <select className="modal-input" value={form.athlete} onChange={e=>setForm({...form, athlete: e.target.value})}>
-              <option value="">Select Athlete...</option>
+              <option value="All Athletes">All Athletes (Entire Roster)</option>
               {roster.map(a => <option key={a.name} value={a.name}>{a.name}</option>)}
             </select>
 
-            <label style={{ fontSize: '12px', fontWeight: '700', color: '#64748b' }}>Date</label>
-            <input type="date" className="modal-input" value={form.date} onChange={e=>setForm({...form, date: e.target.value})} />
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: '12px', fontWeight: '700', color: '#64748b' }}>Date</label>
+                <input type="date" className="modal-input" value={form.date} onChange={e=>setForm({...form, date: e.target.value})} />
+              </div>
+              <div style={{ flex: 1 }}>
+                 <label style={{ fontSize: '12px', fontWeight: '700', color: '#64748b' }}>Type</label>
+                 <select className="modal-input" value={form.type} onChange={e=>setForm({...form, type: e.target.value})}>
+                    <option value="Field Practice">Field Practice</option>
+                    <option value="Match / Game">Match / Game</option>
+                    <option value="Conditioning / Running">Conditioning</option>
+                    <option value="Rehab / Recovery">Rehab / Recovery</option>
+                 </select>
+              </div>
+            </div>
 
             <div style={{ display: 'flex', gap: '12px' }}>
               <div style={{ flex: 1 }}>
@@ -232,7 +257,13 @@ export default function CoachSchedule() {
               </div>
             </div>
 
-            <button onClick={handlePropose} disabled={saving} style={{ width: '100%', background: '#f59e0b', color: 'white', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', marginTop: '8px' }}>
+            <label style={{ fontSize: '12px', fontWeight: '700', color: '#64748b' }}>Location / Venue</label>
+            <input type="text" className="modal-input" placeholder="e.g. Main Pitch" value={form.location} onChange={e=>setForm({...form, location: e.target.value})} />
+
+            <label style={{ fontSize: '12px', fontWeight: '700', color: '#64748b' }}>Notes / Requirements</label>
+            <textarea className="modal-input" placeholder="e.g. Bring cleats and running shoes." value={form.notes} onChange={e=>setForm({...form, notes: e.target.value})} style={{ minHeight: '60px', resize: 'vertical' }} />
+
+            <button onClick={handlePropose} disabled={saving} style={{ width: '100%', background: '#16a34a', color: 'white', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', marginTop: '8px' }}>
               {saving ? 'Saving...' : `Send Proposed Load (${form.duration * form.rpe} AU)`}
             </button>
           </div>
