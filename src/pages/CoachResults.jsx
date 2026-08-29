@@ -130,6 +130,17 @@ export default function CoachResults() {
   async function loadData() {
     setError(null);
     try {
+      const cached = localStorage.getItem(CACHE_KEY);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        setAthletes(parsed.athletes || []);
+        setMaxes(parsed.maxes || []);
+        setLogbook(parsed.logbook || []);
+        setLoading(false);
+      }
+    } catch (e) { console.warn('Cache read failed:', e); }
+
+    try {
       const athRes = await fetchAthletes();
       const rawAthletes = athRes.athletes || [];
       let athleteList = [];
@@ -167,7 +178,6 @@ export default function CoachResults() {
     }
   }, [selectedAthlete]);
 
-  // COMBINED WELLNESS & MEDICAL FETCH
   useEffect(() => {
     loadWellnessAndMedical();
   }, []);
@@ -181,7 +191,6 @@ export default function CoachResults() {
       const logs = wellnessData.data || [];
       const medLogs = medicalData.data || [];
       
-      // Parse Medical
       const medByAthlete = {};
       if (medLogs.length > 1) {
         medLogs.slice(1).forEach(m => {
@@ -195,7 +204,6 @@ export default function CoachResults() {
         });
       }
 
-      // Parse Wellness
       const parsedLogs = logs.length > 1 ? logs.slice(1).map(r => ({
         date: new Date(r[0]).toLocaleDateString('en-US', {weekday: 'short'}),
         rawDate: new Date(r[0]), athlete: String(r[2]).trim(),
@@ -218,11 +226,10 @@ export default function CoachResults() {
           let isFatigued = false;
           if (latest.feeling > 0 && (latest.feeling <= 4 || latest.soreness <= 4 || latest.sleep <= 5.5)) isFatigued = true;
 
-          // Check Medical Status
           let medicalStatus = 'Fully Fit';
           let activeInjury = null;
           const athMed = medByAthlete[name] || [];
-          athMed.sort((a,b) => b.rawDate - a.rawDate); // newest first
+          athMed.sort((a,b) => b.rawDate - a.rawDate); 
           
           if (athMed.length > 0 && !athMed[0].isResolved) {
             medicalStatus = athMed[0].status;
@@ -257,7 +264,6 @@ export default function CoachResults() {
     setWellnessLoading(false);
   }
 
-  // --- PERFORMANCE MEMOS ---
   const filteredLogbook = useMemo(() => {
     let entries = logbook;
     if (selectedAthlete !== 'all') entries = entries.filter((e) => e.name === selectedAthlete);
@@ -358,7 +364,6 @@ export default function CoachResults() {
     const a = document.createElement('a'); a.href = url; a.download = `factorprep_coach_results_${new Date().toISOString().split('T')[0]}.csv`; a.click(); URL.revokeObjectURL(url);
   }
 
-  // --- WELLNESS LOGIC ---
   const getColorClass = (val, type) => {
     if (val === 0) return 'status-amber'; 
     if (type === 'grip') { if (val >= 45) return 'status-green'; if (val <= 40) return 'status-red'; return 'status-amber'; }
@@ -381,7 +386,6 @@ export default function CoachResults() {
   const avgSleep = wellnessChartData.length ? (wellnessChartData.reduce((acc, curr) => acc + curr.sleep, 0) / wellnessChartData.length).toFixed(1) : 0;
   const avgNutrition = wellnessChartData.length ? (wellnessChartData.reduce((acc, curr) => acc + curr.nutrition, 0) / wellnessChartData.length).toFixed(1) : 0;
 
-  // --- MEDICAL HANDLERS ---
   const openMedicalModal = (athlete) => {
     setSelectedMedicalAthlete(athlete);
     setMedFormStatus(athlete.activeInjury ? athlete.activeInjury.status : 'Fully Fit (Cleared)');
@@ -402,7 +406,7 @@ export default function CoachResults() {
     try {
       await saveMedicalLog(payload);
       setMedicalModalOpen(false);
-      loadWellnessAndMedical(); // refresh
+      loadWellnessAndMedical(); 
     } catch(e) {}
     setMedSaving(false);
   };
@@ -469,7 +473,6 @@ export default function CoachResults() {
         </div>
       </div>
 
-      {/* PERFORMANCE ENGINE TAB */}
       {mainTab === 'performance' && (
         <div>
           <div style={styles.card}>
