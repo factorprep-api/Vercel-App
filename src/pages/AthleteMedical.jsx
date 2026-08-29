@@ -225,4 +225,3 @@ export default function AthleteMedical() {
     </div>
   );
 }
-No, I never. 
