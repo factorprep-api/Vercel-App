@@ -157,7 +157,7 @@ export default function CoachSchedule() {
         .modal-input { width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 8px; margin-bottom: 16px; font-size: 14px; outline: none; }
         
         .roster-list { max-height: 250px; overflow-y: auto; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px; margin-top: 8px; margin-bottom: 16px; background: #f8fafc; }
-        .roster-item { display: flex; align-items: center; gap: 12px; padding: 10px; border-radius: 4px; cursor: pointer; border-bottom: 1px solid #e2e8f0; }
+        .roster-list { width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 8px; margin-bottom: 16px; margin-top: 8px; background: #fff; max-height: 180px; overflow-y: auto; }
         .roster-item:hover { background: #e2e8f0; }
       `}</style>
 
