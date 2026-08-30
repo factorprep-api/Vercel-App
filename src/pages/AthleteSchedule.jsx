@@ -14,7 +14,7 @@ export default function AthleteSchedule() {
   const [scheduleData, setScheduleData] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
-  const [type, setType] = useState('Field Practice');
+  const [type, setType] = useState('Field Session');
   const [duration, setDuration] = useState(60);
   const [rpe, setRpe] = useState(7);
   const [notes, setNotes] = useState('');
@@ -101,17 +101,14 @@ export default function AthleteSchedule() {
       <style>{`
         .as-container { padding: 20px; max-width: 600px; margin: 0 auto; background-color: #f8fafc; min-height: 100vh; font-family: system-ui, -apple-system, sans-serif; padding-bottom: 100px; }
         .as-header { display: flex; align-items: center; margin-bottom: 20px; }
-        .as-title { font-size: 24px; font-weight: 700; color: #0f172a; margin: 0; }
-        
+        .as-title { font-size: 24px; font-weight: 700; color: #0f172a; margin: 0; }        
         .as-tabs { display: flex; gap: 8px; margin-bottom: 24px; background: #e2e8f0; padding: 4px; border-radius: 8px; }
         .as-tab { flex: 1; padding: 10px; border: none; background: transparent; border-radius: 6px; font-weight: 700; color: #64748b; cursor: pointer; transition: 0.2s; display: flex; justify-content: center; align-items: center; gap: 8px; }
         .as-tab.active { background: #fff; color: #f59e0b; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-
         .as-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; margin-bottom: 16px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
         .as-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
         .as-card-title { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 16px; color: #334155; margin: 0; }
         .as-card-value { font-size: 20px; font-weight: 900; color: #f59e0b; }
-        
         .as-select { width: 100%; padding: 12px; font-size: 16px; font-weight: 600; color: #0f172a; border: 2px solid #e2e8f0; border-radius: 8px; background: #fff; outline: none; }
         .as-input-num { width: 100%; padding: 12px; font-size: 24px; font-weight: 900; color: #0f172a; border: 2px solid #e2e8f0; border-radius: 8px; text-align: center; outline: none; }
         .rpe-slider { -webkit-appearance: none; width: 100%; height: 8px; border-radius: 4px; background: #fef3c7; outline: none; margin: 10px 0; }
@@ -123,7 +120,7 @@ export default function AthleteSchedule() {
       `}</style>
 
       <div className="as-header">
-        <button onClick={() => navigate(-1)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#f59e0b', display: 'flex', marginRight: '12px' }}><ArrowLeft size={28} /></button>
+        <button onClick={() => navigate(-1)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#008ed3', display: 'flex', marginRight: '12px' }}><ArrowLeft size={28} /></button>
         <div><h1 className="as-title">Training Schedule</h1></div>
       </div>
 
@@ -138,13 +135,16 @@ export default function AthleteSchedule() {
         <>
           <div className="as-card">
             <div className="as-card-header"><h3 className="as-card-title"><Calendar size={20} color="#f59e0b" /> Session Type</h3></div>
-            <select className="as-select" value={type} onChange={(e) => setType(e.target.value)}>
-              <option value="Field Practice">Field Practice</option>
-              <option value="Match / Game">Match / Game</option>
-              <option value="Conditioning / Running">Conditioning / Running</option>
-              <option value="Rehab / Recovery">Rehab / Recovery</option>
-              <option value="Other Sport">Other Sport / Activity</option>
-            </select>
+                 <select className="as-select" value={type} onChange={(e) => setType(e.target.value)}>
+                    <option value="Field Session">Field Session</option>
+                    <option value="Competition">Competition</option>
+                    <option value="Conditioning">Conditioning</option>
+                    <option value="Rehabilitation">Rehabilitation</option>
+                    <option value="Recovery">Recovery</option>
+                    <option value="Speed / Agility">Speed / Agility</option>
+                    <option value="Prehabilitation">Prehabilitation</option>
+                    <option value="Other">Other</option>
+                 </select>
           </div>
 
           <div className="as-card">
@@ -162,7 +162,7 @@ export default function AthleteSchedule() {
           </div>
 
           <button className="save-btn" onClick={handleSave} disabled={saving}>
-            <Save size={20} /> {saving ? 'LOGGING...' : `LOG WORKOUT (${duration * rpe} AU)`}
+            <Save size={20} /> {saving ? 'LOGGING...' : `LOG SESSION (${duration * rpe} AU)`}
           </button>
         </>
       ) : (

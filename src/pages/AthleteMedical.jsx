@@ -133,7 +133,7 @@ export default function AthleteMedical() {
       `}</style>
 
       <div className="am-header">
-        <button onClick={() => navigate(-1)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#dc2626', display: 'flex', marginRight: '12px' }}><ArrowLeft size={28} /></button>
+        <button onClick={() => navigate(-1)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#008ed3', display: 'flex', marginRight: '12px' }}><ArrowLeft size={28} /></button>
         <div><h1 className="am-title">Medical Vault</h1></div>
       </div>
 

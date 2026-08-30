@@ -302,9 +302,10 @@ export default function CoachSchedule() {
             <label style={{ fontSize: '12px', fontWeight: '700', color: '#64748b' }}>Notes / Requirements</label>
             <textarea className="modal-input" placeholder="e.g. Bring cleats and running shoes." value={form.notes} onChange={e=>setForm({...form, notes: e.target.value})} style={{ minHeight: '60px', resize: 'vertical' }} />
 
-            <button onClick={handlePropose} disabled={saving || selectedAthletes.length === 0} style={{ width: '100%', background: '#16a34a', color: 'white', border: 'none', padding: '12px', borderRadius: '8px', fontWeight: '700', cursor: (saving || selectedAthletes.length === 0) ? 'not-allowed' : 'pointer', marginTop: '8px', opacity: selectedAthletes.length === 0 ? 0.5 : 1 }}>
-              {saving ? 'Saving...' : `Send Proposed Load (${form.duration * form.rpe} AU)`}
+            <button onClick={handlePropose} disabled={saving || selectedAthletes.length === 0} style={{ width: '100%', background: '#16a34a', color: 'white', border: 'none', padding: '16px', borderRadius: '8px', fontSize: '16px', fontWeight: '800', cursor: (saving || selectedAthletes.length === 0) ? 'not-allowed' : 'pointer', marginTop: '8px', opacity: selectedAthletes.length === 0 ? 0.5 : 1 }}>
+              {saving ? 'SAVING...' : `PROPOSE SESSION (${form.duration * form.rpe} AU)`}
             </button>
+
           </div>
         </div>
       )}
