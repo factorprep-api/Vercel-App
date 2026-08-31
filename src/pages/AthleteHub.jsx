@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { ClipboardList, TrendingUp, Dumbbell, Timer, Activity, AlertCircle, Calendar } from 'lucide-react';
-import { fetchAllData } from '../api';
+import { fetchAllData, getAthleteByEmail } from '../api';
 
 export default function AthleteHub() {
   const navigate = useNavigate();
@@ -14,12 +14,30 @@ export default function AthleteHub() {
     async function loadPods() {
       if (!userEmail) return;
       try {
+        // 1. Get the exact name fallback just in case
+        const athleteResult = await getAthleteByEmail(userEmail);
+        const nameToMatch = athleteResult.status === 'Success' 
+            ? (athleteResult.athleteName || athleteResult.name || userEmail.split('@')[0]) 
+            : userEmail.split('@')[0];
+
+        // 2. Fetch all rows
         const data = await fetchAllData();
         const athletes = data.athletes || [];
-        const userRow = athletes.find(row => String(row[9] || '').toLowerCase().trim() === userEmail.toLowerCase().trim());
+        
+        // 3. Bulletproof Search: Check BOTH Name (Col A) and Email (Col J)
+        let userRow = null;
+        for (let i = 1; i < athletes.length; i++) {
+          const rowName = String(athletes[i][0] || '').trim().toLowerCase();
+          const rowEmail = String(athletes[i][9] || '').trim().toLowerCase();
+          
+          if (rowName === nameToMatch.toLowerCase() || (rowEmail !== '' && rowEmail === userEmail.toLowerCase())) {
+            userRow = athletes[i];
+            break;
+          }
+        }
         
         if (userRow) {
-          const podsString = String(userRow[11] || '').toLowerCase();
+          const podsString = String(userRow[11] || '').toLowerCase(); // Column L
           const podsArray = podsString.split(',').map(s => s.trim());
           setActivePods(podsArray);
         }
@@ -31,23 +49,22 @@ export default function AthleteHub() {
     loadPods();
   }, [userEmail]);
 
+  const allCards = [
+    { title: 'Wellness Center', desc: 'Daily readiness log', icon: Activity, path: '/athlete-wellness', color: '#0ea5e9', bgImage: '/athlete-wellness-card.png', podId: 'wellness' },
+    { title: 'Medical Vault', desc: 'Report & track injuries', icon: AlertCircle, path: '/athlete-medical', color: '#dc2626', bgImage: '/athlete-medical-card.png', podId: 'medical' },
+    { title: 'Training Schedule', desc: 'Log field & track sessions', icon: Calendar, path: '/athlete-schedule', color: '#f59e0b', bgImage: '/athlete-schedule-card.png', podId: 'schedule' },
+    { title: 'My Programs', desc: 'View assigned workouts', icon: ClipboardList, path: '/program-viewer', color: '#008ed3', bgImage: '/program-view-card.png', podId: null },
+    { title: 'My Progress', desc: 'Track your workouts', icon: TrendingUp, path: '/progress', color: '#2e7d32', bgImage: '/my-progress-card.png', podId: null },
+    { title: 'Interval Timer', desc: 'Custom work/rest intervals', icon: Timer, path: '/interval-timer', color: '#ef4444', bgImage: '/interval-timer-card.png', podId: null }
+  ];
+
+  const visibleCards = allCards.filter(card => !card.podId || activePods.includes(card.podId.toLowerCase()));
+
   if (authLoading || loadingPods) return (
     <div style={{ fontFamily: '"Roboto Flex", sans-serif', display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', backgroundColor: '#f8fafc' }}>
       <p>Loading Hub...</p>
     </div>
   );
-
-  const allCards = [
-    { title: 'Wellness Center', desc: 'Daily readiness log', icon: Activity, path: '/athlete-wellness', color: '#0ea5e9', bgImage: '/athlete-wellness-card.png', podId: 'wellness' },
-    { title: 'Medical Vault', desc: 'Report & track injuries', icon: AlertCircle, path: '/athlete-medical', color: '#dc2626', bgImage: '', podId: 'medical-vault-card.png' },
-    { title: 'Training Schedule', desc: 'Log field & track sessions', icon: Calendar, path: '/athlete-schedule', color: '#f59e0b', bgImage: '', podId: 'schedule.png' }, // NEW POD
-    { title: 'My Programs', desc: 'View assigned workouts', icon: ClipboardList, path: '/program-viewer', color: '#008ed3', bgImage: '/program-view-card.png', podId: null },
-    { title: 'My Progress', desc: 'Track your workouts', icon: TrendingUp, path: '/progress', color: '#2e7d32', bgImage: '/my-progress-card.png', podId: null },
-    // { title: 'Exercise Library', desc: 'Browse exercises with videos', icon: Dumbbell, path: '/exercise-library', color: '#d3ca17', bgImage: '/exercise-library-card-v2.png', podId: null },
-    { title: 'Interval Timer', desc: 'Custom work/rest intervals', icon: Timer, path: '/interval-timer', color: '#ef4444', bgImage: '/interval-timer-card.png', podId: null }
-  ];
-
-  const visibleCards = allCards.filter(card => !card.podId || activePods.includes(card.podId));
 
   return (
     <div style={{ fontFamily: '"Roboto Flex", sans-serif', padding: '4px', backgroundColor: '#f8fafc', minHeight: 'calc(100vh - 60px)' }}>
