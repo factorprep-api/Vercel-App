@@ -52,6 +52,66 @@ export const fetchLibrary = async () => {
 };
 
 // ==========================================
+// NEW POD PIPES (Wellness, Medical, Schedule)
+// ==========================================
+export const saveWellnessLog = async (payload) => {
+  try {
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=saveWellness&data=${encodeURIComponent(JSON.stringify(payload))}&t=${Date.now()}`;
+    let resp = await fetch(url);
+    return await resp.json();
+  } catch (err) {
+    return { status: 'Error', message: err.message };
+  }
+};
+
+export const fetchWellnessLogs = async () => {
+  try {
+    let resp = await fetch(`${GOOGLE_SCRIPT_API_URL}?action=getWellness&t=${Date.now()}`);
+    return await resp.json();
+  } catch (err) {
+    return { data: [] };
+  }
+};
+
+export const saveScheduleSession = async (payload) => {
+  try {
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=saveSchedule&data=${encodeURIComponent(JSON.stringify(payload))}&t=${Date.now()}`;
+    let resp = await fetch(url);
+    return await resp.json();
+  } catch (err) {
+    return { status: 'Error', message: err.message };
+  }
+};
+
+export const fetchSchedule = async () => {
+  try {
+    let resp = await fetch(`${GOOGLE_SCRIPT_API_URL}?action=getSchedule&t=${Date.now()}`);
+    return await resp.json();
+  } catch (err) {
+    return { data: [] };
+  }
+};
+
+export const saveMedicalLog = async (payload) => {
+  try {
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=saveMedical&data=${encodeURIComponent(JSON.stringify(payload))}&t=${Date.now()}`;
+    let resp = await fetch(url);
+    return await resp.json();
+  } catch (err) {
+    return { status: 'Error', message: err.message };
+  }
+};
+
+export const fetchMedicalLogs = async () => {
+  try {
+    let resp = await fetch(`${GOOGLE_SCRIPT_API_URL}?action=getMedical&t=${Date.now()}`);
+    return await resp.json();
+  } catch (err) {
+    return { data: [] };
+  }
+};
+
+// ==========================================
 // EXISTING ENDPOINTS
 // ==========================================
 export const fetchLogbookByAthlete = async (athleteName) => {
@@ -270,7 +330,6 @@ export function parseProgramsFromRaw(rawPrograms, coachEmail) {
 
   for (let i = 1; i < rawPrograms.length; i++) {
     const row = rawPrograms[i];
-    
     const name = String(row[0] || '').trim();
     const privacyLevel = (row.length > 10 && String(row[10]).trim()) ? String(row[10]).trim() : 'PRIVATE';
     const ownerEmail = (row.length > 11 && String(row[11]).trim()) ? String(row[11]).trim() : '';

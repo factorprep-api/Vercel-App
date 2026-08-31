@@ -200,7 +200,7 @@ function doGet(e) {
     return ContentService.createTextOutput(JSON.stringify({ athletes: athletesData })).setMimeType(ContentService.MimeType.JSON);
   }
 
-   if (action === "getPrograms") {
+  if (action === "getPrograms") {
     var programsData = getSafeSheetData(sheetApp, "Programs");
     return ContentService.createTextOutput(JSON.stringify({ programs: programsData })).setMimeType(ContentService.MimeType.JSON);
   }
@@ -233,9 +233,8 @@ function doGet(e) {
     return ContentService.createTextOutput(JSON.stringify({ status: "Success", replaced: oldName, rowCount: programData.length })).setMimeType(ContentService.MimeType.JSON);
   }
 
-
   // ==========================================
-  // UPDATED: UNIVERSAL MAX/PB ENGINE
+  // UNIVERSAL MAX/PB ENGINE
   // ==========================================
   if (action === "saveEntireSession") {
     var dataObj = JSON.parse(e.parameter.data || "{}");
@@ -279,13 +278,12 @@ function doGet(e) {
       var calcType = exCalcTypes[lowerEx];
       if (!calcType) continue;
 
-           var intensityRaw = parseFloat(sets[s].intensity) || 0;
+      var intensityRaw = parseFloat(sets[s].intensity) || 0;
       var intensityVal = intensityRaw > 1 ? intensityRaw / 100 : intensityRaw;
       
       // STRICT PB GATEKEEPER: Only calculate PBs on 100% effort sets!
       if (intensityVal < 1.00) continue;
 
-      // WEIGHT MATH
       if (calcType === "weight") { 
         var weight = parseFloat(sets[s].weight) || 0;
         var repsNum = parseInt(sets[s].reps) || 0; 
@@ -297,21 +295,19 @@ function doGet(e) {
           }
         }
       }
-      // TIME MATH
       else if (calcType === "time") {
         var timeSecs = parseTimeToSecondsGAS(sets[s].reps); 
         if (timeSecs > 0) {
-          var impliedMaxTime = timeSecs * intensityVal; // Lower is better
+          var impliedMaxTime = timeSecs * intensityVal;
           if (!newMaxCandidates[exName] || impliedMaxTime < newMaxCandidates[exName].val) {
             newMaxCandidates[exName] = { val: impliedMaxTime, type: "time" };
           }
         }
       }
-      // DISTANCE MATH
       else if (calcType === "distance") {
         var distMeters = parseDistanceToMetersGAS(sets[s].reps);
         if (distMeters > 0) {
-          var impliedMaxDist = distMeters / intensityVal; // Higher is better
+          var impliedMaxDist = distMeters / intensityVal;
           if (!newMaxCandidates[exName] || impliedMaxDist > newMaxCandidates[exName].val) {
             newMaxCandidates[exName] = { val: impliedMaxDist, type: "distance" };
           }
@@ -342,10 +338,8 @@ function doGet(e) {
 
         var isPR = false;
         if (cType === "time") {
-          // Time PRs are LOWER
           if (existingMax === 0 || newMax < existingMax) isPR = true;
         } else {
-          // Distance & Weight PRs are HIGHER
           if (existingMax === 0 || newMax > existingMax) isPR = true;
         }
 
@@ -378,6 +372,53 @@ function doGet(e) {
     
     return ContentService.createTextOutput(JSON.stringify({ status: "Success", loggedSets: sets.length, prsCalculated: Object.keys(newMaxCandidates).length, prsSaved: prList.length, prDetails: prList })).setMimeType(ContentService.MimeType.JSON);
   }
+
+  // ==========================================
+  // NEW POD ENDPOINTS (WELLNESS, MEDICAL, SCHEDULE)
+  // ==========================================
+  
+  if (action === "saveWellness") {
+    var sheet = sheetApp.getSheetByName("Wellness_Logs");
+    if (!sheet) return ContentService.createTextOutput(JSON.stringify({ status: "Error", message: "Wellness_Logs sheet not found" })).setMimeType(ContentService.MimeType.JSON);
+    var dataObj = JSON.parse(e.parameter.data || "{}");
+    sheet.appendRow([new Date().toISOString(), dataObj.email, dataObj.athlete, dataObj.grip, dataObj.feeling, dataObj.soreness, dataObj.sleep, dataObj.nutrition]);
+    return ContentService.createTextOutput(JSON.stringify({ status: "Success" })).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  if (action === "getWellness") {
+    var data = getSafeSheetData(sheetApp, "Wellness_Logs");
+    return ContentService.createTextOutput(JSON.stringify({ data: data })).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  if (action === "saveSchedule") {
+    var sheet = sheetApp.getSheetByName("Schedule_Master");
+    if (!sheet) return ContentService.createTextOutput(JSON.stringify({ status: "Error", message: "Schedule_Master sheet not found" })).setMimeType(ContentService.MimeType.JSON);
+    var dataObj = JSON.parse(e.parameter.data || "{}");
+    sheet.appendRow([new Date().toISOString(), dataObj.email, dataObj.athlete, dataObj.type, dataObj.duration, dataObj.rpe, dataObj.load, dataObj.location, dataObj.notes, dataObj.status]);
+    return ContentService.createTextOutput(JSON.stringify({ status: "Success" })).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  if (action === "getSchedule") {
+    var data = getSafeSheetData(sheetApp, "Schedule_Master");
+    return ContentService.createTextOutput(JSON.stringify({ data: data })).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  if (action === "saveMedical") {
+    var sheet = sheetApp.getSheetByName("Medical_Vault");
+    if (!sheet) return ContentService.createTextOutput(JSON.stringify({ status: "Error", message: "Medical_Vault sheet not found" })).setMimeType(ContentService.MimeType.JSON);
+    var dataObj = JSON.parse(e.parameter.data || "{}");
+    sheet.appendRow([new Date().toISOString(), dataObj.email, dataObj.athlete, dataObj.bodyPart, dataObj.pain, dataObj.mechanism, dataObj.trainingStatus, dataObj.notes, "No", ""]);
+    return ContentService.createTextOutput(JSON.stringify({ status: "Success" })).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  if (action === "getMedical") {
+    var data = getSafeSheetData(sheetApp, "Medical_Vault");
+    return ContentService.createTextOutput(JSON.stringify({ data: data })).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  // ==========================================
+  // PROGRAM & LIBRARY MANAGEMENT
+  // ==========================================
 
   if (action === "saveFullProgram") {
     var sheet = sheetApp.getSheetByName("Programs");
@@ -490,7 +531,7 @@ function doGet(e) {
     var created = [];
     var skipped = [];
     var requiredSheets = [
-      {name: "Athletes", headers: ["Name", "PIN", "Back Squat With Barbell - (CORE)", "Deadlift With Barbell.v (CORE)", "Bench Press With Barbell - (CORE)", "Shoulder Press Seated With Barbell - (CORE)", "Barbell Row On Bench - Back.v (CORE)", "Lat Pulldown On Machine - Back (CORE)", "Program Assignment", "Email", "Role"]},
+      {name: "Athletes", headers: ["Name", "PIN", "Back Squat With Barbell - (CORE)", "Deadlift With Barbell.v (CORE)", "Bench Press With Barbell - (CORE)", "Shoulder Press Seated With Barbell - (CORE)", "Barbell Row On Bench - Back.v (CORE)", "Lat Pulldown On Machine - Back (CORE)", "Program Assignment", "Email", "Role", "Active Pods"]},
       {name: "Programs", headers: ["Program Name", "Category", "Phase", "Exercise Name", "Sets", "Reps", "% Intensity", "Tempo", "Rest", "Notes"]},
       {name: "History", headers: ["Date", "Athlete", "Program", "Workout Summary", "PR Updates"]},
       {name: "Coaches", headers: ["Coach Name", "Contact Info"]},
@@ -498,7 +539,11 @@ function doGet(e) {
       {name: "Exercise_Library", headers: ["Exercise Name", "Bunny URL", "Muscle/Category", "Formula", "", "Owner Email", "Notes"]},
       {name: "Logbook", headers: ["Date", "Athlete", "Program", "Exercise", "Intensity (%)", "Weight", "Reps"]},
       {name: "Attendance", headers: ["Timestamp", "Athlete", "Program"]},
-      {name: "Athlete_Maxes", headers: ["Date", "Athlete", "Exercise", "1RM"]}
+      {name: "Athlete_Maxes", headers: ["Date", "Athlete", "Exercise", "1RM"]},
+      // NEW POD SHEETS
+      {name: "Wellness_Logs", headers: ["Date", "Email", "Athlete", "Grip", "Feeling", "Soreness", "Sleep", "Nutrition"]},
+      {name: "Medical_Vault", headers: ["Date Logged", "Email", "Athlete", "Body Part", "Pain Level", "Mechanism", "Training Status", "Notes", "Is Resolved", "Date Resolved"]},
+      {name: "Schedule_Master", headers: ["Date", "Email", "Athlete", "Session Type", "Duration Mins", "RPE", "Load AU", "Location", "Coach Notes", "Session Status"]}
     ];
     requiredSheets.forEach(function(info) {
       var existingSheet = ss.getSheetByName(info.name);
@@ -507,7 +552,7 @@ function doGet(e) {
     return ContentService.createTextOutput(JSON.stringify({ status: "Success", created: created, skipped: skipped, note: created.length > 0 ? "New sheets created successfully" : "All required sheets already exist" })).setMimeType(ContentService.MimeType.JSON);
   }
 
-  return ContentService.createTextOutput(JSON.stringify({ status: "API is running", availableActions: ["getFullData", "getAthletes", "getPrograms", "getLibrary", "getAthleteByName", "getAthleteByEmail", "createAthlete", "getLogbookByAthlete", "getLatestMaxes", "getLastLoggedWeight", "updateProgram", "saveEntireSession", "saveFullProgram", "deleteProgram", "addAthlete", "deleteAthlete", "updateAssignment", "assignProgram", "addExercise", "initSheets"], version: "7.0-universal-pb" })).setMimeType(ContentService.MimeType.JSON);
+  return ContentService.createTextOutput(JSON.stringify({ status: "API is running", availableActions: ["getFullData", "getAthletes", "getPrograms", "getLibrary", "getAthleteByName", "getAthleteByEmail", "createAthlete", "getLogbookByAthlete", "getLatestMaxes", "getLastLoggedWeight", "updateProgram", "saveEntireSession", "saveFullProgram", "deleteProgram", "addAthlete", "deleteAthlete", "updateAssignment", "assignProgram", "addExercise", "initSheets", "saveWellness", "getWellness", "saveSchedule", "getSchedule", "saveMedical", "getMedical"], version: "8.0-pod-engine" })).setMimeType(ContentService.MimeType.JSON);
 }
 
 // ==========================================

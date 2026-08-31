@@ -16,7 +16,13 @@ const Shop = lazy(() => import('./pages/Shop'));
 const Whiteboard = lazy(() => import('./pages/Whiteboard'));
 const CoachResults = lazy(() => import('./pages/CoachResults'));
 const IntervalTimer = lazy(() => import('./pages/IntervalTimer')); 
-const TeamWellness = lazy(() => import('./pages/TeamWellness')); // NEW: Wellness Pod (Hidden)
+
+// THE NEW PODS
+const AthleteWellness = lazy(() => import('./pages/AthleteWellness'));
+const AthleteMedical = lazy(() => import('./pages/AthleteMedical'));
+const AthleteSchedule = lazy(() => import('./pages/AthleteSchedule'));
+const CoachSchedule = lazy(() => import('./pages/CoachSchedule'));
+
 
 const LoadingFallback = () => (
   <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', fontFamily: '"Roboto Flex", sans-serif' }}>
@@ -126,20 +132,37 @@ export default function App() {
           </ProtectedRoute>
         } />
 
+                <Route path="/coach-schedule" element={
+          <ProtectedRoute allowedRoles={['coach']}>
+            <Suspense fallback={<LoadingFallback />}><CoachSchedule /></Suspense>
+          </ProtectedRoute>
+        } />
+
         <Route path="/interval-timer" element={
           <ProtectedRoute allowedRoles={['athlete', 'coach']}>
             <Suspense fallback={<LoadingFallback />}><IntervalTimer /></Suspense>
           </ProtectedRoute>
         } />
 
-        {/* GHOST ROUTE: Wellness Pod */}
-        <Route path="/wellness" element={
-          <ProtectedRoute allowedRoles={['coach']}>
-            <Suspense fallback={<LoadingFallback />}><TeamWellness /></Suspense>
+        {/* --- NEW POD ROUTES --- */}
+        <Route path="/athlete-wellness" element={
+          <ProtectedRoute allowedRoles={['athlete', 'coach']}>
+            <Suspense fallback={<LoadingFallback />}><AthleteWellness /></Suspense>
+          </ProtectedRoute>
+        } />
+
+        <Route path="/athlete-medical" element={
+          <ProtectedRoute allowedRoles={['athlete', 'coach']}>
+            <Suspense fallback={<LoadingFallback />}><AthleteMedical /></Suspense>
+          </ProtectedRoute>
+        } />
+
+        <Route path="/athlete-schedule" element={
+          <ProtectedRoute allowedRoles={['athlete', 'coach']}>
+            <Suspense fallback={<LoadingFallback />}><AthleteSchedule /></Suspense>
           </ProtectedRoute>
         } />
       </Routes>
     </Router>
   );
 }
-

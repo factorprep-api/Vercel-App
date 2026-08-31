@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { Play, ChevronDown, ChevronUp, Video, Image as ImageIcon, Save, CheckCircle, MessageSquare, UserPlus, Globe, Timer, Pause, RotateCcw, Plus, Minus, X, ArrowLeft } from 'lucide-react';
 import { getYouTubeId } from '../utils/helpers';
 import { useAuth } from '../hooks/useAuth';
-import { fetchAllData, getAthleteByEmail, saveSession, getMediaType, getLatestMaxes, fetchLogbookByAthlete } from '../api';
+// FIX: Imported saveScheduleSession
+import { fetchAllData, getAthleteByEmail, saveSession, getMediaType, getLatestMaxes, fetchLogbookByAthlete, saveScheduleSession } from '../api';
 import HelpButton from '../components/HelpButton';
 import './program-viewer.css';
 
@@ -157,8 +158,16 @@ export default function ProgramViewer() {
   const [selectedProgram, setSelectedProgram] = useState('');
   const [expandedVideos, setExpandedVideos] = useState(new Set());
   const [inputValues, setInputValues] = useState({});
+  
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  
+  // FIX: sRPE Schedule State
+  const [showSrpeModal, setShowSrpeModal] = useState(false);
+  const [pendingSets, setPendingSets] = useState(null);
+  const [sessionDuration, setSessionDuration] = useState(60);
+  const [sessionRpe, setSessionRpe] = useState(7);
+
   const [showProgramMedia, setShowProgramMedia] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   
@@ -171,6 +180,14 @@ export default function ProgramViewer() {
   
   const { userEmail, isLoading: authLoading } = useAuth();
   const navigate = useNavigate();
+
+  // FIX: Active Pods Checker
+  const activePods = useMemo(() => {
+    if (athleteRowIndex === null || !athletesData.length) return [];
+    const row = athletesData[athleteRowIndex] || [];
+    const podsString = String(row[11] || '').toLowerCase(); // Col L
+    return podsString.split(',').map(s => s.trim());
+  }, [athletesData, athleteRowIndex]);
 
   useEffect(() => {
     let interval = null;
@@ -465,12 +482,11 @@ export default function ProgramViewer() {
     const key = groupId + '_' + detailIdx; setInputValues(prev => ({ ...prev, [key]: { ...prev[key], [field]: value } }));
   }
 
-  async function handleSaveSession() {
+  // FIX: The Smart Saving Logic
+  function handleSaveClick() {
     if (!workoutGroups.length) return;
-    setSaving(true);
-    const loggedProgStr = selectedProgram;
-    const setsToLog = [];
     
+    const setsToLog = [];
     workoutGroups.forEach(group => {
       const metrics = group.advanced?.metrics || { weight: true };
       const targets = group.advanced?.targets || {};
@@ -478,7 +494,6 @@ export default function ProgramViewer() {
       group.details.forEach((set, idx) => {
         const key = group.id + '_' + idx;
         const input = inputValues[key] || {};
-        
         const targetData = targetCalcs[key] || { val: '', metric: '' };
         
         const wt = input.wt || (metrics.weight ? (parseFloat(targets.weight) || (targetData.metric === 'weight' ? targetData.val : '')) : '');
@@ -487,7 +502,6 @@ export default function ProgramViewer() {
         const dst = input.dist || targets.distance || (targetData.metric === 'distance' ? targetData.val : '');
 
         if (!wt && !rp && !tm && !dst) return;
-
         const wtNum = parseFloat(wt) || 0;
         
         let finalReps = [];
@@ -502,20 +516,59 @@ export default function ProgramViewer() {
       });
     });
 
-    if (!setsToLog.length) { alert('Nothing to save.'); setSaving(false); return; }
+    if (!setsToLog.length) { alert('Nothing to save.'); return; }
+
+    // If they have the Schedule Pod, pop open the sRPE Modal!
+    if (activePods.includes('schedule')) {
+      setPendingSets(setsToLog);
+      setShowSrpeModal(true);
+    } else {
+      executeSave(setsToLog);
+    }
+  }
+
+  async function executeSave(setsToLog, dur = null, rpeVal = null) {
+    setSaving(true);
+    const loggedProgStr = selectedProgram;
     const payload = { athlete: athleteName, prog: loggedProgStr, sets: setsToLog };
     
     try {
+      // 1. Save standard Logbook entries
       const res = await saveSession(payload);
-      if (res.status === 'Success') { setSaveSuccess(true); setTimeout(() => navigate('/athlete-hub'), 2000); } else { alert('Save failed: ' + (res.message || 'Unknown error')); }
-    } catch (err) { alert('Network error. Please try again.'); }
+      
+      if (res.status === 'Success') { 
+        // 2. If Schedule Pod is active, save the Load!
+        if (dur !== null && rpeVal !== null) {
+          const loadAU = parseInt(dur) * parseInt(rpeVal);
+          const schedPayload = {
+            email: userEmail,
+            athlete: athleteName,
+            type: 'Gym Workout',
+            duration: parseInt(dur),
+            rpe: parseInt(rpeVal),
+            load: loadAU,
+            location: 'App Logged',
+            notes: `Program: ${loggedProgStr}`,
+            status: 'Actual'
+          };
+          await saveScheduleSession(schedPayload);
+        }
+        
+        setSaveSuccess(true); 
+        setShowSrpeModal(false);
+        setTimeout(() => navigate('/athlete-hub'), 2000); 
+      } else { 
+        alert('Save failed: ' + (res.message || 'Unknown error')); 
+      }
+    } catch (err) { 
+      alert('Network error. Please try again.'); 
+    }
     setSaving(false);
   }
 
   const getInputClass = (targetData, inputType, overrideExists) => {
     let base = "pv-input pv-input-text";
     if (inputType === 'weight') base = "pv-input pv-input-kg";
-    
     if (targetData.metric === inputType && targetData.source !== 'none' && !overrideExists) {
       return `${base} ${targetData.source === 'history' ? 'pv-input-history' : 'pv-input-calc'}`;
     }
@@ -536,22 +589,10 @@ export default function ProgramViewer() {
         .pv-input-history::placeholder { color: #1e293b; opacity: 1; font-weight: 700; }
         .pv-input-calc::placeholder { color: #94a3b8; font-weight: 500; }
 
-        .uni-dot {
-          display: inline-flex; align-items: center; justify-content: center;
-          background-color: #4f46e5; color: white; font-weight: 800; font-size: 10px;
-          width: 20px; height: 20px; border-radius: 50%; margin-left: 8px; vertical-align: middle;
-        }
-        .superset-bracket {
-          position: absolute; left: -4px; top: -8px; bottom: -8px; width: 8px;
-          border-left: 3px solid #008ed3; border-top: 3px solid #008ed3; border-bottom: 3px solid #008ed3; border-radius: 4px 0 0 4px;
-        }
+        .uni-dot { display: inline-flex; align-items: center; justify-content: center; background-color: #4f46e5; color: white; font-weight: 800; font-size: 10px; width: 20px; height: 20px; border-radius: 50%; margin-left: 8px; vertical-align: middle; }
+        .superset-bracket { position: absolute; left: -4px; top: -8px; bottom: -8px; width: 8px; border-left: 3px solid #008ed3; border-top: 3px solid #008ed3; border-bottom: 3px solid #008ed3; border-radius: 4px 0 0 4px; }
         
-        .pv-floating-fab {
-          position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
-          background: rgba(15, 23, 42, 0.9); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
-          border: 1px solid rgba(255, 255, 255, 0.1); padding: 8px 16px; border-radius: 99px;
-          display: flex; align-items: center; gap: 12px; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25); z-index: 9999; transition: all 0.3s ease;
-        }
+        .pv-floating-fab { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: rgba(15, 23, 42, 0.9); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.1); padding: 8px 16px; border-radius: 99px; display: flex; align-items: center; gap: 12px; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25); z-index: 9999; transition: all 0.3s ease; }
         .pv-floating-fab.is-active { box-shadow: 0 8px 32px rgba(0, 142, 211, 0.2); border-color: rgba(0, 142, 211, 0.3); }
         .pv-fab-collapsed { padding: 10px 24px; color: #f8fafc; font-size: 15px; font-weight: 600; cursor: pointer; border: none; background: transparent; display: flex; align-items: center; gap: 10px; }
         .pv-fab-collapsed:hover { color: #38bdf8; }
@@ -564,56 +605,70 @@ export default function ProgramViewer() {
         .pv-timer-play { background-color: #008ed3; color: white; padding: 10px; box-shadow: 0 4px 12px rgba(0, 142, 211, 0.3); }
         .pv-timer-play:hover { background-color: #0077b5; transform: scale(1.05); }
         .pv-timer-play.is-playing { background-color: #ef4444; box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3); }
-        .pv-timer-play.is-playing:hover { background-color: #dc2626; }
-        .pv-timer-divider { width: 1px; height: 24px; background-color: rgba(255, 255, 255, 0.15); margin: 0 2px; }
+        
+        /* sRPE Modal */
+        .srpe-modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15, 23, 42, 0.8); backdrop-filter: blur(4px); display: flex; justify-content: center; align-items: center; z-index: 10000; padding: 20px; }
+        .srpe-modal-content { background: white; border-radius: 20px; width: 100%; max-width: 400px; padding: 24px; box-shadow: 0 20px 40px rgba(0,0,0,0.2); }
       `}</style>
+
+      {/* sRPE MODAL POPUP */}
+      {showSrpeModal && (
+        <div className="srpe-modal-overlay">
+          <div className="srpe-modal-content">
+            <h3 style={{ margin: '0 0 8px 0', fontSize: '20px', color: '#0f172a' }}>Session Complete!</h3>
+            <p style={{ margin: '0 0 20px 0', fontSize: '14px', color: '#64748b' }}>Log your load for your training schedule.</p>
+            
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ display: 'block', fontWeight: '700', marginBottom: '8px', color: '#334155' }}>Duration (Minutes)</label>
+              <input type="number" min="1" value={sessionDuration} onChange={e => setSessionDuration(e.target.value)} style={{ width: '100%', padding: '12px', fontSize: '20px', fontWeight: 'bold', textAlign: 'center', borderRadius: '8px', border: '2px solid #e2e8f0', outline: 'none' }} />
+            </div>
+
+            <div style={{ marginBottom: '24px' }}>
+              <label style={{ display: 'block', fontWeight: '700', marginBottom: '8px', color: '#334155' }}>Session RPE (1-10)</label>
+              <div style={{ textAlign: 'center', fontSize: '24px', fontWeight: '900', color: '#f59e0b', marginBottom: '8px' }}>{sessionRpe}</div>
+              <input type="range" min="1" max="10" step="1" value={sessionRpe} onChange={e => setSessionRpe(e.target.value)} style={{ width: '100%', accentColor: '#f59e0b' }} />
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#94a3b8', fontWeight: '600', marginTop: '4px' }}>
+                <span>1 (Very Light)</span><span>10 (Max Effort)</span>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button onClick={() => { setShowSrpeModal(false); setSaving(false); }} style={{ flex: 1, padding: '14px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#f8fafc', fontWeight: '700', color: '#475569', cursor: 'pointer' }}>Cancel</button>
+              <button onClick={() => executeSave(pendingSets, sessionDuration, sessionRpe)} disabled={saving} style={{ flex: 1, padding: '14px', borderRadius: '8px', border: 'none', background: '#008ed3', color: 'white', fontWeight: '800', cursor: 'pointer' }}>{saving ? 'Saving...' : 'Submit & Save'}</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* FAB TIMER */}
       <div className={`pv-floating-fab ${timerActive ? 'is-active' : ''}`}>
         {timerExpanded ? (
           <>
-            <button className="pv-timer-btn" onClick={() => { setTimerExpanded(false); setTimerActive(false); }} title="Close Timer"><X size={18} /></button>
-            <div className="pv-timer-divider"></div>
-            <button className="pv-timer-btn" onClick={() => adjustTimer(-15)} title="-15s"><Minus size={16} /></button>
+            <button className="pv-timer-btn" onClick={() => { setTimerExpanded(false); setTimerActive(false); }}><X size={18} /></button>
+            <div style={{ width: '1px', height: '24px', backgroundColor: 'rgba(255,255,255,0.15)', margin: '0 2px' }}></div>
+            <button className="pv-timer-btn" onClick={() => adjustTimer(-15)}><Minus size={16} /></button>
             
             {isEditingTimer ? (
               <form onSubmit={handleTimerSubmit} style={{ margin: 0, padding: 0, display: 'flex' }}>
-                <input 
-                  autoFocus
-                  type="text" 
-                  value={timerInputValue} 
-                  onChange={e => setTimerInputValue(e.target.value)} 
-                  onBlur={handleTimerSubmit}
-                  style={{ width: '65px', background: 'transparent', border: 'none', color: '#38bdf8', fontSize: '22px', fontWeight: '600', textAlign: 'center', outline: 'none', fontFamily: '"SF Pro Display", monospace' }} 
-                />
+                <input autoFocus type="text" value={timerInputValue} onChange={e => setTimerInputValue(e.target.value)} onBlur={handleTimerSubmit} style={{ width: '65px', background: 'transparent', border: 'none', color: '#38bdf8', fontSize: '22px', fontWeight: '600', textAlign: 'center', outline: 'none' }} />
               </form>
             ) : (
-              <div 
-                className={`pv-timer-clock ${timerActive ? 'is-active-text' : ''} ${timeLeft <= 10 && timeLeft > 0 && timerActive ? 'urgent' : ''}`} 
-                onClick={handleTimerClick} 
-                style={{ cursor: 'pointer' }}
-                title="Click to edit time"
-              >
-                {formatTimeStr(timeLeft)}
-              </div>
+              <div className={`pv-timer-clock ${timerActive ? 'is-active-text' : ''} ${timeLeft <= 10 && timeLeft > 0 && timerActive ? 'urgent' : ''}`} onClick={handleTimerClick} style={{ cursor: 'pointer' }}>{formatTimeStr(timeLeft)}</div>
             )}
 
-            <button className="pv-timer-btn" onClick={() => adjustTimer(15)} title="+15s"><Plus size={16} /></button>
-            <div className="pv-timer-divider"></div>
+            <button className="pv-timer-btn" onClick={() => adjustTimer(15)}><Plus size={16} /></button>
+            <div style={{ width: '1px', height: '24px', backgroundColor: 'rgba(255,255,255,0.15)', margin: '0 2px' }}></div>
             <button className={`pv-timer-btn pv-timer-play ${timerActive ? 'is-playing' : ''}`} onClick={() => setTimerActive(!timerActive)}>{timerActive ? <Pause size={18} /> : <Play size={18} style={{ marginLeft: '2px' }} />}</button>
           </>
         ) : ( <button className="pv-fab-collapsed" onClick={() => setTimerExpanded(true)}><Timer size={20} color="#38bdf8" /> <span>Rest Timer</span></button> )}
       </div>
 
       <div className="pv-body">
-        
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: '16px' }}>
           <button onClick={() => navigate(-1)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#008ed3', padding: 0, display: 'flex', marginRight: '12px' }}>
             <ArrowLeft size={28} />
           </button>
-          <h2 style={{ fontSize: '24px', color: '#0f172a', fontWeight: '700', margin: 0, fontFamily: 'system-ui, -apple-system, sans-serif' }}>
-            Today's Workout
-          </h2>
+          <h2 style={{ fontSize: '24px', color: '#0f172a', fontWeight: '700', margin: 0 }}>Today's Workout</h2>
         </div>
 
         {athleteName && <p style={{ color: '#666', fontSize: '15px', marginBottom: '20px', marginTop: '-8px' }}>Welcome, {athleteName}</p>}
@@ -763,15 +818,12 @@ export default function ProgramViewer() {
                             
                             {finalTargetDisplay && (
                               <div className="pv-target">
-                                Target: <span className="pv-target-value" style={{ color: section.color }}>
-                                  {finalTargetDisplay}
-                                </span>
+                                Target: <span className="pv-target-value" style={{ color: section.color }}>{finalTargetDisplay}</span>
                               </div>
                             )}
                           </div>
                           
                           <div className="pv-inputs" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                            
                             <div className="pv-input-group">
                               <span className="pv-input-label">reps</span>
                               <input type="text" className="pv-input pv-input-text" placeholder={set.reps || '--'} value={input.reps || ''} onChange={e => handleInputChange(group.id, idx, 'reps', e.target.value)} />
@@ -797,7 +849,6 @@ export default function ProgramViewer() {
                                 <input type="number" className={getInputClass(targetData, 'weight', targets.weight)} placeholder={parseFloat(targets.weight) || (targetData.metric === 'weight' ? targetData.val : '--')} value={input.wt || ''} onChange={e => handleInputChange(group.id, idx, 'wt', e.target.value)} />
                               </div>
                             )}
-
                           </div>
                         </div>
                       );
@@ -811,7 +862,7 @@ export default function ProgramViewer() {
 
         {workoutGroups.length > 0 && !saveSuccess && (
           <div className="pv-tracker">
-            <button className="pv-save-btn" onClick={handleSaveSession} disabled={saving}>
+            <button className="pv-save-btn" onClick={handleSaveClick} disabled={saving}>
               <Save size={18} /> {saving ? 'SAVING...' : 'SAVE & COMPLETE WORKOUT'}
             </button>
           </div>
@@ -827,3 +878,4 @@ export default function ProgramViewer() {
     </div>
   );
 }
+
