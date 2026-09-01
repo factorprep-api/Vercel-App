@@ -4,68 +4,145 @@ import { useAuth } from '../hooks/useAuth';
 import { ClipboardList, TrendingUp, Timer, Activity, AlertCircle, Calendar } from 'lucide-react';
 import { fetchAthletes, getAthleteByEmail, fetchMedicalLogs } from '../api';
 
+// Module-level in-memory cache for instantaneous route transitions (0ms navigation)
+const memoryCache = {
+  podsByEmail: {},
+  medStatusByEmail: {},
+  lastFetchedByEmail: {}
+};
+
+function resolveCachedPods(email) {
+  if (!email) return null;
+  const lower = email.toLowerCase();
+  if (memoryCache.podsByEmail[lower]) {
+    return memoryCache.podsByEmail[lower];
+  }
+
+  // 1. Try email-specific localStorage key
+  try {
+    const raw = localStorage.getItem(`fp_athlete_pods_${lower}`);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        memoryCache.podsByEmail[lower] = parsed;
+        return parsed;
+      }
+    }
+  } catch {}
+
+  // 2. Try fp_athlete_data (cached from login or ProgramViewer)
+  try {
+    const rawAth = localStorage.getItem('fp_athlete_data');
+    if (rawAth) {
+      const parsed = JSON.parse(rawAth);
+      if (parsed.pods && Array.isArray(parsed.pods)) {
+        memoryCache.podsByEmail[lower] = parsed.pods;
+        return parsed.pods;
+      }
+    }
+  } catch {}
+
+  // 3. Try fp_program_data (which caches the full athletes table)
+  try {
+    const rawProg = localStorage.getItem('fp_program_data');
+    if (rawProg) {
+      const parsed = JSON.parse(rawProg);
+      const athletes = parsed.athletes || [];
+      for (let i = 1; i < athletes.length; i++) {
+        const row = athletes[i];
+        if (!row) continue;
+        const rowEmail = String(row[9] || '').trim().toLowerCase();
+        if (rowEmail === lower) {
+          const pods = String(row[11] || '').toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
+          memoryCache.podsByEmail[lower] = pods;
+          return pods;
+        }
+      }
+    }
+  } catch {}
+
+  return null;
+}
+
+function resolveCachedMedStatus(email) {
+  if (!email) return 'Fully Fit';
+  const lower = email.toLowerCase();
+  if (memoryCache.medStatusByEmail[lower]) {
+    return memoryCache.medStatusByEmail[lower];
+  }
+  try {
+    const raw = localStorage.getItem(`fp_athlete_med_status_${lower}`);
+    if (raw) {
+      memoryCache.medStatusByEmail[lower] = raw;
+      return raw;
+    }
+  } catch {}
+  return 'Fully Fit';
+}
+
 export default function AthleteHub() {
   const navigate = useNavigate();
   const { userEmail, athleteName: authAthleteName, isLoading: authLoading } = useAuth();
   
-  const podsStorageKey = `fp_athlete_pods_${userEmail || 'guest'}`;
-  const medStatusStorageKey = `fp_athlete_med_status_${userEmail || 'guest'}`;
-
-  // Instant render from local cache if available
+  // Instantaneous state initialization from memory or localStorage (0ms!)
   const [activePods, setActivePods] = useState(() => {
-    try {
-      const cached = localStorage.getItem(`fp_athlete_pods_${userEmail || 'guest'}`);
-      return cached ? JSON.parse(cached) : [];
-    } catch {
-      return [];
-    }
+    const cached = resolveCachedPods(userEmail);
+    // If cached, return it. If not yet known, default to showing standard pods so cards don't flash
+    return cached !== null ? cached : ['wellness', 'medical', 'schedule'];
   });
 
   const [myMedicalStatus, setMyMedicalStatus] = useState(() => {
-    try {
-      return localStorage.getItem(`fp_athlete_med_status_${userEmail || 'guest'}`) || 'Fully Fit';
-    } catch {
-      return 'Fully Fit';
-    }
+    return resolveCachedMedStatus(userEmail);
   });
 
-  const [loadingPods, setLoadingPods] = useState(() => {
-    const cached = localStorage.getItem(`fp_athlete_pods_${userEmail || 'guest'}`);
-    return !cached; // If cached, instant render with no blocking spinner!
-  });
-
+  // Re-sync local cache whenever userEmail resolves
   useEffect(() => {
     if (!userEmail) return;
+    const cached = resolveCachedPods(userEmail);
+    if (cached !== null) {
+      setActivePods(cached);
+    }
+    const cachedMed = resolveCachedMedStatus(userEmail);
+    if (cachedMed) {
+      setMyMedicalStatus(cachedMed);
+    }
+  }, [userEmail]);
+
+  // Background silent sync (never blocks rendering!)
+  useEffect(() => {
+    if (!userEmail || authLoading) return;
+    const lowerEmail = userEmail.toLowerCase();
+    
+    // If fetched in the last 2 minutes, skip re-fetch to keep navigation instantaneous
+    const now = Date.now();
+    const lastFetch = memoryCache.lastFetchedByEmail[lowerEmail] || 0;
+    if (now - lastFetch < 120000 && memoryCache.podsByEmail[lowerEmail]) {
+      return;
+    }
+
     let isMounted = true;
 
-    async function loadData() {
+    async function syncDataInBackground() {
       try {
-        // Run lightweight requests in parallel instead of a slow waterfall
-        const [athleteResult, athRes, medRes] = await Promise.all([
-          getAthleteByEmail(userEmail).catch(() => ({ status: 'Error' })),
-          fetchAthletes().catch(() => ({ athletes: [] })),
-          fetchMedicalLogs().catch(() => ({ data: [] }))
-        ]);
-
+        // Fetch athlete roster to determine pod permissions
+        const athRes = await fetchAthletes().catch(() => ({ athletes: [] }));
         if (!isMounted) return;
 
-        // Resolve exact athlete name
-        const resolvedName = athleteResult && athleteResult.status === 'Success'
-          ? (athleteResult.athleteName || athleteResult.name || authAthleteName || '')
-          : (authAthleteName || '');
-        const nameToMatch = (resolvedName || userEmail.split('@')[0]).trim().toLowerCase();
-
-        // 1. Resolve Pod Access from Athletes Sheet (Column L / Index 11)
         const athletes = athRes.athletes || [];
         let userRow = null;
+        let athleteNameToMatch = (authAthleteName || '').trim().toLowerCase();
+
         for (let i = 1; i < athletes.length; i++) {
           const row = athletes[i];
           if (!row) continue;
           const rowName = String(row[0] || '').trim().toLowerCase();
           const rowEmail = String(row[9] || '').trim().toLowerCase();
           
-          if ((rowEmail && rowEmail === userEmail.toLowerCase()) || (nameToMatch && rowName === nameToMatch)) {
+          if (rowEmail === lowerEmail || (athleteNameToMatch && rowName === athleteNameToMatch)) {
             userRow = row;
+            if (!athleteNameToMatch && rowName) {
+              athleteNameToMatch = rowName;
+            }
             break;
           }
         }
@@ -73,62 +150,67 @@ export default function AthleteHub() {
         let podsArray = [];
         if (userRow) {
           podsArray = String(userRow[11] || '').toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
+        } else {
+          // If athlete row not found, keep all default pods active
+          podsArray = ['wellness', 'medical', 'schedule'];
         }
-        
-        setActivePods(podsArray);
+
+        // Update memory and localStorage
+        memoryCache.podsByEmail[lowerEmail] = podsArray;
+        memoryCache.lastFetchedByEmail[lowerEmail] = now;
         try {
-          localStorage.setItem(podsStorageKey, JSON.stringify(podsArray));
+          localStorage.setItem(`fp_athlete_pods_${lowerEmail}`, JSON.stringify(podsArray));
         } catch {}
 
-        // 2. Resolve Medical Status: ONLY match against THIS athlete's name in Column C (index 2)
-        // (Do NOT match coach email in Column B/index 1, as coaches log injuries for other athletes!)
+        if (isMounted) {
+          setActivePods(podsArray);
+        }
+
+        // Check medical status ONLY if the athlete has access to the medical pod
         if (podsArray.includes('medical')) {
+          const medRes = await fetchMedicalLogs().catch(() => ({ data: [] }));
+          if (!isMounted) return;
+
           const medLogs = medRes.data || [];
+          let currentStatus = 'Fully Fit';
+
           if (medLogs.length > 1) {
+            // STRICT MATCH: Only match rows where Column C (index 2) is this specific athlete's name
+            // Never match Column B (coach email) to prevent other athletes' injuries from highlighting your cards!
             const myLogs = medLogs.slice(1).filter(r => {
               if (!r || !r[0]) return false;
               const logAthlete = String(r[2] || '').trim().toLowerCase();
-              const logEmail = String(r[1] || '').trim().toLowerCase();
-              
-              // Direct match to athlete's name
-              if (nameToMatch && logAthlete === nameToMatch) return true;
-              
-              // Only fallback to email if the row athlete name is blank and matches userEmail
-              if (!logAthlete && logEmail && logEmail === userEmail.toLowerCase()) return true;
-              
-              return false;
+              return athleteNameToMatch && logAthlete && logAthlete === athleteNameToMatch;
             });
 
-            // Sort newest first
             myLogs.sort((a, b) => new Date(b[0]) - new Date(a[0]));
 
             if (myLogs.length > 0 && myLogs[0][8] !== 'Yes') {
-              const currentStatus = myLogs[0][6] || 'Fully Fit';
-              setMyMedicalStatus(currentStatus);
-              try { localStorage.setItem(medStatusStorageKey, currentStatus); } catch {}
-            } else {
-              setMyMedicalStatus('Fully Fit');
-              try { localStorage.setItem(medStatusStorageKey, 'Fully Fit'); } catch {}
+              currentStatus = myLogs[0][6] || 'Fully Fit';
             }
-          } else {
-            setMyMedicalStatus('Fully Fit');
-            try { localStorage.setItem(medStatusStorageKey, 'Fully Fit'); } catch {}
+          }
+
+          memoryCache.medStatusByEmail[lowerEmail] = currentStatus;
+          try {
+            localStorage.setItem(`fp_athlete_med_status_${lowerEmail}`, currentStatus);
+          } catch {}
+
+          if (isMounted) {
+            setMyMedicalStatus(currentStatus);
           }
         } else {
-          setMyMedicalStatus('Fully Fit');
-          try { localStorage.setItem(medStatusStorageKey, 'Fully Fit'); } catch {}
+          memoryCache.medStatusByEmail[lowerEmail] = 'Fully Fit';
+          if (isMounted) setMyMedicalStatus('Fully Fit');
         }
       } catch (err) {
-        console.error("Failed to load hub data", err);
-      } finally {
-        if (isMounted) setLoadingPods(false);
+        console.warn("Background sync notice:", err);
       }
     }
 
-    loadData();
+    syncDataInBackground();
 
     return () => { isMounted = false; };
-  }, [userEmail, authAthleteName, podsStorageKey, medStatusStorageKey]);
+  }, [userEmail, authLoading, authAthleteName]);
 
   const allCards = [
     { title: 'Wellness Center', desc: 'Daily readiness log', icon: Activity, path: '/athlete-wellness', color: '#0ea5e9', bgImage: '/athlete-wellness-card.png', podId: 'wellness' },
@@ -161,11 +243,14 @@ export default function AthleteHub() {
     return style;
   };
 
-  if (authLoading || (loadingPods && activePods.length === 0)) return (
-    <div style={{ fontFamily: '"Roboto Flex", sans-serif', display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', backgroundColor: '#f8fafc' }}>
-      <p style={{ color: '#64748b', fontSize: '15px' }}>Loading Hub...</p>
-    </div>
-  );
+  // Only show a loader if auth is still actively verifying (matches CoachHub standard)
+  if (authLoading) {
+    return (
+      <div style={{ fontFamily: '"Roboto Flex", sans-serif', display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', backgroundColor: '#f8fafc' }}>
+        <p style={{ color: '#64748b', fontSize: '15px' }}>Loading...</p>
+      </div>
+    );
+  }
 
   return (
     <div style={{ fontFamily: '"Roboto Flex", sans-serif', padding: '4px', backgroundColor: '#f8fafc', minHeight: 'calc(100vh - 60px)' }}>
