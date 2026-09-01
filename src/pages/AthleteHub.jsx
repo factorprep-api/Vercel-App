@@ -2,51 +2,59 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { ClipboardList, TrendingUp, Dumbbell, Timer, Activity, AlertCircle, Calendar } from 'lucide-react';
-import { fetchAllData, getAthleteByEmail } from '../api';
+import { fetchAllData, getAthleteByEmail, fetchMedicalLogs } from '../api';
 
 export default function AthleteHub() {
   const navigate = useNavigate();
   const { userEmail, athleteName, isLoading: authLoading } = useAuth();
+  
   const [activePods, setActivePods] = useState([]);
   const [loadingPods, setLoadingPods] = useState(true);
+  const [myMedicalStatus, setMyMedicalStatus] = useState('Fully Fit');
 
   useEffect(() => {
-    async function loadPods() {
+    async function loadData() {
       if (!userEmail) return;
       try {
-        // 1. Get the exact name fallback just in case
         const athleteResult = await getAthleteByEmail(userEmail);
-        const nameToMatch = athleteResult.status === 'Success' 
-            ? (athleteResult.athleteName || athleteResult.name || userEmail.split('@')[0]) 
-            : userEmail.split('@')[0];
+        const nameToMatch = athleteResult.status === 'Success' ? (athleteResult.athleteName || athleteResult.name || userEmail.split('@')[0]) : userEmail.split('@')[0];
 
-        // 2. Fetch all rows
+        // 1. Fetch Pod Access
         const data = await fetchAllData();
         const athletes = data.athletes || [];
-        
-        // 3. Bulletproof Search: Check BOTH Name (Col A) and Email (Col J)
         let userRow = null;
         for (let i = 1; i < athletes.length; i++) {
           const rowName = String(athletes[i][0] || '').trim().toLowerCase();
           const rowEmail = String(athletes[i][9] || '').trim().toLowerCase();
-          
           if (rowName === nameToMatch.toLowerCase() || (rowEmail !== '' && rowEmail === userEmail.toLowerCase())) {
-            userRow = athletes[i];
-            break;
+            userRow = athletes[i]; break;
           }
         }
         
+        let podsArray = [];
         if (userRow) {
-          const podsString = String(userRow[11] || '').toLowerCase(); // Column L
-          const podsArray = podsString.split(',').map(s => s.trim());
+          podsArray = String(userRow[11] || '').toLowerCase().split(',').map(s => s.trim());
           setActivePods(podsArray);
         }
+
+        // 2. Fetch Medical Status if they have the Pod
+        if (podsArray.includes('medical')) {
+          const medRes = await fetchMedicalLogs();
+          const medLogs = medRes.data || [];
+          if (medLogs.length > 1) {
+            const myLogs = medLogs.slice(1).filter(r => String(r[1]).trim().toLowerCase() === userEmail.toLowerCase() || String(r[2]).trim().toLowerCase() === nameToMatch.toLowerCase());
+            myLogs.sort((a,b) => new Date(b[0]) - new Date(a[0])); // Newest first
+            if (myLogs.length > 0 && myLogs[0][8] !== 'Yes') { // If not resolved
+              setMyMedicalStatus(myLogs[0][6]); // 'Cannot Train' or 'Modified Training'
+            }
+          }
+        }
       } catch (err) {
-        console.error("Failed to load pods", err);
+        console.error("Failed to load hub data", err);
       }
       setLoadingPods(false);
     }
-    loadPods();
+    loadData();
   }, [userEmail]);
 
   const allCards = [
@@ -59,6 +67,24 @@ export default function AthleteHub() {
   ];
 
   const visibleCards = allCards.filter(card => !card.podId || activePods.includes(card.podId.toLowerCase()));
+
+  const getCardStyle = (card) => {
+    let style = {
+      flex: '1 1 250px', maxWidth: '300px', height: '240px',
+      background: card.bgImage ? `url(${card.bgImage}) center top / cover` : 'white',
+      border: '1px solid #ddd', borderRadius: '12px', cursor: 'pointer',
+      boxShadow: '0 2px 8px rgba(0,0,0,0.06)', transition: 'transform 0.15s, box-shadow 0.15s',
+      position: 'relative', overflow: 'hidden'
+    };
+
+    // Red pulse effect if injured
+    if ((card.podId === 'medical' || card.podId === 'wellness') && myMedicalStatus.includes('Cannot Train')) {
+      style.border = '2px solid #dc2626'; style.boxShadow = '0 0 12px rgba(220, 38, 38, 0.4)';
+    } else if ((card.podId === 'medical' || card.podId === 'wellness') && myMedicalStatus === 'Modified Training') {
+      style.border = '2px solid #f59e0b'; style.boxShadow = '0 0 12px rgba(245, 158, 11, 0.4)';
+    }
+    return style;
+  };
 
   if (authLoading || loadingPods) return (
     <div style={{ fontFamily: '"Roboto Flex", sans-serif', display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', backgroundColor: '#f8fafc' }}>
@@ -75,23 +101,7 @@ export default function AthleteHub() {
 
       <div className="hub-cards" style={{ display: 'flex', gap: '24px', flexWrap: 'wrap', justifyContent: 'center', marginTop: '16px' }}>
         {visibleCards.map((card, i) => (
-          <div
-            key={i}
-            onClick={() => navigate(card.path)}
-            style={{
-              flex: '1 1 250px',
-              maxWidth: '300px',
-              height: '240px',
-              background: card.bgImage ? `url(${card.bgImage}) center top / cover` : 'white',
-              border: '1px solid #ddd',
-              borderRadius: '12px',
-              cursor: 'pointer',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-              transition: 'transform 0.15s, box-shadow 0.15s',
-              position: 'relative',
-              overflow: 'hidden'
-            }}
-          >
+          <div key={i} onClick={() => navigate(card.path)} style={getCardStyle(card)}>
             {card.bgImage ? (
               <>
                 <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0) 60%)' }} />
