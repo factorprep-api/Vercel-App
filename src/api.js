@@ -1,301 +1,267 @@
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzIBfOpFxgmTYWlFDuKPVSx30tXJRlyWhhvZVBqkAO_nKeF1GfGTFVvTolLr-CBpoHl8A/exec';
+const GOOGLE_SCRIPT_API_URL = "https://script.google.com/macros/s/AKfycbzIBfOpFxgmTYWlFDuKPVSx30tXJRlyWhhvZVBqkAO_nKeF1GfGTFVvTolLr-CBpoHl8A/exec";
 
-// --- CORE / LEGACY ACTIONS ---
-
-export async function fetchAllData() {
-  const url = `${SCRIPT_URL}?action=getFullData&t=${Date.now()}`;
+// ==========================================
+// MASSIVE PIPE (Legacy)
+// ==========================================
+export const fetchAllData = async () => {
   try {
-    const response = await fetch(url);
-    if (!response.ok) throw new Error('Network response was not ok');
-    const data = await response.json();
-    return data;
+    let response = await fetch(`${GOOGLE_SCRIPT_API_URL}?action=getFullData&t=${Date.now()}`);
+    let json = await response.json();
+    return { athletes: json.athletes || [], programs: json.programs || json.program || [], library: json.library || [], error: null };
   } catch (error) {
-    console.error('Error fetching all data:', error);
-    throw error;
+    return { athletes: [], programs: [], library: [], error: "Failed to connect to database" };
   }
+};
+
+// ==========================================
+// LIGHTWEIGHT PIPES
+// ==========================================
+export const fetchAthletes = async () => {
+  try {
+    let response = await fetch(`${GOOGLE_SCRIPT_API_URL}?action=getAthletes&t=${Date.now()}`);
+    let json = await response.json();
+    return { athletes: json.athletes || [], error: null };
+  } catch (error) { return { athletes: [], error: "Failed to connect" }; }
+};
+
+export const fetchPrograms = async () => {
+  try {
+    let response = await fetch(`${GOOGLE_SCRIPT_API_URL}?action=getPrograms&t=${Date.now()}`);
+    let json = await response.json();
+    return { programs: json.programs || [], error: null };
+  } catch (error) { return { programs: [], error: "Failed to connect" }; }
+};
+
+export const fetchLibrary = async () => {
+  try {
+    let response = await fetch(`${GOOGLE_SCRIPT_API_URL}?action=getLibrary&t=${Date.now()}`);
+    let json = await response.json();
+    return { library: json.library || [], error: null };
+  } catch (error) { return { library: [], error: "Failed to connect" }; }
+};
+
+// ==========================================
+// NEW POD PIPES (Wellness, Medical, Schedule)
+// ==========================================
+export const saveWellnessLog = async (payload) => {
+  try {
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=saveWellness&data=${encodeURIComponent(JSON.stringify(payload))}&t=${Date.now()}`;
+    let resp = await fetch(url);
+    return await resp.json();
+  } catch (err) { return { status: 'Error', message: err.message }; }
+};
+
+export const fetchWellnessLogs = async () => {
+  try {
+    let resp = await fetch(`${GOOGLE_SCRIPT_API_URL}?action=getWellness&t=${Date.now()}`);
+    return await resp.json();
+  } catch (err) { return { data: [] }; }
+};
+
+export const saveScheduleSession = async (payload) => {
+  try {
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=saveSchedule&data=${encodeURIComponent(JSON.stringify(payload))}&t=${Date.now()}`;
+    let resp = await fetch(url);
+    return await resp.json();
+  } catch (err) { return { status: 'Error', message: err.message }; }
+};
+
+export const fetchSchedule = async () => {
+  try {
+    let resp = await fetch(`${GOOGLE_SCRIPT_API_URL}?action=getSchedule&t=${Date.now()}`);
+    return await resp.json();
+  } catch (err) { return { data: [] }; }
+};
+
+export const saveMedicalLog = async (payload) => {
+  try {
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=saveMedical&data=${encodeURIComponent(JSON.stringify(payload))}&t=${Date.now()}`;
+    let resp = await fetch(url);
+    return await resp.json();
+  } catch (err) { return { status: 'Error', message: err.message }; }
+};
+
+export const fetchMedicalLogs = async () => {
+  try {
+    let resp = await fetch(`${GOOGLE_SCRIPT_API_URL}?action=getMedical&t=${Date.now()}`);
+    return await resp.json();
+  } catch (err) { return { data: [] }; }
+};
+
+// ==========================================
+// EXISTING ENDPOINTS
+// ==========================================
+export const fetchLogbookByAthlete = async (athleteName) => {
+  try {
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=getLogbookByAthlete&athlete=${encodeURIComponent(athleteName)}&t=${Date.now()}`;
+    let resp = await fetch(url);
+    return await resp.json();
+  } catch (err) { return { status: "Empty", data: [] }; }
+};
+// Alias to prevent import errors
+export const getLogbookByAthlete = fetchLogbookByAthlete;
+
+export const getLatestMaxes = async (athleteName) => {
+  try {
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=getLatestMaxes&athlete=${encodeURIComponent(athleteName)}&t=${Date.now()}`;
+    let resp = await fetch(url);
+    return await resp.json();
+  } catch (err) { return { status: "Error", maxes: {} }; }
+};
+
+export const getLastLoggedWeight = async (athleteName, exerciseName) => {
+  try {
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=getLastLoggedWeight&athlete=${encodeURIComponent(athleteName)}&exercise=${encodeURIComponent(exerciseName)}&t=${Date.now()}`;
+    let resp = await fetch(url);
+    return await resp.json();
+  } catch (err) { return { status: "NotFound" }; }
+};
+
+export const createAthlete = async ({ email, name }) => {
+  try {
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=createAthlete&email=${encodeURIComponent(email)}&name=${encodeURIComponent(name)}&t=${Date.now()}`;
+    let resp = await fetch(url);
+    return await resp.json();
+  } catch (err) { return { success: false, error: err.message }; }
+};
+
+export const getAthleteByEmail = async (email) => {
+  try {
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=getAthleteByEmail&email=${encodeURIComponent(email)}&t=${Date.now()}`;
+    let resp = await fetch(url);
+    return await resp.json();
+  } catch (err) { return { status: "Error", message: err.message }; }
+};
+
+export const saveSession = async (payload) => {
+  try {
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=saveEntireSession&data=${encodeURIComponent(JSON.stringify(payload))}&t=${Date.now()}`;
+    let resp = await fetch(url);
+    return await resp.json();
+  } catch (err) { return { status: 'Error', message: err.message }; }
+};
+
+export async function fetchExerciseLibrary(options = {}) {
+  const response = await fetch(`${GOOGLE_SCRIPT_API_URL}?action=getLibrary&t=${Date.now()}`, options);
+  const json = await response.json();
+  const lib = [];
+  const rawLibrary = json.library || [];
+  for (let i = 0; i < rawLibrary.length; i++) {
+    const row = rawLibrary[i];
+    const name = String(row[0] || '').trim();
+    const url = String(row[1] || '').trim();
+    const muscle = (row[2] && String(row[2]).trim()) ? String(row[2]).trim() : 'Other';
+    const formula = (row[3] && String(row[3]).trim()) ? String(row[3]).trim().toLowerCase() : '';
+    const ownerEmail = (row[5] && String(row[5]).trim()) ? String(row[5]).trim() : '';
+    if (!name) continue;
+    lib.push({ name, muscle, rawUrl: url, formula, isEpley: formula === 'yes', ownerEmail });
+  }
+  return lib;
 }
 
-export async function getAthleteByEmail(email) {
+export const deleteProgram = async (programName) => {
   try {
-    const response = await fetch(`${SCRIPT_URL}?action=getAthleteByEmail&email=${encodeURIComponent(email)}&t=${Date.now()}`);
-    return await response.json();
-  } catch (error) {
-    console.error('Error getting athlete by email:', error);
-    throw error;
-  }
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=deleteProgram&pName=${encodeURIComponent(programName)}&t=${Date.now()}`;
+    let resp = await fetch(url);
+    return await resp.json();
+  } catch (err) { return { status: 'Error', message: err.message }; }
+};
+
+export const updateAssignment = async (athleteName, assignment) => {
+  try {
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=updateAssignment&aName=${encodeURIComponent(athleteName)}&assignment=${encodeURIComponent(assignment)}&t=${Date.now()}`;
+    let resp = await fetch(url);
+    return await resp.json();
+  } catch (err) { return { status: 'Error', message: err.message }; }
+};
+
+export const saveFullProgram = async (programRows) => {
+  try {
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=saveFullProgram&t=${Date.now()}`;
+    let resp = await fetch(url, { method: 'POST', body: JSON.stringify({ programData: JSON.stringify(programRows) }) });
+    return await resp.json();
+  } catch (err) { return { status: 'Error', message: err.message }; }
+};
+
+export const assignProgramBulk = async (athleteRows, programAssignment, columnId) => {
+  try {
+    let payload = JSON.stringify({ athleteRows, programAssignment, columnId });
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=assignProgram&data=${encodeURIComponent(payload)}&t=${Date.now()}`;
+    let resp = await fetch(url);
+    return await resp.json();
+  } catch (err) { return { status: 'Error', message: err.message }; }
+};
+export const assignProgramToAthletes = assignProgramBulk; // Alias just in case
+
+export const addExerciseToLibrary = async (exerciseData) => {
+  try {
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=addExercise&data=${encodeURIComponent(JSON.stringify(exerciseData))}&t=${Date.now()}`;
+    let resp = await fetch(url);
+    return await resp.json();
+  } catch (err) { return { status: 'Error', message: err.message }; }
+};
+
+export const deleteExerciseFromLibrary = async (exerciseName) => {
+  try {
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=deleteExercise&exName=${encodeURIComponent(exerciseName)}&t=${Date.now()}`;
+    let resp = await fetch(url);
+    return await resp.json();
+  } catch (err) { return { status: 'Error', message: err.message }; }
+};
+
+export const updateExerciseInLibrary = async (exerciseData) => {
+  try {
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=updateExercise&data=${encodeURIComponent(JSON.stringify(exerciseData))}&t=${Date.now()}`;
+    let resp = await fetch(url);
+    return await resp.json();
+  } catch (err) { return { status: 'Error', message: err.message }; }
+};
+
+export const fetchHelpVideos = async () => {
+  try {
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=getHelpVideos&t=${Date.now()}`;
+    let resp = await fetch(url);
+    let json = await resp.json();
+    return json.data || {};
+  } catch (err) { return {}; }
+};
+
+export const updateProgram = async (oldName, programRows) => {
+  try {
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=updateProgram&t=${Date.now()}`;
+    let resp = await fetch(url, { method: 'POST', body: JSON.stringify({ oldName: oldName, programData: JSON.stringify(programRows) }) });
+    return await resp.json();
+  } catch (err) { return { status: 'Error', message: err.message }; }
+};
+
+export function getMediaType(url) {
+  if (!url) return null;
+  try {
+    const ext = url.split('.').pop().split('?')[0].toLowerCase();
+    const videoExts = ['mp4', 'webm', 'mov', 'avi', 'mkv', 'm4v'];
+    const audioExts = ['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac'];
+    if (videoExts.includes(ext)) return 'video';
+    if (audioExts.includes(ext)) return 'audio';
+    return 'video';
+  } catch { return 'video'; }
 }
 
-export async function createAthlete(name, email) {
-  try {
-    const response = await fetch(`${SCRIPT_URL}?action=createAthlete&name=${encodeURIComponent(name)}&email=${encodeURIComponent(email)}&t=${Date.now()}`);
-    return await response.json();
-  } catch (error) {
-    console.error('Error creating athlete:', error);
-    throw error;
-  }
-}
-
-export async function fetchAthletes() {
-  try {
-    const response = await fetch(`${SCRIPT_URL}?action=getAthletes&t=${Date.now()}`);
-    return await response.json();
-  } catch (error) {
-    console.error('Error fetching athletes:', error);
-    throw error;
-  }
-}
-
-export async function fetchPrograms() {
-  try {
-    const response = await fetch(`${SCRIPT_URL}?action=getPrograms&t=${Date.now()}`);
-    return await response.json();
-  } catch (error) {
-    console.error('Error fetching programs:', error);
-    throw error;
-  }
-}
-
-export async function fetchLibrary() {
-  try {
-    const response = await fetch(`${SCRIPT_URL}?action=getLibrary&t=${Date.now()}`);
-    return await response.json();
-  } catch (error) {
-    console.error('Error fetching library:', error);
-    throw error;
-  }
-}
-
-export async function getLogbookByAthlete(athleteName) {
-  try {
-    const response = await fetch(`${SCRIPT_URL}?action=getLogbookByAthlete&athlete=${encodeURIComponent(athleteName)}&t=${Date.now()}`);
-    return await response.json();
-  } catch (error) {
-    console.error('Error getting logbook:', error);
-    throw error;
-  }
-}
-export const fetchLogbookByAthlete = getLogbookByAthlete;
-
-export async function getLastLoggedWeight(athleteName, exerciseName) {
-  try {
-    const response = await fetch(`${SCRIPT_URL}?action=getLastLoggedWeight&athlete=${encodeURIComponent(athleteName)}&exercise=${encodeURIComponent(exerciseName)}&t=${Date.now()}`);
-    return await response.json();
-  } catch (error) {
-    console.error('Error getting last logged weight:', error);
-    throw error;
-  }
-}
-
-export async function fetchHelpVideos() {
-  try {
-    const response = await fetch(`${SCRIPT_URL}?action=getHelpVideos&t=${Date.now()}`);
-    return await response.json();
-  } catch (error) {
-    console.error('Error fetching help videos:', error);
-    throw error;
-  }
-}
-
-// --- ADMIN / PROGRAM MANAGEMENT ---
-
-export async function saveFullProgram(programData) {
-  try {
-    const response = await fetch(SCRIPT_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: `action=saveFullProgram&programData=${encodeURIComponent(JSON.stringify(programData))}`
+export function parseProgramsFromRaw(rawPrograms, coachEmail) {
+  const programs = [];
+  if (!rawPrograms || rawPrograms.length <= 1) return programs;
+  for (let i = 1; i < rawPrograms.length; i++) {
+    const row = rawPrograms[i];
+    const name = String(row[0] || '').trim();
+    const privacyLevel = (row.length > 10 && String(row[10]).trim()) ? String(row[10]).trim() : 'PRIVATE';
+    const ownerEmail = (row.length > 11 && String(row[11]).trim()) ? String(row[11]).trim() : '';
+    const mediaUrl = (row.length > 12 && String(row[12]).trim()) ? String(row[12]).trim() : '';
+    if (!name) continue;
+    programs.push({
+      name, privacyLevel, ownerEmail, mediaUrl,
+      mediaType: mediaUrl ? getMediaType(mediaUrl) : null,
+      isOwnedByCoach: ownerEmail.toLowerCase() === (coachEmail || '').toLowerCase(),
+      rawData: row
     });
-    return await response.json();
-  } catch (error) {
-    console.error('Error saving program:', error);
-    throw error;
   }
-}
-
-export async function updateProgram(oldName, programData) {
-  try {
-    const response = await fetch(SCRIPT_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: `action=updateProgram&oldName=${encodeURIComponent(oldName)}&programData=${encodeURIComponent(JSON.stringify(programData))}`
-    });
-    return await response.json();
-  } catch (error) {
-    console.error('Error updating program:', error);
-    throw error;
-  }
-}
-
-export async function deleteProgram(pName) {
-  try {
-    const response = await fetch(SCRIPT_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: `action=deleteProgram&pName=${encodeURIComponent(pName)}`
-    });
-    return await response.json();
-  } catch (error) {
-    console.error('Error deleting program:', error);
-    throw error;
-  }
-}
-
-export async function addAthlete(aName, pin) {
-  try {
-    const response = await fetch(SCRIPT_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: `action=addAthlete&aName=${encodeURIComponent(aName)}&pin=${encodeURIComponent(pin)}`
-    });
-    return await response.json();
-  } catch (error) {
-    console.error('Error adding athlete:', error);
-    throw error;
-  }
-}
-
-export async function deleteAthlete(aName) {
-  try {
-    const response = await fetch(SCRIPT_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: `action=deleteAthlete&aName=${encodeURIComponent(aName)}`
-    });
-    return await response.json();
-  } catch (error) {
-    console.error('Error deleting athlete:', error);
-    throw error;
-  }
-}
-
-export async function updateAssignment(aName, assignment) {
-  try {
-    const response = await fetch(SCRIPT_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: `action=updateAssignment&aName=${encodeURIComponent(aName)}&assignment=${encodeURIComponent(assignment)}`
-    });
-    return await response.json();
-  } catch (error) {
-    console.error('Error updating assignment:', error);
-    throw error;
-  }
-}
-
-export async function assignProgramToAthletes(athleteRows, programAssignment, columnId) {
-  const payload = { athleteRows, programAssignment, columnId };
-  try {
-    const response = await fetch(SCRIPT_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: `action=assignProgram&data=${encodeURIComponent(JSON.stringify(payload))}`
-    });
-    return await response.json();
-  } catch (error) {
-    console.error('Error assigning program:', error);
-    throw error;
-  }
-}
-
-export async function addExercise(exerciseData) {
-  try {
-    const response = await fetch(SCRIPT_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: `action=addExercise&data=${encodeURIComponent(JSON.stringify(exerciseData))}`
-    });
-    return await response.json();
-  } catch (error) {
-    console.error('Error adding exercise:', error);
-    throw error;
-  }
-}
-
-export async function saveEntireSession(payload) {
-  try {
-    const response = await fetch(SCRIPT_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: `action=saveEntireSession&data=${encodeURIComponent(JSON.stringify(payload))}`
-    });
-    return await response.json();
-  } catch (error) {
-    console.error('Error saving entire session:', error);
-    throw error;
-  }
-}
-
-// --- NEW POD ENDPOINTS ---
-
-export async function saveWellnessLog(payload) {
-  try {
-    const response = await fetch(SCRIPT_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: `action=saveWellness&data=${encodeURIComponent(JSON.stringify(payload))}`
-    });
-    return await response.json();
-  } catch (error) {
-    console.error('Error saving wellness log:', error);
-    throw error;
-  }
-}
-
-export async function fetchWellnessLogs() {
-  try {
-    const response = await fetch(`${SCRIPT_URL}?action=getWellness&t=${Date.now()}`);
-    return await response.json();
-  } catch (error) {
-    console.error('Error fetching wellness logs:', error);
-    throw error;
-  }
-}
-
-export async function saveScheduleSession(payload) {
-  // Payload now expects: { email, athlete, type, proposedMins, proposedRpe, actualMins, actualRpe, location, notes }
-  try {
-    const response = await fetch(SCRIPT_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: `action=saveSchedule&data=${encodeURIComponent(JSON.stringify(payload))}`
-    });
-    return await response.json();
-  } catch (error) {
-    console.error('Error saving schedule session:', error);
-    throw error;
-  }
-}
-
-export async function fetchSchedule() {
-  try {
-    const response = await fetch(`${SCRIPT_URL}?action=getSchedule&t=${Date.now()}`);
-    return await response.json();
-  } catch (error) {
-    console.error('Error fetching schedule logs:', error);
-    throw error;
-  }
-}
-
-export async function saveMedicalLog(payload) {
-  try {
-    const response = await fetch(SCRIPT_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: `action=saveMedical&data=${encodeURIComponent(JSON.stringify(payload))}`
-    });
-    return await response.json();
-  } catch (error) {
-    console.error('Error saving medical log:', error);
-    throw error;
-  }
-}
-
-export async function fetchMedicalLogs() {
-  try {
-    const response = await fetch(`${SCRIPT_URL}?action=getMedical&t=${Date.now()}`);
-    return await response.json();
-  } catch (error) {
-    console.error('Error fetching medical logs:', error);
-    throw error;
-  }
+  return programs;
 }
