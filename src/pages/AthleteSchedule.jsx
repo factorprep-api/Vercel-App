@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Save, Calendar, Clock, Activity, CheckCircle, BarChart2, AlertTriangle, AlertCircle, Check } from 'lucide-react';
+import { ArrowLeft, Save, Calendar, Clock, Activity, CheckCircle, BarChart2, AlertTriangle, AlertCircle, Check, X } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
@@ -52,7 +52,7 @@ export default function AthleteSchedule() {
         setActivePods(String(userRow[11] || '').toLowerCase().split(',').map(s => s.trim()));
       }
 
-      // 2. Load Schedule Data
+      // 2. Load Schedule Data (12 Columns)
       const res = await fetchSchedule();
       const logs = res.data || [];
       if (logs.length > 1) {
@@ -64,19 +64,40 @@ export default function AthleteSchedule() {
           if (rEmail === userEmail.toLowerCase() || rName === nameToMatch.toLowerCase()) {
             let d = new Date(r[0]);
             if (!isNaN(d.getTime())) {
+              const pMins = Number(r[4]) || 0;
+              const pRpe = Number(r[5]) || 0;
+              const pLoad = Number(r[6]) || (pMins * pRpe);
+              const aMins = Number(r[7]) || 0;
+              const aRpe = Number(r[8]) || 0;
+              const aLoad = Number(r[9]) || (aMins * aRpe);
+              const rowNotes = String(r[11] || '');
+
+              // Dynamic Status Derivation across 12 columns
+              let sessionStatus = 'Proposed';
+              if (aMins > 0) {
+                const lowerNotes = rowNotes.toLowerCase();
+                if (lowerNotes.includes('injury') || lowerNotes.includes('incident')) {
+                  sessionStatus = 'Injury';
+                } else if (lowerNotes.includes('modified') || (pMins > 0 && (aMins !== pMins || aRpe !== pRpe))) {
+                  sessionStatus = 'Modified';
+                } else {
+                  sessionStatus = 'Actual';
+                }
+              }
+
               myLogs.push({
                 rawDate: d,
                 dateStr: d.toLocaleDateString('en-US', {weekday: 'short', month: 'short', day: 'numeric'}),
                 type: r[3],
-                proposedMins: Number(r[4]) || 0,
-                proposedRpe: Number(r[5]) || 0,
-                proposedLoad: Number(r[6]) || 0,
-                actualMins: Number(r[7]) || 0,
-                actualRpe: Number(r[8]) || 0,
-                actualLoad: Number(r[9]) || 0,
+                proposedMins: pMins,
+                proposedRpe: pRpe,
+                proposedLoad: pLoad,
+                actualMins: aMins,
+                actualRpe: aRpe,
+                actualLoad: aLoad,
                 location: r[10] || '',
-                notes: r[11] || '',
-                status: String(r[12] || 'Actual').trim() // "Proposed", "Actual", "Modified", "Injury"
+                notes: rowNotes,
+                status: sessionStatus
               });
             }
           }
@@ -85,7 +106,7 @@ export default function AthleteSchedule() {
         const completed = myLogs.filter(s => s.status !== 'Proposed');
         const proposed = myLogs.filter(s => s.status === 'Proposed');
 
-        // Hide proposed sessions if the athlete already logged a completed session for that exact type within 24 hours
+        // Hide proposed sessions if the athlete already logged a completed session for that exact type within 48 hours
         const activeGhostCards = proposed.filter(p => {
           return !completed.some(c => c.type === p.type && Math.abs(c.rawDate - p.rawDate) < 86400000 * 2);
         });
@@ -107,7 +128,7 @@ export default function AthleteSchedule() {
       email: userEmail, athlete: nameToSave, type: type,
       proposedMins: 0, proposedRpe: 0,
       actualMins: parseInt(duration), actualRpe: parseInt(rpe),
-      location: 'Mobile Log', notes: notes, status: 'Actual'
+      location: 'Mobile Log', notes: notes
     };
 
     try {
@@ -130,19 +151,25 @@ export default function AthleteSchedule() {
     
     let finalMins = selectedProposed.proposedMins;
     let finalRpe = selectedProposed.proposedRpe;
-    let finalStatus = 'Actual';
+    let auditNotePrefix = '';
 
     if (auditMode === 'modified') {
-      finalMins = parseInt(actualMins); finalRpe = parseInt(actualRpe); finalStatus = 'Modified';
+      finalMins = parseInt(actualMins);
+      finalRpe = parseInt(actualRpe);
+      auditNotePrefix = '[Modified] ';
     } else if (auditMode === 'injury') {
-      finalMins = parseInt(actualMins); finalRpe = parseInt(actualRpe); finalStatus = 'Injury';
+      finalMins = parseInt(actualMins);
+      finalRpe = parseInt(actualRpe);
+      auditNotePrefix = '[Injury/Incident] ';
     }
+
+    const combinedNotes = auditNotePrefix ? `${auditNotePrefix}${notes || ''}`.trim() : notes;
 
     const payload = {
       email: userEmail, athlete: nameToSave, type: selectedProposed.type,
       proposedMins: selectedProposed.proposedMins, proposedRpe: selectedProposed.proposedRpe,
       actualMins: finalMins, actualRpe: finalRpe,
-      location: selectedProposed.location, notes: notes, status: finalStatus
+      location: selectedProposed.location, notes: combinedNotes
     };
 
     try {

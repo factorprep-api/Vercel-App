@@ -55,6 +55,27 @@ export default function CoachSchedule() {
           if (!r || !r[0]) return;
           let d = new Date(r[0]);
           if (isNaN(d.getTime())) return;
+
+          const pMins = Number(r[4]) || 0;
+          const pRpe = Number(r[5]) || 0;
+          const pLoad = Number(r[6]) || (pMins * pRpe);
+          const aMins = Number(r[7]) || 0;
+          const aRpe = Number(r[8]) || 0;
+          const aLoad = Number(r[9]) || (aMins * aRpe);
+          const rowNotes = String(r[11] || '');
+
+          // Dynamic Status Derivation across 12 columns
+          let sessionStatus = 'Proposed';
+          if (aMins > 0) {
+            const lowerNotes = rowNotes.toLowerCase();
+            if (lowerNotes.includes('injury') || lowerNotes.includes('incident')) {
+              sessionStatus = 'Injury';
+            } else if (lowerNotes.includes('modified') || (pMins > 0 && (aMins !== pMins || aRpe !== pRpe))) {
+              sessionStatus = 'Modified';
+            } else {
+              sessionStatus = 'Actual';
+            }
+          }
           
           parsed.push({
             rawDate: d,
@@ -62,15 +83,15 @@ export default function CoachSchedule() {
             email: String(r[1]).trim(),
             athlete: String(r[2]).trim(),
             type: r[3] || '',
-            proposedMins: Number(r[4]) || 0,
-            proposedRpe: Number(r[5]) || 0,
-            proposedLoad: Number(r[6]) || 0,
-            actualMins: Number(r[7]) || 0,
-            actualRpe: Number(r[8]) || 0,
-            actualLoad: Number(r[9]) || 0,
+            proposedMins: pMins,
+            proposedRpe: pRpe,
+            proposedLoad: pLoad,
+            actualMins: aMins,
+            actualRpe: aRpe,
+            actualLoad: aLoad,
             location: r[10] || '',
-            notes: r[11] || '',
-            status: String(r[12] || 'Actual').trim()
+            notes: rowNotes,
+            status: sessionStatus
           });
         });
         setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
@@ -168,7 +189,7 @@ export default function CoachSchedule() {
           email: coachEmail, athlete: athName, type: form.type, 
           proposedMins: parseInt(form.duration), proposedRpe: parseInt(form.rpe), 
           actualMins: 0, actualRpe: 0, 
-          location: form.location, notes: form.notes, status: 'Proposed'
+          location: form.location, notes: form.notes
         };
         await saveScheduleSession(payload);
       }

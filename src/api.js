@@ -122,7 +122,7 @@ export const createAthlete = async ({ email, name }) => {
     let url = `${GOOGLE_SCRIPT_API_URL}?action=createAthlete&email=${encodeURIComponent(email)}&name=${encodeURIComponent(name)}&t=${Date.now()}`;
     let resp = await fetch(url);
     return await resp.json();
-  } catch (err) { return { success: false, error: err.message }; }
+  } catch (err) { return { status: "Error", message: err.message }; }
 };
 
 export const getAthleteByEmail = async (email) => {
@@ -154,7 +154,7 @@ export async function fetchExerciseLibrary(options = {}) {
     const formula = (row[3] && String(row[3]).trim()) ? String(row[3]).trim().toLowerCase() : '';
     const ownerEmail = (row[5] && String(row[5]).trim()) ? String(row[5]).trim() : '';
     if (!name) continue;
-    lib.push({ name, muscle, rawUrl: url, formula, isEpley: formula === 'yes', ownerEmail });
+    lib.push({ name, muscle, rawUrl: url, formula, isEpley: formula === 'yes' || formula === 'weight', ownerEmail });
   }
   return lib;
 }
@@ -209,20 +209,15 @@ export const deleteExerciseFromLibrary = async (exerciseName) => {
   } catch (err) { return { status: 'Error', message: err.message }; }
 };
 
-export const updateExerciseInLibrary = async (exerciseData) => {
-  try {
-    let url = `${GOOGLE_SCRIPT_API_URL}?action=updateExercise&data=${encodeURIComponent(JSON.stringify(exerciseData))}&t=${Date.now()}`;
-    let resp = await fetch(url);
-    return await resp.json();
-  } catch (err) { return { status: 'Error', message: err.message }; }
-};
+// Safe alias pointing to addExercise (which handles upsert in Code.gs)
+export const updateExerciseInLibrary = addExerciseToLibrary;
 
 export const fetchHelpVideos = async () => {
   try {
     let url = `${GOOGLE_SCRIPT_API_URL}?action=getHelpVideos&t=${Date.now()}`;
     let resp = await fetch(url);
     let json = await resp.json();
-    return json.data || {};
+    return json.data || json.helpVideos || json;
   } catch (err) { return {}; }
 };
 
