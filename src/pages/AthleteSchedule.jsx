@@ -40,28 +40,32 @@ export default function AthleteSchedule() {
 
   async function loadData() {
     setLoadingHistory(true);
+    setError(null);
     try {
       // 1. Check if they have the Medical Pod
-      const athRes = await getAthleteByEmail(userEmail);
-      const nameToMatch = athRes.status === 'Success' ? (athRes.athleteName || athRes.name || userEmail.split('@')[0]) : userEmail.split('@')[0];
+      const [athRes, allDataRes, res] = await Promise.all([
+        getAthleteByEmail(userEmail).catch(() => ({ status: 'Error' })),
+        fetchAllData().catch(() => ({ athletes: [] })),
+        fetchSchedule().catch(() => ({ data: [] }))
+      ]);
+
+      const nameToMatch = athRes.status === 'Success' ? (athRes.athleteName || athRes.name || athleteName || userEmail.split('@')[0]) : (athleteName || userEmail.split('@')[0]);
       
-      const allDataRes = await fetchAllData();
       const athletes = allDataRes.athletes || [];
-      let userRow = athletes.find(r => String(r[0]).trim().toLowerCase() === nameToMatch.toLowerCase() || String(r[9]).trim().toLowerCase() === userEmail.toLowerCase());
+      let userRow = athletes.find(r => String(r[0] || '').trim().toLowerCase() === nameToMatch.toLowerCase() || String(r[9] || '').trim().toLowerCase() === userEmail.toLowerCase());
       if (userRow) {
-        setActivePods(String(userRow[11] || '').toLowerCase().split(',').map(s => s.trim()));
+        setActivePods(String(userRow[11] || '').toLowerCase().split(',').map(s => s.trim()).filter(Boolean));
       }
 
       // 2. Load Schedule Data (12 Columns)
-      const res = await fetchSchedule();
       const logs = res.data || [];
       if (logs.length > 1) {
         const myLogs = [];
         logs.slice(1).forEach(r => {
           if (!r || !r[0]) return;
-          const rEmail = String(r[1]).trim().toLowerCase();
-          const rName = String(r[2]).trim().toLowerCase();
-          if (rEmail === userEmail.toLowerCase() || rName === nameToMatch.toLowerCase()) {
+          const rEmail = String(r[1] || '').trim().toLowerCase();
+          const rName = String(r[2] || '').trim().toLowerCase();
+          if (rEmail === userEmail.toLowerCase() || (nameToMatch && rName === nameToMatch.toLowerCase())) {
             let d = new Date(r[0]);
             if (!isNaN(d.getTime())) {
               const pMins = Number(r[4]) || 0;
@@ -113,9 +117,17 @@ export default function AthleteSchedule() {
 
         setCompletedSessions(completed.sort((a,b) => a.rawDate - b.rawDate));
         setProposedSessions(activeGhostCards.reverse());
+      } else {
+        setCompletedSessions([]);
+        setProposedSessions([]);
       }
-    } catch (e) { setError("Failed to load history."); }
-    setLoadingHistory(false);
+    } catch (e) {
+      console.warn("Schedule data fetch notice:", e);
+      setCompletedSessions([]);
+      setProposedSessions([]);
+    } finally {
+      setLoadingHistory(false);
+    }
   }
 
   const hasMedicalPod = activePods.includes('medical');
