@@ -380,7 +380,7 @@ function doGet(e) {
   if (action === "saveWellness") {
     var sheet = sheetApp.getSheetByName("Wellness_Logs");
     if (!sheet) return ContentService.createTextOutput(JSON.stringify({ status: "Error", message: "Wellness_Logs sheet not found" })).setMimeType(ContentService.MimeType.JSON);
-    var dataObj = JSON.parse(e.parameter.data || "{}");
+    var dataObj = e.parameter.data ? JSON.parse(e.parameter.data) : e.parameter;
     sheet.appendRow([new Date().toISOString(), dataObj.email, dataObj.athlete, dataObj.grip, dataObj.feeling, dataObj.soreness, dataObj.sleep, dataObj.nutrition]);
     return ContentService.createTextOutput(JSON.stringify({ status: "Success" })).setMimeType(ContentService.MimeType.JSON);
   }
@@ -393,8 +393,31 @@ function doGet(e) {
   if (action === "saveSchedule") {
     var sheet = sheetApp.getSheetByName("Schedule_Master");
     if (!sheet) return ContentService.createTextOutput(JSON.stringify({ status: "Error", message: "Schedule_Master sheet not found" })).setMimeType(ContentService.MimeType.JSON);
-    var dataObj = JSON.parse(e.parameter.data || "{}");
-    sheet.appendRow([new Date().toISOString(), dataObj.email, dataObj.athlete, dataObj.type, dataObj.duration, dataObj.rpe, dataObj.load, dataObj.location, dataObj.notes, dataObj.status]);
+    
+    var dataObj = e.parameter.data ? JSON.parse(e.parameter.data) : e.parameter;
+    
+    var propMins = Number(dataObj.proposedMins) || 0;
+    var propRpe = Number(dataObj.proposedRpe) || 0;
+    var propLoad = propMins * propRpe;
+
+    var actMins = Number(dataObj.actualMins) || 0;
+    var actRpe = Number(dataObj.actualRpe) || 0;
+    var actLoad = actMins * actRpe;
+
+    sheet.appendRow([
+      new Date().toISOString(),
+      dataObj.email || "",
+      dataObj.athlete || "",
+      dataObj.type || "",
+      propMins,
+      propRpe,
+      propLoad,
+      actMins,
+      actRpe,
+      actLoad,
+      dataObj.location || "",
+      dataObj.notes || ""
+    ]);
     return ContentService.createTextOutput(JSON.stringify({ status: "Success" })).setMimeType(ContentService.MimeType.JSON);
   }
 
@@ -406,8 +429,8 @@ function doGet(e) {
   if (action === "saveMedical") {
     var sheet = sheetApp.getSheetByName("Medical_Vault");
     if (!sheet) return ContentService.createTextOutput(JSON.stringify({ status: "Error", message: "Medical_Vault sheet not found" })).setMimeType(ContentService.MimeType.JSON);
-    var dataObj = JSON.parse(e.parameter.data || "{}");
-    sheet.appendRow([new Date().toISOString(), dataObj.email, dataObj.athlete, dataObj.bodyPart, dataObj.pain, dataObj.mechanism, dataObj.trainingStatus, dataObj.notes, "No", ""]);
+    var dataObj = e.parameter.data ? JSON.parse(e.parameter.data) : e.parameter;
+    sheet.appendRow([new Date().toISOString(), dataObj.email, dataObj.athlete, dataObj.bodyPart, dataObj.pain, dataObj.mechanism, dataObj.trainingStatus, dataObj.notes || "", dataObj.isResolved || "No", ""]);
     return ContentService.createTextOutput(JSON.stringify({ status: "Success" })).setMimeType(ContentService.MimeType.JSON);
   }
 
@@ -543,7 +566,7 @@ function doGet(e) {
       // NEW POD SHEETS
       {name: "Wellness_Logs", headers: ["Date", "Email", "Athlete", "Grip", "Feeling", "Soreness", "Sleep", "Nutrition"]},
       {name: "Medical_Vault", headers: ["Date Logged", "Email", "Athlete", "Body Part", "Pain Level", "Mechanism", "Training Status", "Notes", "Is Resolved", "Date Resolved"]},
-      {name: "Schedule_Master", headers: ["Date", "Email", "Athlete", "Session Type", "Duration Mins", "RPE", "Load AU", "Location", "Coach Notes", "Session Status"]}
+      {name: "Schedule_Master", headers: ["Date", "Email", "Athlete", "Type", "Proposed Mins", "Proposed RPE", "Proposed Load", "Actual Mins", "Actual RPE", "Actual Load", "Location", "Coach Notes"]}
     ];
     requiredSheets.forEach(function(info) {
       var existingSheet = ss.getSheetByName(info.name);
@@ -552,7 +575,7 @@ function doGet(e) {
     return ContentService.createTextOutput(JSON.stringify({ status: "Success", created: created, skipped: skipped, note: created.length > 0 ? "New sheets created successfully" : "All required sheets already exist" })).setMimeType(ContentService.MimeType.JSON);
   }
 
-  return ContentService.createTextOutput(JSON.stringify({ status: "API is running", availableActions: ["getFullData", "getAthletes", "getPrograms", "getLibrary", "getAthleteByName", "getAthleteByEmail", "createAthlete", "getLogbookByAthlete", "getLatestMaxes", "getLastLoggedWeight", "updateProgram", "saveEntireSession", "saveFullProgram", "deleteProgram", "addAthlete", "deleteAthlete", "updateAssignment", "assignProgram", "addExercise", "initSheets", "saveWellness", "getWellness", "saveSchedule", "getSchedule", "saveMedical", "getMedical"], version: "8.0-pod-engine" })).setMimeType(ContentService.MimeType.JSON);
+  return ContentService.createTextOutput(JSON.stringify({ status: "API is running", availableActions: ["getFullData", "getAthletes", "getPrograms", "getLibrary", "getAthleteByName", "getAthleteByEmail", "createAthlete", "getLogbookByAthlete", "getLatestMaxes", "getLastLoggedWeight", "updateProgram", "saveEntireSession", "saveFullProgram", "deleteProgram", "addAthlete", "deleteAthlete", "updateAssignment", "assignProgram", "addExercise", "initSheets", "saveWellness", "getWellness", "saveSchedule", "getSchedule", "saveMedical", "getMedical"], version: "9.0-audit-engine" })).setMimeType(ContentService.MimeType.JSON);
 }
 
 // ==========================================
@@ -606,9 +629,6 @@ function loadMergedLibrary(sheetApp) {
   return combinedRows;
 }
 
-// ------------------------------------------
-// STRING PARSERS FOR TIME & DISTANCE
-// ------------------------------------------
 function parseTimeToSecondsGAS(str) {
   if (!str) return 0;
   var strClean = String(str).toLowerCase();
