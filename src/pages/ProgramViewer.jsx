@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Play, ChevronDown, ChevronUp, Video, Image as ImageIcon, Save, CheckCircle, MessageSquare, UserPlus, Globe, Timer, Pause, RotateCcw, Plus, Minus, X, ArrowLeft } from 'lucide-react';
 import { getYouTubeId } from '../utils/helpers';
 import { useAuth } from '../hooks/useAuth';
-// FIX: Imported saveScheduleSession
+// Imported saveScheduleSession
 import { fetchAllData, getAthleteByEmail, saveSession, getMediaType, getLatestMaxes, fetchLogbookByAthlete, saveScheduleSession } from '../api';
 import HelpButton from '../components/HelpButton';
 import './program-viewer.css';
@@ -162,7 +162,7 @@ export default function ProgramViewer() {
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   
-  // FIX: sRPE Schedule State
+  // sRPE Schedule State
   const [showSrpeModal, setShowSrpeModal] = useState(false);
   const [pendingSets, setPendingSets] = useState(null);
   const [sessionDuration, setSessionDuration] = useState(60);
@@ -181,7 +181,7 @@ export default function ProgramViewer() {
   const { userEmail, isLoading: authLoading } = useAuth();
   const navigate = useNavigate();
 
-  // FIX: Active Pods Checker
+  // Active Pods Checker
   const activePods = useMemo(() => {
     if (athleteRowIndex === null || !athletesData.length) return [];
     const row = athletesData[athleteRowIndex] || [];
@@ -482,7 +482,7 @@ export default function ProgramViewer() {
     const key = groupId + '_' + detailIdx; setInputValues(prev => ({ ...prev, [key]: { ...prev[key], [field]: value } }));
   }
 
-  // FIX: The Smart Saving Logic
+  // The Smart Saving Logic
   function handleSaveClick() {
     if (!workoutGroups.length) return;
     
@@ -537,16 +537,16 @@ export default function ProgramViewer() {
       const res = await saveSession(payload);
       
       if (res.status === 'Success') { 
-        // 2. If Schedule Pod is active, save the Load!
+        // 2. If Schedule Pod is active, save the Load cleanly!
         if (dur !== null && rpeVal !== null) {
-          const loadAU = parseInt(dur) * parseInt(rpeVal);
           const schedPayload = {
             email: userEmail,
             athlete: athleteName,
             type: 'Gym Workout',
-            duration: parseInt(dur),
-            rpe: parseInt(rpeVal),
-            load: loadAU,
+            proposedMins: 0,
+            proposedRpe: 0,
+            actualMins: parseInt(dur),
+            actualRpe: parseInt(rpeVal),
             location: 'App Logged',
             notes: `Program: ${loggedProgStr}`,
             status: 'Actual'
@@ -878,4 +878,3 @@ export default function ProgramViewer() {
     </div>
   );
 }
-
