@@ -263,30 +263,20 @@ export default function MyProgress() {
   const activeMetricKey = selectedMetric.toLowerCase();
 
   return (
-    <div style={{ fontFamily: '"Roboto Flex", -apple-system, sans-serif', backgroundColor: '#f8fafc', minHeight: '100vh', paddingBottom: '80px' }}>
-      {/* Top Header */}
-      <div style={{ background: '#ffffff', borderBottom: '1px solid #e2e8f0', padding: '14px 20px', position: 'sticky', top: 0, zIndex: 30 }}>
-        <div style={{ maxWidth: '800px', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <button
-              onClick={() => navigate('/athlete-hub')}
-              style={{ background: '#f1f5f9', border: 'none', borderRadius: '8px', padding: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#334155' }}
-              title="Back to Hub"
-            >
-              <ArrowLeft size={20} />
-            </button>
-            <div>
-              <h1 style={{ fontSize: '20px', fontWeight: '800', color: '#0f172a', margin: 0 }}>My Progress</h1>
-              <p style={{ fontSize: '13px', color: '#64748b', margin: 0 }}>
-                {resolvedAthleteName ? `Athlete: ${resolvedAthleteName}` : 'Personal Performance Analytics'}
-              </p>
-            </div>
-          </div>
-        </div>
+    <div style={{ fontFamily: '"Roboto Flex", system-ui, -apple-system, sans-serif', backgroundColor: '#f8fafc', minHeight: '100vh', padding: '20px', maxWidth: '800px', margin: '0 auto', paddingBottom: '100px' }}>
+      {/* Standard App Header */}
+      <div style={{ display: 'flex', alignItems: 'center', marginBottom: '20px' }}>
+        <button
+          onClick={() => navigate(-1)}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#008ed3', display: 'flex', marginRight: '12px', padding: 0 }}
+          title="Back"
+        >
+          <ArrowLeft size={28} />
+        </button>
+        <h1 style={{ fontSize: '24px', fontWeight: '700', color: '#0f172a', margin: 0 }}>My Progress</h1>
       </div>
 
-      <div style={{ maxWidth: '800px', margin: '0 auto', padding: '16px 20px' }}>
-        {/* Navigation Tabs */}
+      {/* Navigation Tabs */}
         <div style={{ display: 'flex', gap: '8px', background: '#e2e8f0', padding: '4px', borderRadius: '10px', marginBottom: '20px' }}>
           {hasWellnessPod && (
             <button
@@ -631,10 +621,8 @@ export default function MyProgress() {
             )}
           </div>
         )}
-      </div>
 
       <HelpButton pageName="My Progress" position="bottom-right" />
     </div>
   );
 }
-
