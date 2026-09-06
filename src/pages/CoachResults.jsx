@@ -144,7 +144,10 @@ export default function CoachResults() {
       let athleteList = [];
       if (rawAthletes.length > 1) {
       const headers = rawAthletes[0];
-      const nameIdx = headers.findIndex(h => ['name', 'athlete'].includes(String(h).toLowerCase()));
+      const nameIdx = headers.findIndex(h => {
+        const s = String(h).toLowerCase();
+        return s.includes('name') || s.includes('athlete');
+      });
       const nameCol = nameIdx > -1 ? nameIdx : 0; 
 
       athleteList = rawAthletes.slice(1).map(row => {
@@ -222,12 +225,23 @@ export default function CoachResults() {
       parsedLogs.forEach(l => { if (!logsByAthlete[l.athlete]) logsByAthlete[l.athlete] = []; logsByAthlete[l.athlete].push(l); });
       Object.values(logsByAthlete).forEach(arr => arr.sort((a,b) => a.rawDate - b.rawDate));
 
+      // Find column indices dynamically
+      const headers = rawAthletes[0] || [];
+      const nameIdx = headers.findIndex(h => {
+        const s = String(h).toLowerCase();
+        return s.includes('name') || s.includes('athlete');
+      });
+      const podsIdx = headers.findIndex(h => String(h).toLowerCase().includes('pod'));
+      
+      const nameCol = nameIdx > -1 ? nameIdx : 0;
+      const podsCol = podsIdx > -1 ? podsIdx : 11;
+
       const roster = [];
       for (let i = 1; i < rawAthletes.length; i++) {
         const row = rawAthletes[i];
         if (!row) continue;
-        const name = String(row[0] || '').trim();
-        const pods = String(row[11] || '').toLowerCase();
+        const name = String(row[nameCol] || '').trim();
+        const pods = String(row[podsCol] || '').toLowerCase();
         
         if (name && pods.includes('wellness')) {
           const athLogs = logsByAthlete[name] || [];
