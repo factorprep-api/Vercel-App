@@ -143,14 +143,17 @@ export default function CoachResults() {
       const rawAthletes = athRes.athletes || [];
       let athleteList = [];
       if (rawAthletes.length > 1) {
-        const headers = rawAthletes[0];
-        const nameIdx = headers.findIndex(h => String(h).toLowerCase() === 'name');
-        athleteList = rawAthletes.slice(1).map(row => {
-          if (!row) return null;
-          const obj = {}; headers.forEach((h, i) => { obj[h] = row[i]; });
-          obj.name = nameIdx > -1 ? String(row[nameIdx]).trim() : '';
-          return obj;
-        }).filter(a => a && a.name); 
+      const headers = rawAthletes[0];
+      const nameIdx = headers.findIndex(h => ['name', 'athlete'].includes(String(h).toLowerCase()));
+      const nameCol = nameIdx > -1 ? nameIdx : 0; 
+
+      athleteList = rawAthletes.slice(1).map(row => {
+      if (!row) return null;
+      const obj = {}; 
+      headers.forEach((h, i) => { obj[h] = row[i]; });
+      obj.name = String(row[nameCol] || '').trim(); // Reliable grab
+      return obj;
+      }).filter(a => a && a.name);
       }
 
       const maxesByName = {};

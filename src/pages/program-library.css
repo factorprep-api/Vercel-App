@@ -6,7 +6,6 @@
 .pl-status { padding: 6px 12px; border-radius: 12px; font-size: 11px; font-weight: bold; }
 .pl-status.loading { background: #d3ca17; color: #111; }
 .pl-status.ready { background: #28a745; color: white; }
-.pl-status.error { background: #dc3545; color: white; }
 .pl-search-wrapper { position: relative; margin-bottom: 20px; }
 .pl-search-icon { position: absolute; left: 16px; top: 50%; transform: translateY(-50%); color: #999; pointer-events: none; }
 .pl-search-box { width: 100%; padding: 14px 20px 14px 48px; border-radius: 8px; border: 1px solid #ccc; font-size: 16px; outline: none; transition: border-color 0.2s; }
