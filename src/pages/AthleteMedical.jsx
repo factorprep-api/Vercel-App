@@ -12,6 +12,13 @@ const BODY_PARTS = [
   'Left Knee', 'Right Knee', 'Left Calf / Shin', 'Right Calf / Shin', 'Left Ankle / Foot', 'Right Ankle / Foot', 'General Illness / Other'
 ];
 
+const GRADE_INFO = {
+  0: { label: 'Grade 0', desc: 'Trivial — niggle, no restriction', color: '#16a34a' },
+  1: { label: 'Grade 1', desc: 'Mild — minor limitation', color: '#eab308' },
+  2: { label: 'Grade 2', desc: 'Moderate — clearly restricted', color: '#f97316' },
+  3: { label: 'Grade 3', desc: 'Severe — cannot continue', color: '#dc2626' }
+};
+
 export default function AthleteMedical() {
   const { userEmail, athleteName } = useAuth();
   const navigate = useNavigate();
@@ -22,8 +29,9 @@ export default function AthleteMedical() {
 
   const [selectedPart, setSelectedPart] = useState('');
   const [showModal, setShowModal] = useState(false);
-  
+
   const [pain, setPain] = useState(5);
+  const [grade, setGrade] = useState(1);
   const [mechanism, setMechanism] = useState('Non-Contact');
   const [status, setStatus] = useState('Modified Training');
   const [notes, setNotes] = useState('');
@@ -50,11 +58,11 @@ export default function AthleteMedical() {
   }
 
   const handleSelectPart = (part) => {
-    setSelectedPart(part); setPain(5); setMechanism('Non-Contact'); setStatus('Modified Training'); setNotes(''); setShowModal(true);
+    setSelectedPart(part); setPain(5); setGrade(1); setMechanism('Non-Contact'); setStatus('Modified Training'); setNotes(''); setShowModal(true);
   };
 
   const handleUpdateExisting = (part) => {
-    setSelectedPart(part); setPain(0); setMechanism('Treatment Update'); setStatus('Fully Fit (Cleared)'); setNotes(''); setShowModal(true);
+    setSelectedPart(part); setPain(0); setGrade(0); setMechanism('Treatment Update'); setStatus('Fully Fit (Cleared)'); setNotes(''); setShowModal(true);
   };
 
   async function handleSave() {
@@ -64,7 +72,8 @@ export default function AthleteMedical() {
 
     const payload = {
       email: userEmail, athlete: nameToSave, bodyPart: selectedPart, pain: parseInt(pain), mechanism: mechanism,
-      trainingStatus: status, notes: notes, isResolved: isResolved
+      trainingStatus: status, notes: notes, isResolved: isResolved,
+      injuryGrade: parseInt(grade)
     };
 
     try {
@@ -124,6 +133,10 @@ export default function AthleteMedical() {
         .pill-btn { padding: 10px 16px; border-radius: 99px; border: 1px solid #cbd5e1; background: #fff; color: #475569; font-weight: 600; font-size: 13px; cursor: pointer; transition: 0.2s; }
         .pill-btn.active { background: #dc2626; color: white; border-color: #dc2626; }
         .pill-btn.active-green { background: #16a34a; color: white; border-color: #16a34a; }
+
+        .grade-pill-btn { padding: 14px 0; flex: 1; border-radius: 12px; border: 2px solid #e2e8f0; background: #fff; cursor: pointer; text-align: center; transition: 0.2s; }
+        .grade-pill-btn .g-num { display: block; font-size: 20px; font-weight: 900; }
+        .grade-pill-btn .g-desc { display: block; font-size: 10px; font-weight: 600; color: #94a3b8; margin-top: 2px; }
         
         .notes-input { width: 100%; padding: 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 14px; font-family: inherit; resize: vertical; min-height: 80px; }
         .notes-input:focus { outline: none; border-color: #dc2626; }
@@ -153,14 +166,21 @@ export default function AthleteMedical() {
       ) : (
         <div>
           {loadingHistory ? <p style={{ textAlign: 'center', color: '#64748b' }}>Loading clinical file...</p> : medicalHistory.length === 0 ? <p style={{ textAlign: 'center', color: '#64748b' }}>No medical history recorded.</p> : (
-            medicalHistory.map((log, i) => (
+            medicalHistory.map((log, i) => {
+              const logGrade = (log[10] !== '' && log[10] !== null && log[10] !== undefined) ? Number(log[10]) : null;
+              const gInfo = logGrade !== null ? GRADE_INFO[logGrade] : null;
+              return (
               <div key={i} className="hist-card">
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                  <h3 style={{ margin: 0, fontSize: '16px', color: '#0f172a' }}>{log[3]}</h3>
+                  <h3 style={{ margin: 0, fontSize: '16px', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    {gInfo && <span title={`Injury Grade ${logGrade}`} style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: gInfo.color, display: 'inline-block' }}></span>}
+                    {log[3]}
+                  </h3>
                   <span style={{ fontSize: '12px', color: '#64748b' }}>{new Date(log[0]).toLocaleDateString()}</span>
                 </div>
                 <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' }}>
                   <span style={{ fontSize: '12px', fontWeight: '700', padding: '4px 8px', borderRadius: '4px', background: '#fef2f2', color: '#dc2626' }}>Pain: {log[4]}/10</span>
+                  {gInfo && <span style={{ fontSize: '12px', fontWeight: '700', padding: '4px 8px', borderRadius: '4px', background: gInfo.color + '20', color: gInfo.color }}>{gInfo.label}</span>}
                   <span style={{ fontSize: '12px', fontWeight: '700', padding: '4px 8px', borderRadius: '4px', background: '#f1f5f9', color: '#475569' }}>{log[6]}</span>
                 </div>
                 {log[7] && <p style={{ fontSize: '13px', color: '#475569', margin: '0 0 12px 0', padding: '8px', background: '#f8fafc', borderRadius: '6px' }}>"{log[7]}"</p>}
@@ -169,7 +189,8 @@ export default function AthleteMedical() {
                   Add Treatment / Update Status
                 </button>
               </div>
-            ))
+              );
+            })
           )}
         </div>
       )}
@@ -191,7 +212,34 @@ export default function AthleteMedical() {
               </div>
 
               <div className="form-group">
-                <label className="form-label">2. Mechanism / Action</label>
+                <label className="form-label">2. Injury Grade</label>
+                <div className="pill-group" style={{ display: 'flex', gap: '8px' }}>
+                  {[0, 1, 2, 3].map(g => {
+                    const info = GRADE_INFO[g];
+                    const isSelected = Number(grade) === g;
+                    return (
+                      <button
+                        key={g}
+                        type="button"
+                        className="grade-pill-btn"
+                        onClick={() => setGrade(g)}
+                        style={{
+                          borderColor: isSelected ? info.color : '#e2e8f0',
+                          backgroundColor: isSelected ? info.color + '15' : '#fff',
+                          boxShadow: isSelected ? `0 0 0 2px ${info.color}40` : 'none'
+                        }}
+                      >
+                        <span className="g-num" style={{ color: isSelected ? info.color : '#64748b' }}>{g}</span>
+                        <span className="g-desc">{info.desc.split(' — ')[0]}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <p style={{ fontSize: '12px', color: '#94a3b8', margin: '6px 0 0 0' }}>{GRADE_INFO[Number(grade)].desc} — this grade is shown on your training schedule.</p>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">3. Mechanism / Action</label>
                 <div className="pill-group">
                   {['Contact', 'Non-Contact', 'Gradual / Overuse', 'Illness', 'Treatment Update'].map(mech => (
                     <button key={mech} type="button" className={`pill-btn ${mechanism === mech ? 'active' : ''}`} onClick={() => setMechanism(mech)}>{mech}</button>
@@ -200,7 +248,7 @@ export default function AthleteMedical() {
               </div>
 
               <div className="form-group">
-                <label className="form-label">3. Current Training Status</label>
+                <label className="form-label">4. Current Training Status</label>
                 <div className="pill-group">
                   {['Full Training', 'Modified Training', 'Cannot Train', 'Fully Fit (Cleared)'].map(stat => (
                     <button key={stat} type="button" className={`pill-btn ${status === stat ? (stat === 'Fully Fit (Cleared)' ? 'active-green' : 'active') : ''}`} onClick={() => setStatus(stat)}>{stat}</button>

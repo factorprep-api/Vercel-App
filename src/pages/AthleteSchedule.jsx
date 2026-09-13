@@ -1,10 +1,41 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Save, Calendar, Clock, Activity, CheckCircle, BarChart2, AlertTriangle, AlertCircle, Check, X } from 'lucide-react';
+import { ArrowLeft, Save, Calendar, Clock, Activity, CheckCircle, BarChart2, AlertTriangle, AlertCircle, Check, X, CalendarDays, List } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
-import { saveScheduleSession, fetchSchedule, fetchAllData, getAthleteByEmail } from '../api';
+import { saveScheduleSession, fetchSchedule, fetchAllData, getAthleteByEmail, fetchMedicalLogs } from '../api';
+
+// ===== TRAINING WEEK HELPERS (Weeks start Monday) =====
+function getWeekMonday(date) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  return d;
+}
+
+function getWeekColor(monday) {
+  // Weeks alternate through 4 colors — color changes every Monday, cycle repeats roughly monthly
+  const WEEK_COLORS = ['#008ed3', '#8b5cf6', '#f59e0b', '#10b981'];
+  const weekIndex = Math.floor(getWeekMonday(monday).getTime() / (7 * 86400000));
+  return WEEK_COLORS[((weekIndex % 4) + 4) % 4];
+}
+
+// ===== SESSION TYPE COLOR CODING =====
+const TYPE_COLORS = {
+  'Field Session': '#10b981',
+  'Competition': '#dc2626',
+  'Conditioning': '#f59e0b',
+  'Rehabilitation': '#8b5cf6',
+  'Recovery': '#06b6d4',
+  'Speed / Agility': '#3b82f6',
+  'Prehabilitation': '#ec4899',
+  'Other': '#64748b'
+};
+
+function getTypeColor(type) {
+  return TYPE_COLORS[String(type || '').trim()] || '#64748b';
+}
 
 export default function AthleteSchedule() {
   const { userEmail, athleteName } = useAuth();
@@ -12,10 +43,14 @@ export default function AthleteSchedule() {
 
   const [activeTab, setActiveTab] = useState('log'); // 'log' or 'analytics'
   const [activePods, setActivePods] = useState([]);
-  
+
   const [completedSessions, setCompletedSessions] = useState([]);
   const [proposedSessions, setProposedSessions] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [medicalInjuries, setMedicalInjuries] = useState([]); // Medical Vault entries for injury dots
+
+  // Agenda / Calendar view toggle
+  const [viewMode, setViewMode] = useState('agenda'); // 'agenda' | 'calendar'
 
   // Manual Log State
   const [showManualLog, setShowManualLog] = useState(false);
@@ -42,22 +77,44 @@ export default function AthleteSchedule() {
     setLoadingHistory(true);
     setError(null);
     try {
-      // 1. Check if they have the Medical Pod
-      const [athRes, allDataRes, res] = await Promise.all([
+      // 1. Check pods + load schedule + load medical vault (for injury dots)
+      const [athRes, allDataRes, res, medRes] = await Promise.all([
         getAthleteByEmail(userEmail).catch(() => ({ status: 'Error' })),
         fetchAllData().catch(() => ({ athletes: [] })),
-        fetchSchedule().catch(() => ({ data: [] }))
+        fetchSchedule().catch(() => ({ data: [] })),
+        fetchMedicalLogs().catch(() => ({ data: [] }))
       ]);
 
       const nameToMatch = athRes.status === 'Success' ? (athRes.athleteName || athRes.name || athleteName || userEmail.split('@')[0]) : (athleteName || userEmail.split('@')[0]);
-      
+
       const athletes = allDataRes.athletes || [];
       let userRow = athletes.find(r => String(r[0] || '').trim().toLowerCase() === nameToMatch.toLowerCase() || String(r[9] || '').trim().toLowerCase() === userEmail.toLowerCase());
       if (userRow) {
         setActivePods(String(userRow[11] || '').toLowerCase().split(',').map(s => s.trim()).filter(Boolean));
       }
 
-      // 2. Load Schedule Data (12 Columns)
+      // 2. Parse Medical Vault entries for this athlete (used for injury dot grading)
+      const medData = medRes.data || [];
+      const myInjuries = [];
+      if (medData.length > 1) {
+        medData.slice(1).forEach(m => {
+          if (!m || !m[0]) return;
+          const mName = String(m[2] || '').trim().toLowerCase();
+          if (mName !== nameToMatch.toLowerCase()) return;
+          let md = new Date(m[0]);
+          if (isNaN(md.getTime())) return;
+                const rawGrade = (m[10] === '' || m[10] === null || m[10] === undefined) ? null : Number(m[10]);
+          myInjuries.push({
+            rawDate: md,
+            grade: (rawGrade === null || isNaN(rawGrade)) ? null : Math.min(3, Math.max(0, rawGrade)),
+            bodyPart: String(m[3] || '').trim(),
+            status: String(m[6] || '').trim()
+          });
+        });
+      }
+      setMedicalInjuries(myInjuries);
+
+      // 3. Load Schedule Data (12 Columns)
       const logs = res.data || [];
       if (logs.length > 1) {
         const myLogs = [];
@@ -132,6 +189,38 @@ export default function AthleteSchedule() {
 
   const hasMedicalPod = activePods.includes('medical');
 
+   // ===== INJURY DOT GRADER =====
+  // Matches Medical Vault entries within ±24h of a session.
+  // Grade colors: 0 = green, 1 = yellow, 2 = orange, 3 = red. No grade = no dot.
+  // Sessions flagged as injuries through the schedule itself (no medical entry) fall back to red.
+  const GRADE_COLORS = { 0: '#16a34a', 1: '#eab308', 2: '#f97316', 3: '#dc2626' };
+
+  function getInjuryMarker(session) {
+    const match = medicalInjuries.find(m => Math.abs(m.rawDate - session.rawDate) < 86400000 && m.grade !== null);
+    if (match) {
+      return { color: GRADE_COLORS[match.grade], grade: match.grade, bodyPart: match.bodyPart };
+    }
+    if (session.status === 'Injury') {
+      return { color: '#dc2626', grade: null, bodyPart: null }; // flagged but ungraded fallback
+    }
+    return null;
+  }
+
+  // ===== LOAD CARDS =====
+  // Rolling last 7 days, regardless of where we are in the week
+  const rolling7DayLoad = useMemo(() => {
+    if (completedSessions.length === 0) return 0;
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    return completedSessions.filter(s => s.rawDate >= sevenDaysAgo).reduce((sum, s) => sum + s.actualLoad, 0);
+  }, [completedSessions]);
+
+  // Current training week (Monday start) — accumulates day by day, resets Monday
+  const weekToDateLoad = useMemo(() => {
+    const monday = getWeekMonday(new Date());
+    return completedSessions.filter(s => s.rawDate >= monday).reduce((sum, s) => sum + s.actualLoad, 0);
+  }, [completedSessions]);
+
   async function handleSaveManual() {
     setSaving(true); setError(null);
     const nameToSave = athleteName || userEmail.split('@')[0];
@@ -160,7 +249,7 @@ export default function AthleteSchedule() {
     }
     setSaving(true); setError(null);
     const nameToSave = athleteName || userEmail.split('@')[0];
-    
+
     let finalMins = selectedProposed.proposedMins;
     let finalRpe = selectedProposed.proposedRpe;
     let auditNotePrefix = '';
@@ -205,11 +294,24 @@ export default function AthleteSchedule() {
     return Object.values(dailyMap).slice(-14);
   }, [completedSessions]);
 
-  const totalWeeklyLoad = useMemo(() => {
-    if (completedSessions.length === 0) return 0;
-    const oneWeekAgo = new Date();
-    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-    return completedSessions.filter(s => s.rawDate >= oneWeekAgo).reduce((sum, s) => sum + s.actualLoad, 0);
+  // Group recent sessions by training week (Monday start), newest week first
+  const weekGroups = useMemo(() => {
+    const recent = [...completedSessions].reverse();
+    const groups = [];
+    let lastMondayTime = null;
+    recent.forEach(s => {
+      const mondayTime = getWeekMonday(s.rawDate).getTime();
+      if (mondayTime !== lastMondayTime) {
+        groups.push({ monday: new Date(mondayTime), sessions: [] });
+        lastMondayTime = mondayTime;
+      }
+      groups[groups.length - 1].sessions.push(s);
+    });
+    groups.forEach(g => {
+      g.totalLoad = g.sessions.reduce((sum, s) => sum + s.actualLoad, 0);
+      g.color = getWeekColor(g.monday);
+    });
+    return groups;
   }, [completedSessions]);
 
   if (saveSuccess) {
@@ -221,6 +323,21 @@ export default function AthleteSchedule() {
       </div>
     );
   }
+
+  // Render the small session card used in calendar view cells
+  const renderCalendarMiniCard = (s, i) => {
+    const tColor = getTypeColor(s.type);
+    const injury = getInjuryMarker(s);
+    return (
+      <div key={i} style={{ background: '#f8fafc', border: `1px solid ${tColor}55`, borderLeft: `3px solid ${tColor}`, borderRadius: '6px', padding: '6px', marginBottom: '4px' }}>
+        <div style={{ fontSize: '10px', fontWeight: 800, color: tColor, display: 'flex', alignItems: 'center', gap: '4px', lineHeight: 1.2 }}>
+          {injury && <span title={injury.bodyPart ? `Injury${injury.grade !== null ? ` (Grade ${injury.grade})` : ''}: ${injury.bodyPart}` : 'Injury logged'} style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: injury.color, flexShrink: 0, boxShadow: `0 0 0 1.5px #fff` }}></span>}
+        </div>
+        <div style={{ fontSize: '10px', color: '#475569', fontWeight: 700, marginTop: '2px' }}>{s.actualMins}m @ RPE {s.actualRpe}</div>
+        <div style={{ fontSize: '10px', color: '#008ed3', fontWeight: 800 }}>{s.actualLoad} AU</div>
+      </div>
+    );
+  };
 
   return (
     <div className="as-container">
@@ -249,6 +366,15 @@ export default function AthleteSchedule() {
         .audit-btn.green { border-color: #16a34a; background: #f0fdf4; color: #15803d; }
         .audit-btn.orange { border-color: #f59e0b; background: #fffbeb; color: #b45309; }
         .audit-btn.red { border-color: #dc2626; background: #fef2f2; color: #b91c1c; }
+
+        .week-group-header { display: flex; justify-content: space-between; align-items: center; margin: 20px 0 8px 0; }
+        .view-toggle-btn { display: flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 8px; border: 1px solid #008ed3; background: #fff; color: #008ed3; font-size: 12px; font-weight: 700; cursor: pointer; }
+        .cal-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+        .cal-grid { display: grid; grid-template-columns: repeat(7, minmax(88px, 1fr)); min-width: 620px; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; background: #fff; }
+        .cal-cell { border-right: 1px solid #f1f5f9; border-bottom: 1px solid #f1f5f9; min-height: 72px; padding: 4px; }
+        .cal-cell:nth-child(7n) { border-right: none; }
+        .cal-day-label { font-size: 9px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; padding: 4px 4px 2px; }
+        .cal-day-num { font-size: 12px; font-weight: 800; color: #0f172a; padding: 0 4px 4px; }
       `}</style>
 
       <div className="as-header">
@@ -402,10 +528,17 @@ export default function AthleteSchedule() {
 
       {activeTab === 'analytics' && (
         <>
+          {/* ===== TWO LOAD CARDS: Rolling 7-Day + Current Training Week (Monday start) ===== */}
           <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
             <div style={{ flex: 1, backgroundColor: '#fff', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', textAlign: 'center' }}>
-              <div style={{ fontSize: '12px', fontWeight: '700', color: '#64748b', textTransform: 'uppercase' }}>7-Day Total Load</div>
-              <div style={{ fontSize: '28px', fontWeight: '900', color: '#008ed3' }}>{totalWeeklyLoad} <span style={{ fontSize: '14px', color: '#94a3b8' }}>AU</span></div>
+              <div style={{ fontSize: '12px', fontWeight: '700', color: '#64748b', textTransform: 'uppercase' }}>Last 7 Days</div>
+              <div style={{ fontSize: '28px', fontWeight: '900', color: '#008ed3' }}>{rolling7DayLoad} <span style={{ fontSize: '14px', color: '#94a3b8' }}>AU</span></div>
+              <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: '600' }}>Rolling, any day of the week</div>
+            </div>
+            <div style={{ flex: 1, backgroundColor: '#fff', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', textAlign: 'center' }}>
+              <div style={{ fontSize: '12px', fontWeight: '700', color: '#64748b', textTransform: 'uppercase' }}>This Training Week</div>
+              <div style={{ fontSize: '28px', fontWeight: '900', color: '#008ed3' }}>{weekToDateLoad} <span style={{ fontSize: '14px', color: '#94a3b8' }}>AU</span></div>
+              <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: '600' }}>Since Monday — accumulates daily</div>
             </div>
           </div>
 
@@ -426,29 +559,118 @@ export default function AthleteSchedule() {
             </div>
           </div>
 
-          <h3 style={{ margin: '0 0 12px 0', fontSize: '18px', color: '#0f172a' }}>Recent Sessions</h3>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {completedSessions.length === 0 ? <p style={{ color: '#64748b', textAlign: 'center' }}>No sessions logged.</p> : 
-              [...completedSessions].reverse().slice(0, 10).map((s, i) => {
-                let statusColor = '#16a34a'; let StatusIcon = Check;
-                if (s.status === 'Modified') { statusColor = '#f59e0b'; StatusIcon = AlertTriangle; }
-                if (s.status === 'Injury') { statusColor = '#dc2626'; StatusIcon = AlertCircle; }
-                
-                return (
-                  <div key={i} style={{ padding: '12px 16px', background: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      <div style={{ fontWeight: '700', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        {s.type}
-                        {s.proposedLoad > 0 && <StatusIcon size={14} color={statusColor} title={`Status: ${s.status}`} />}
-                      </div>
-                      <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>{s.dateStr} • {s.actualMins}m @ RPE {s.actualRpe}</div>
+          {/* ===== RECENT SESSIONS: AGENDA / CALENDAR TOGGLE ===== */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '24px 0 12px 0' }}>
+            <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a' }}>Recent Sessions</h3>
+            <button className="view-toggle-btn" onClick={() => setViewMode(viewMode === 'agenda' ? 'calendar' : 'agenda')}>
+              {viewMode === 'agenda' ? <><CalendarDays size={14} /> Calendar View</> : <><List size={14} /> Agenda View</>}
+            </button>
+          </div>
+
+          {completedSessions.length === 0 ? (
+            <p style={{ color: '#64748b', textAlign: 'center' }}>No sessions logged.</p>
+          ) : viewMode === 'agenda' ? (
+            /* ===== AGENDA VIEW — sessions grouped by training week (Monday start), color-coded ===== */
+            weekGroups.map((group, gi) => {
+              const currentMonday = getWeekMonday(new Date());
+              const isThisWeek = group.monday.getTime() === currentMonday.getTime();
+              return (
+                <div key={gi}>
+                  {/* Week header: colored to match the cards below */}
+                  <div className="week-group-header">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ display: 'inline-block', width: '18px', height: '4px', borderRadius: '2px', backgroundColor: group.color }}></span>
+                      <span style={{ fontSize: '12px', fontWeight: 800, color: group.color, textTransform: 'uppercase' }}>
+                        {isThisWeek ? 'This Week' : `Week of ${group.monday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`}
+                      </span>
                     </div>
-                    <div style={{ fontWeight: '900', color: '#008ed3' }}>{s.actualLoad} AU</div>
+                    <span style={{ fontSize: '12px', fontWeight: 700, color: '#94a3b8' }}>{group.totalLoad} AU total</span>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {group.sessions.map((s, i) => {
+                      const tColor = getTypeColor(s.type);
+                      const injury = getInjuryMarker(s);
+                      let statusColor = '#16a34a'; let StatusIcon = Check;
+                      if (s.status === 'Modified') { statusColor = '#f59e0b'; StatusIcon = AlertTriangle; }
+                      if (s.status === 'Injury') { statusColor = '#dc2626'; StatusIcon = AlertCircle; }
+
+                      return (
+                        <div key={i} style={{ padding: '12px 16px', background: '#fff', border: '1px solid #e2e8f0', borderLeft: `4px solid ${group.color}`, borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div>
+                            <div style={{ fontWeight: '700', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              {/* Injury dot — graded by Medical Vault pain level */}
+                                 {injury && <span title={injury.bodyPart ? `Injury${injury.grade !== null ? ` (Grade ${injury.grade})` : ''}: ${injury.bodyPart}` : 'Injury logged'} style={{ width: '9px', height: '9px', borderRadius: '50%', backgroundColor: injury.color, flexShrink: 0, boxShadow: '0 0 0 1.5px #fff' }}></span>}
+                              {s.status !== 'Actual' && <StatusIcon size={14} color={statusColor} title={`Status: ${s.status}`} />}
+                            </div>
+                            <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>{s.dateStr} • {s.actualMins}m @ RPE {s.actualRpe}</div>
+                          </div>
+                          <div style={{ fontWeight: '900', color: '#008ed3' }}>{s.actualLoad} AU</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })
+          ) : (
+            /* ===== CALENDAR VIEW — weeks as Mon–Sun grids, oldest at top, current week at bottom ===== */
+            (() => {
+              const sorted = [...completedSessions].sort((a, b) => a.rawDate - b.rawDate);
+              const currentMonday = getWeekMonday(new Date());
+              const earliestMonday = getWeekMonday(sorted[0].rawDate);
+              const mondays = [];
+              let cursor = new Date(currentMonday);
+              while (cursor >= earliestMonday && mondays.length < 6) {
+                mondays.unshift(new Date(cursor));
+                cursor = new Date(cursor);
+                cursor.setDate(cursor.getDate() - 7);
+              }
+              const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+              return mondays.map((monday, wi) => {
+                const weekEnd = new Date(monday); weekEnd.setDate(monday.getDate() + 7);
+                const sessionsInWeek = sorted.filter(s => s.rawDate >= monday && s.rawDate < weekEnd);
+                const weekColor = getWeekColor(monday);
+                const isThisWeek = monday.getTime() === currentMonday.getTime();
+                const weekLoad = sessionsInWeek.reduce((sum, s) => sum + s.actualLoad, 0);
+                const today = new Date(); today.setHours(0, 0, 0, 0);
+
+                return (
+                  <div key={wi} style={{ marginBottom: '20px' }}>
+                    <div className="week-group-header">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ display: 'inline-block', width: '18px', height: '4px', borderRadius: '2px', backgroundColor: weekColor }}></span>
+                        <span style={{ fontSize: '12px', fontWeight: 800, color: weekColor, textTransform: 'uppercase' }}>
+                          {isThisWeek ? 'This Week' : `Week of ${monday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`}
+                        </span>
+                      </div>
+                      <span style={{ fontSize: '12px', fontWeight: 700, color: '#94a3b8' }}>{weekLoad} AU total</span>
+                    </div>
+
+                    <div className="cal-scroll">
+                      <div className="cal-grid">
+                        {Array.from({ length: 7 }).map((_, dayIdx) => {
+                          const dayStart = new Date(monday); dayStart.setDate(monday.getDate() + dayIdx);
+                          const dayEnd = new Date(dayStart); dayEnd.setDate(dayStart.getDate() + 1);
+                          const daySessions = sessionsInWeek.filter(s => s.rawDate >= dayStart && s.rawDate < dayEnd);
+                          const isToday = dayStart.getTime() === today.getTime();
+
+                          return (
+                            <div key={dayIdx} className="cal-cell" style={{ background: isToday ? '#eff6ff' : '#fff' }}>
+                              <div className="cal-day-label" style={{ color: isToday ? '#008ed3' : '#64748b' }}>{dayLabels[dayIdx]}</div>
+                              <div className="cal-day-num" style={{ color: isToday ? '#008ed3' : '#0f172a' }}>{dayStart.getDate()}</div>
+                              {daySessions.map((s, si) => renderCalendarMiniCard(s, si))}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
                   </div>
                 );
-              })
-            }
-          </div>
+              });
+            })()
+          )}
         </>
       )}
 

@@ -712,7 +712,7 @@ function doGet(e) {
   if (action === "saveMedical") {
     var sheet = sheetApp.getSheetByName("Medical_Vault");
     if (!sheet) return jsonResponse({ status: "Error", message: "Medical_Vault sheet not found" });
-    var dataObj = parsePayload(e);
+       var dataObj = parsePayload(e);
     sheet.appendRow([
       new Date().toISOString(),
       dataObj.email || "",
@@ -723,7 +723,8 @@ function doGet(e) {
       dataObj.trainingStatus || "",
       dataObj.notes || "",
       dataObj.isResolved || "No",
-      ""
+      "",
+      dataObj.injuryGrade !== undefined && dataObj.injuryGrade !== "" ? dataObj.injuryGrade : ""
     ]);
     return jsonResponse({ status: "Success" });
   }
