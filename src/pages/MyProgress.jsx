@@ -4,12 +4,12 @@ import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
 import {
   fetchAllData,
-  fetchAthletes,
   fetchLogbookByAthlete,
   getAthleteByEmail,
   fetchWellnessLogs,
   fetchLibrary,
-  getMediaType
+  getMediaType,
+  updateLogbookEntry
 } from '../api';
 import {
   ArrowLeft,
@@ -23,7 +23,9 @@ import {
   Moon,
   Utensils,
   Video,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Pencil,
+  X
 } from 'lucide-react';
 import {
   LineChart,
@@ -70,21 +72,17 @@ function extractMediaUrl(rawVid) {
   return '';
 }
 
-// ===== HELPER FUNCTION FOR METRIC CLASSIFICATION (A1 Fix) =====
+// ===== HELPER FUNCTION FOR METRIC CLASSIFICATION =====
 function classifyMetricValue(value) {
-  // Classifies a raw logbook value string to determine its type
-  // Returns { type: 'reps' | 'time' | 'distance', value, label }
   if (!value || value === '0' || value === '') return null;
-  
+
   const trimmed = String(value).trim();
-  
-  // Check for distance (m/km suffix)
+
   const distMatch = trimmed.match(/^(\d+(?:\.\d+)?)\s*(m|km)$/i);
   if (distMatch) {
     return { type: 'distance', value: trimmed, label: 'Distance' };
   }
-  
-  // Check for time (seconds format with 's' suffix or mm:ss)
+
   const secMatch = trimmed.match(/^(\d+(?:\.\d+)?)\s*s$/i);
   if (secMatch) {
     return { type: 'time', value: trimmed, label: 'Time' };
@@ -93,18 +91,31 @@ function classifyMetricValue(value) {
   if (timeMatch) {
     return { type: 'time', value: trimmed, label: 'Time' };
   }
-  
-  // Otherwise treat as plain number (could be reps or weight)
+
   const numVal = parseFloat(trimmed);
   if (!isNaN(numVal)) {
     return { type: 'reps', value: trimmed, label: 'Reps' };
   }
-  
+
   return null;
 }
 
+const editButtonStyle = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: '4px',
+  padding: '3px 8px',
+  borderRadius: '5px',
+  border: '1px solid #cbd5e1',
+  background: '#ffffff',
+  color: '#64748b',
+  fontSize: '11px',
+  fontWeight: '700',
+  cursor: 'pointer'
+};
+
 export default function MyProgress() {
-  const { userEmail, athleteName: authAthleteName } = useAuth();
+  const { userEmail, athleteName: authAthleteName, role: userRole } = useAuth();
   const navigate = useNavigate();
   const loadedRef = useRef(false);
 
@@ -122,7 +133,7 @@ export default function MyProgress() {
 
   // Active Tab: 'wellness' | 'maxes' | 'history'
   const [activeTab, setActiveTab] = useState(() => (hasWellnessPod ? 'wellness' : 'maxes'));
-  const [selectedMetric, setSelectedMetric] = useState('Grip'); // 'Grip' | 'Feeling' | 'Soreness' | 'Sleep' | 'Nutrition'
+  const [selectedMetric, setSelectedMetric] = useState('Grip');
 
   // Data states
   const [loading, setLoading] = useState(true);
@@ -137,6 +148,12 @@ export default function MyProgress() {
   const [exerciseFilter, setExerciseFilter] = useState('All');
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const [expandedMediaMap, setExpandedMediaMap] = useState({});
+
+  // ===== STEP B: EDIT STATE =====
+  const [editingSet, setEditingSet] = useState(null); // { exerciseName, setNumber, field, currentValue, metricLabel }
+  const [editValueInput, setEditValueInput] = useState('');
+  const [editSaving, setEditSaving] = useState(false);
+  const [editMessage, setEditMessage] = useState(null);
 
   // Sync tab if user does not have wellness pod
   useEffect(() => {
@@ -372,11 +389,10 @@ export default function MyProgress() {
     return lookup;
   }, [programsData]);
 
-  // ===== STEP A: PROGRAM-JOIN RECONSTRUCTION (A3/A4 + Graceful Fallback) =====
+  // ===== PROGRAM-JOIN RECONSTRUCTION (Step A) =====
   const sessionSections = useMemo(() => {
     if (!selectedSession) return [];
 
-    // Attempt to find the program definition
     const programDefinitionRows = programsData.slice(1).filter(
       r => String(r[0] || '').trim() === selectedSession.prog
     );
@@ -433,7 +449,6 @@ export default function MyProgress() {
 
       const key = normalizeString(exName);
       if (!exGroups[key]) {
-        // Pull program row details for fidelity markers (tempo, rest, advanced)
         const tempo = String(row[7] || '').trim();
         const rest = String(row[8] || '').trim();
         let advanced = null;
@@ -446,7 +461,6 @@ export default function MyProgress() {
         exGroups[key] = {
           name: exName,
           phase: phase,
-          phaseOrder: phase,
           sets: [],
           mediaUrl: exerciseMediaMap[key] || '',
           libraryRow: libraryData.find(lib => normalizeString(lib[0]) === key) || null,
@@ -477,10 +491,8 @@ export default function MyProgress() {
       }
     });
 
-    // Apply program ordering
     const orderedGroupKeys = Object.keys(exGroups).sort((a, b) => exGroups[a].order - exGroups[b].order);
 
-    // Group exercises into phase sections
     const sections = [
       { title: 'Warm Up', items: [], color: '#fd7e14' },
       { title: 'Work Block', items: [], color: '#22c55e' },
@@ -585,10 +597,86 @@ export default function MyProgress() {
     }));
   };
 
+  // ===== STEP B: EDIT HANDLERS =====
+  const openEditModal = (exerciseName, setNumber, field, currentValue, metricLabel) => {
+    setEditingSet({ exerciseName, setNumber, field, currentValue, metricLabel });
+    setEditValueInput(currentValue === null || currentValue === undefined ? '' : String(currentValue));
+    setEditMessage(null);
+  };
+
+  const closeEditModal = () => {
+    setEditingSet(null);
+    setEditValueInput('');
+    setEditSaving(false);
+    setEditMessage(null);
+  };
+
+  async function handleEditSubmit() {
+    if (!editingSet || !selectedSession) return;
+
+    const trimmedValue = String(editValueInput).trim();
+    if (trimmedValue === '') {
+      setEditMessage('Please enter a value.');
+      return;
+    }
+    if (trimmedValue === String(editingSet.currentValue ?? '')) {
+      setEditMessage('Value unchanged — nothing to update.');
+      return;
+    }
+
+    setEditSaving(true);
+    setEditMessage(null);
+
+    const result = await updateLogbookEntry({
+      athlete: athleteName,
+      sessionDate: selectedSession.date,
+      program: selectedSession.prog,
+      exercise: editingSet.exerciseName,
+      setNumber: editingSet.setNumber,
+      field: editingSet.field,
+      newValue: trimmedValue,
+      editorEmail: userEmail,
+      editorRole: userRole === 'coach' ? 'coach' : 'athlete'
+    });
+
+    setEditSaving(false);
+
+    if (result.status === 'Success') {
+      // Update the local history copy so the screen refreshes instantly (no reload)
+      const historyCopy = history.map(item => ({ ...item }));
+      let matchCount = 0;
+      for (let i = 0; i < historyCopy.length; i++) {
+        const item = historyCopy[i];
+        if (item.date === selectedSession.date &&
+            item.prog === selectedSession.prog &&
+            normalizeString(item.ex) === normalizeString(editingSet.exerciseName)) {
+          matchCount++;
+          if (matchCount === editingSet.setNumber) {
+            if (editingSet.field === 'weight') item.wt = trimmedValue;
+            if (editingSet.field === 'reps') item.reps = trimmedValue;
+            break;
+          }
+        }
+      }
+      setHistory(historyCopy);
+      try {
+        const cached = localStorage.getItem('fp_progress_data');
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          parsed.history = historyCopy;
+          localStorage.setItem('fp_progress_data', JSON.stringify(parsed));
+        }
+      } catch {}
+      closeEditModal();
+    } else {
+      setEditMessage('Update failed: ' + (result.message || 'Unknown error'));
+    }
+  }
+
   return (
     <div className="mp-container">
       <div className="mp-body">
-        
+
         {/* Standard App Header */}
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: '20px' }}>
           <button
@@ -900,20 +988,20 @@ export default function MyProgress() {
 
                             return (
                               <div key={group.name} style={{ marginBottom: '16px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', overflow: 'hidden' }}>
-                                
-                                {/* Exercise Header with Program-Fidelity Markers (A3) */}
+
+                                {/* Exercise Header with Program-Fidelity Markers */}
                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
                                   <h4 style={{ fontSize: '15px', color: '#0f172a', margin: 0, fontWeight: '700', display: 'flex', alignItems: 'center', gap: '6px' }}>
                                     {group.name}
-                                    
+
                                     {/* Superset marker */}
                                     {group.advanced && group.advanced.setType === 'superset' && <span title="Superset">🔗</span>}
-                                    
+
                                     {/* Drop set marker */}
                                     {group.advanced && group.advanced.setType === 'drop' && (
                                       <img src="/drop-set-icon.png" alt="Drop Set 📉" style={{ width: '16px', height: '16px' }} onError={(e) => { e.target.style.display='none'; e.target.insertAdjacentText('afterend', '📉'); }} />
                                     )}
-                                    
+
                                     {/* Unilateral markers */}
                                     {group.advanced && group.advanced.execution === 'uni-both' && (
                                       <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#4f46e5', color: 'white', fontWeight: '800', fontSize: '10px', width: '16px', height: '16px', borderRadius: '50%' }}>U</span>
@@ -925,7 +1013,7 @@ export default function MyProgress() {
                                       <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#4f46e5', color: 'white', fontWeight: '800', fontSize: '10px', width: '16px', height: '16px', borderRadius: '50%' }}>R</span>
                                     )}
                                   </h4>
-                                  
+
                                   {hasMedia && (
                                     <button
                                       onClick={() => toggleMedia(mediaKey)}
@@ -973,25 +1061,23 @@ export default function MyProgress() {
                                   </div>
                                 )}
 
-                                {/* ===== STEP A: SET RENDERING LOOP WITH METRIC CLASSIFICATION (A1/A2) ===== */}
+                                {/* ===== SET RENDERING LOOP WITH EDIT BUTTONS (Step A + B) ===== */}
                                 {group.sets.length > 0 ? (
                                   <div style={{ padding: '8px 12px' }}>
                                     {group.sets.map((set, idx) => {
-                                      // Parse the joined reps field (contains weight | reps | time | distance)
+                                      // Parse the joined reps field
                                       const repsString = String(set.reps || '');
                                       const parts = repsString.split(' | ').filter(Boolean);
                                       const classified = parts.map(part => classifyMetricValue(part));
-                                      
-                                      // Get intensity from the logbook
+
                                       const intensityPercent = set.intensity ? `@ ${set.intensity}%` : '';
-                                      
+
                                       // Determine what metrics this exercise should show (from library configuration)
                                       let showWeight = true, showTime = false, showDistance = false;
-                                      
+
                                       if (group.libraryRow) {
-                                        // Column 4 in library is the calcType (weight/time/distance)
                                         const calcType = String(group.libraryRow[3] || '').trim().toLowerCase();
-                                        
+
                                         if (calcType === 'weight' || calcType === 'yes' || calcType === '') {
                                           showWeight = true;
                                           showTime = false;
@@ -1006,13 +1092,15 @@ export default function MyProgress() {
                                           showDistance = true;
                                         }
                                       }
-                                      
-                                      // Find matching values from classified parts
+
                                       const weightVal = classified.find(c => c.type === 'weight' || (c.type === 'reps' && idx === 0))?.value || set.wt || '0';
                                       const timeVal = classified.find(c => c.type === 'time')?.value || '—';
                                       const distanceVal = classified.find(c => c.type === 'distance')?.value || '—';
                                       const repsVal = classified.find(c => c.type === 'reps' && c.label === 'Reps')?.value || '—';
-                                      
+
+                                      // Label for the value field edit button, based on metric type
+                                      const valueFieldLabel = showTime ? 'Time (as logged)' : (showDistance ? 'Distance (as logged)' : 'Reps / Value (as logged)');
+
                                       return (
                                         <div
                                           key={idx}
@@ -1031,48 +1119,61 @@ export default function MyProgress() {
                                             </div>
                                             {(set.tempo || set.rest || (group.tempo || group.rest)) && (
                                               <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
-                                                {(set.tempo || group.tempo) && <>Tempo: <span style={{ color: '#008ed3' }}>{set.tempo || group.tempo}</span>}</>}
+                                                {(set.tempo || group.tempo) && <>Tempo: <span style={{ color: '#008ed3' }}>{set.tempo || group.tempo}</span></>}
                                                 {(set.tempo || group.tempo) && (set.rest || group.rest) && ' | '}
                                                 {(set.rest || group.rest) && <>Rest: <span style={{ color: '#008ed3' }}>{set.rest || group.rest}</span></>}
                                               </div>
                                             )}
                                           </div>
-                                          
+
                                           <div style={{ textAlign: 'right', minWidth: '100px' }}>
-                                            {/* Weight line - always shown if program enables it (even if zero) */}
+                                            {/* Metric lines */}
                                             {showWeight && (
                                               <div style={{ fontWeight: '700', color: '#008ed3', marginBottom: '2px' }}>
                                                 {weightVal} <span style={{ color: '#64748b', fontWeight: '400' }}>kg</span>
                                               </div>
                                             )}
-                                            
-                                            {/* Time line - shown if time metric enabled */}
                                             {showTime && (
                                               <div style={{ fontWeight: '700', color: '#008ed3', marginBottom: '2px' }}>
                                                 {timeVal}
                                               </div>
                                             )}
-                                            
-                                            {/* Distance line - shown if distance metric enabled */}
                                             {showDistance && (
                                               <div style={{ fontWeight: '700', color: '#008ed3', marginBottom: '2px' }}>
                                                 {distanceVal}
                                               </div>
                                             )}
-                                            
-                                            {/* Reps count - always shown if not replaced by time/distance */}
                                             {repsVal && repsVal !== '—' && (
                                               <div style={{ fontSize: '12px', color: '#64748b' }}>
                                                 x {repsVal}
                                               </div>
                                             )}
+
+                                            {/* ===== STEP B: EDIT BUTTONS ===== */}
+                                            <div style={{ display: 'flex', gap: '6px', marginTop: '6px', justifyContent: 'flex-end' }}>
+                                              {showWeight && (
+                                                <button
+                                                  onClick={() => openEditModal(group.name, idx + 1, 'weight', set.wt, 'Weight (kg)')}
+                                                  title="Edit weight for this set"
+                                                  style={editButtonStyle}
+                                                >
+                                                  <Pencil size={11} /> kg
+                                                </button>
+                                              )}
+                                              <button
+                                                onClick={() => openEditModal(group.name, idx + 1, 'reps', set.reps, valueFieldLabel)}
+                                                title="Edit the logged value for this set"
+                                                style={editButtonStyle}
+                                              >
+                                                <Pencil size={11} /> value
+                                              </button>
+                                            </div>
                                           </div>
                                         </div>
                                       );
                                     })}
                                   </div>
                                 ) : (
-                                  // No data logged for this exercise — show placeholder (requirement B)
                                   <div style={{ padding: '12px', fontStyle: 'italic', color: '#94a3b8' }}>
                                     No sets logged for this exercise
                                   </div>
@@ -1159,7 +1260,6 @@ export default function MyProgress() {
                               <div className="mp-hist-ex">{item.ex}</div>
                             </div>
                             <div>
-                              {/* ===== FIXED FILTER LIST: Respects metric configuration ===== */}
                               <div className="mp-hist-weight">
                                 {item.wt} <span className="mp-max-unit">kg</span>
                               </div>
@@ -1176,6 +1276,113 @@ export default function MyProgress() {
           </>
         )}
       </div>
+
+      {/* ===== STEP B: EDIT MODAL ===== */}
+      {editingSet && selectedSession && (
+        <div
+          onClick={() => { if (!editSaving) closeEditModal(); }}
+          style={{
+            position: 'fixed',
+            top: 0, left: 0, right: 0, bottom: 0,
+            background: 'rgba(15, 23, 42, 0.8)',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 10000,
+            padding: '20px'
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: '#ffffff',
+              borderRadius: '16px',
+              width: '100%',
+              maxWidth: '420px',
+              padding: '24px',
+              boxShadow: '0 20px 40px rgba(0,0,0,0.2)'
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h3 style={{ margin: 0, fontSize: '20px', color: '#0f172a' }}>Edit Set</h3>
+              <button onClick={() => { if (!editSaving) closeEditModal(); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', padding: 0 }}>
+                <X size={22} />
+              </button>
+            </div>
+
+            <p style={{ margin: '0 0 4px 0', fontSize: '14px', fontWeight: '700', color: '#0f172a' }}>
+              {selectedSession.prog}
+            </p>
+            <p style={{ margin: '0 0 16px 0', fontSize: '13px', color: '#64748b' }}>
+              {editingSet.exerciseName} — Set {editingSet.setNumber} · Field: {editingSet.metricLabel}
+            </p>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '16px' }}>
+              <div>
+                <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: '700', textTransform: 'uppercase' }}>Current</div>
+                <div style={{ fontSize: '18px', fontWeight: '800', color: '#334155' }}>
+                  {editingSet.currentValue === '' || editingSet.currentValue === null || editingSet.currentValue === undefined ? '(blank)' : String(editingSet.currentValue)}
+                </div>
+              </div>
+              <div style={{ fontSize: '20px', color: '#94a3b8' }}>→</div>
+              <div style={{ flex: 1 }}>
+                <label style={{ display: 'block', fontSize: '11px', color: '#94a3b8', fontWeight: '700', textTransform: 'uppercase', marginBottom: '4px' }}>New</label>
+                <input
+                  type="text"
+                  autoFocus
+                  value={editValueInput}
+                  onChange={e => setEditValueInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter' && !editSaving) handleEditSubmit(); }}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    fontSize: '18px',
+                    fontWeight: '700',
+                    textAlign: 'center',
+                    borderRadius: '8px',
+                    border: '2px solid #008ed3',
+                    outline: 'none'
+                  }}
+                />
+              </div>
+            </div>
+
+            {editingSet.field === 'reps' && (
+              <p style={{ margin: '0 0 16px 0', fontSize: '12px', color: '#64748b', fontStyle: 'italic' }}>
+                This is the value exactly as it was saved (e.g. "8" or "45s | 800m"). Enter the corrected version in the same format.
+              </p>
+            )}
+
+            <p style={{ margin: '0 0 20px 0', fontSize: '12px', color: '#d97706' }}>
+              ⚠ Edits are permanent and recorded in the audit log. Corrected values feed into future target-load calculations.
+            </p>
+
+            {editMessage && (
+              <p style={{ margin: '0 0 16px 0', fontSize: '13px', fontWeight: '700', color: '#dc2626' }}>
+                {editMessage}
+              </p>
+            )}
+
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button
+                onClick={() => { if (!editSaving) closeEditModal(); }}
+                disabled={editSaving}
+                style={{ flex: 1, padding: '13px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#f8fafc', fontWeight: '700', color: '#475569', cursor: 'pointer' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleEditSubmit}
+                disabled={editSaving}
+                style={{ flex: 1, padding: '13px', borderRadius: '8px', border: 'none', background: '#008ed3', color: '#ffffff', fontWeight: '800', cursor: 'pointer' }}
+              >
+                {editSaving ? 'Saving...' : 'Confirm Edit'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <HelpButton pageName="My Progress" position="bottom-right" />
     </div>
   );

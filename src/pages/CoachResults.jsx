@@ -507,6 +507,10 @@ export default function CoachResults() {
         </div>
       </div>
 
+          <button onClick={() => navigate('/audit')} style={{ padding: '10px 20px', borderRadius: '8px', border: 'none', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '700', cursor: 'pointer', backgroundColor: '#e2e8f0', color: '#64748b' }}>
+            <ShieldCheck size={18} /> Edit Audit Log
+          </button>
+
       {mainTab === 'performance' && (
         <div>
           <div style={styles.card}>

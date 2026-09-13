@@ -122,7 +122,7 @@ export const createAthlete = async ({ email, name }) => {
     let url = `${GOOGLE_SCRIPT_API_URL}?action=createAthlete&email=${encodeURIComponent(email)}&name=${encodeURIComponent(name)}&t=${Date.now()}`;
     let resp = await fetch(url);
     return await resp.json();
-  } catch (err) { return { status: "Error", message: err.message }; }
+  } catch (err) { return { status: 'Error', message: err.message }; }
 };
 
 export const getAthleteByEmail = async (email) => {
@@ -130,7 +130,7 @@ export const getAthleteByEmail = async (email) => {
     let url = `${GOOGLE_SCRIPT_API_URL}?action=getAthleteByEmail&email=${encodeURIComponent(email)}&t=${Date.now()}`;
     let resp = await fetch(url);
     return await resp.json();
-  } catch (err) { return { status: "Error", message: err.message }; }
+  } catch (err) { return { status: 'Error', message: err.message }; }
 };
 
 export const saveSession = async (payload) => {
@@ -225,6 +225,50 @@ export const updateProgram = async (oldName, programRows) => {
   try {
     let url = `${GOOGLE_SCRIPT_API_URL}?action=updateProgram&t=${Date.now()}`;
     let resp = await fetch(url, { method: 'POST', body: JSON.stringify({ oldName: oldName, programData: JSON.stringify(programRows) }) });
+    return await resp.json();
+  } catch (err) { return { status: 'Error', message: err.message }; }
+};
+
+// ==========================================
+// LOGBOOK EDIT & AUDIT PIPES (Step B+C)
+// ==========================================
+export const updateLogbookEntry = async ({ athlete, sessionDate, program, exercise, setNumber, field, newValue, editorEmail, editorRole }) => {
+  try {
+    const payload = {
+      athlete,
+      sessionDate,
+      program,
+      exercise,
+      setNumber,
+      field,
+      newValue,
+      editorEmail,
+      editorRole
+    };
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=updateLogbookEntry&data=${encodeURIComponent(JSON.stringify(payload))}&t=${Date.now()}`;
+    let resp = await fetch(url);
+    return await resp.json();
+  } catch (err) { return { status: 'Error', message: err.message }; }
+};
+
+export const fetchAuditLog = async (filters = {}) => {
+  try {
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=fetchAuditLog&t=${Date.now()}`;
+
+    if (filters.athlete) {
+      url += `&athlete=${encodeURIComponent(filters.athlete)}`;
+    }
+    if (filters.program) {
+      url += `&program=${encodeURIComponent(filters.program)}`;
+    }
+    if (filters.dateStart) {
+      url += `&dateStart=${encodeURIComponent(filters.dateStart)}`;
+    }
+    if (filters.dateEnd) {
+      url += `&dateEnd=${encodeURIComponent(filters.dateEnd)}`;
+    }
+
+    let resp = await fetch(url);
     return await resp.json();
   } catch (err) { return { status: 'Error', message: err.message }; }
 };
