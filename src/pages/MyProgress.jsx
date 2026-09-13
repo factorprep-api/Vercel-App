@@ -70,6 +70,39 @@ function extractMediaUrl(rawVid) {
   return '';
 }
 
+// ===== HELPER FUNCTION FOR METRIC CLASSIFICATION (A1 Fix) =====
+function classifyMetricValue(value) {
+  // Classifies a raw logbook value string to determine its type
+  // Returns { type: 'reps' | 'time' | 'distance', value, label }
+  if (!value || value === '0' || value === '') return null;
+  
+  const trimmed = String(value).trim();
+  
+  // Check for distance (m/km suffix)
+  const distMatch = trimmed.match(/^(\d+(?:\.\d+)?)\s*(m|km)$/i);
+  if (distMatch) {
+    return { type: 'distance', value: trimmed, label: 'Distance' };
+  }
+  
+  // Check for time (seconds format with 's' suffix or mm:ss)
+  const secMatch = trimmed.match(/^(\d+(?:\.\d+)?)\s*s$/i);
+  if (secMatch) {
+    return { type: 'time', value: trimmed, label: 'Time' };
+  }
+  const timeMatch = trimmed.match(/^(\d+):(\d+)$/);
+  if (timeMatch) {
+    return { type: 'time', value: trimmed, label: 'Time' };
+  }
+  
+  // Otherwise treat as plain number (could be reps or weight)
+  const numVal = parseFloat(trimmed);
+  if (!isNaN(numVal)) {
+    return { type: 'reps', value: trimmed, label: 'Reps' };
+  }
+  
+  return null;
+}
+
 export default function MyProgress() {
   const { userEmail, athleteName: authAthleteName } = useAuth();
   const navigate = useNavigate();
@@ -339,31 +372,115 @@ export default function MyProgress() {
     return lookup;
   }, [programsData]);
 
-  // Build structured Phase sections for selectedSession
+  // ===== STEP A: PROGRAM-JOIN RECONSTRUCTION (A3/A4 + Graceful Fallback) =====
   const sessionSections = useMemo(() => {
     if (!selectedSession) return [];
-    const session = sessions.find(s => s.date === selectedSession.date && s.prog === selectedSession.prog);
-    if (!session) return [];
 
+    // Attempt to find the program definition
+    const programDefinitionRows = programsData.slice(1).filter(
+      r => String(r[0] || '').trim() === selectedSession.prog
+    );
+
+    // FALLBACK: If program doesn't exist anymore, use logbook-only rendering
+    if (programDefinitionRows.length === 0) {
+      const exGroups = {};
+      history.forEach(item => {
+        if (item.prog !== selectedSession.prog) return;
+        const key = normalizeString(item.ex);
+        if (!exGroups[key]) {
+          exGroups[key] = {
+            name: item.ex,
+            sets: [],
+            phase: null,
+            mediaUrl: exerciseMediaMap[key] || ''
+          };
+        }
+        exGroups[key].sets.push(item);
+      });
+
+      const sections = [
+        { title: 'Warm Up', items: [], color: '#fd7e14' },
+        { title: 'Work Block', items: [], color: '#22c55e' },
+        { title: 'Other Content', items: [], color: '#888888' },
+        { title: 'Cool Down', items: [], color: '#ef4444' },
+      ];
+
+      const phaseMapping = {
+        'warm up': 'Warm Up', 'warmup': 'Warm Up',
+        'work block': 'Work Block', 'workblock': 'Work Block',
+        'cool down': 'Cool Down', 'cooldown': 'Cool Down'
+      };
+
+      Object.values(exGroups).forEach(group => {
+        const lookupKey = normalizeString(selectedSession.prog) + '|' + normalizeString(group.name);
+        group.phase = phaseLookup[lookupKey] || 'Other Content';
+        const phaseTitle = phaseMapping[group.phase?.toLowerCase()] || group.phase;
+        const section = sections.find(s => s.title === phaseTitle);
+        if (section) section.items.push(group);
+      });
+
+      return sections.filter(s => s.items.length > 0);
+    }
+
+    // FULL RECONSTRUCTION: Program definition drives the skeleton
     const exGroups = {};
-    session.sets.forEach(set => {
-      const key = normalizeString(set.ex);
+    let orderCounter = 0;
+
+    programDefinitionRows.forEach((row, programOrder) => {
+      const phase = String(row[2] || '').trim() || 'Work Block';
+      const exName = String(row[3] || '').trim();
+      if (!exName) return;
+
+      const key = normalizeString(exName);
       if (!exGroups[key]) {
+        // Pull program row details for fidelity markers (tempo, rest, advanced)
+        const tempo = String(row[7] || '').trim();
+        const rest = String(row[8] || '').trim();
+        let advanced = null;
+        try {
+          if (row.length > 13 && row[13]) {
+            advanced = JSON.parse(String(row[13]));
+          }
+        } catch(e) {}
+
         exGroups[key] = {
-          name: set.ex,
+          name: exName,
+          phase: phase,
+          phaseOrder: phase,
           sets: [],
-          phase: null,
-          mediaUrl: exerciseMediaMap[key] || ''
+          mediaUrl: exerciseMediaMap[key] || '',
+          libraryRow: libraryData.find(lib => normalizeString(lib[0]) === key) || null,
+          programRowIndices: [programOrder],
+          order: orderCounter++,
+          tempo: tempo,
+          rest: rest,
+          advanced: advanced
         };
+      } else {
+        exGroups[key].programRowIndices.push(programOrder);
       }
-      exGroups[key].sets.push(set);
     });
 
-    Object.values(exGroups).forEach(group => {
-      const lookupKey = normalizeString(selectedSession.prog) + '|' + normalizeString(group.name);
-      group.phase = phaseLookup[lookupKey] || 'Other Content';
+    // Join logbook data onto program structure
+    const sessionLogbookEntries = history.filter(h => h.prog === selectedSession.prog);
+
+    Object.keys(exGroups).forEach(key => {
+      const group = exGroups[key];
+      const matchingLogEntries = sessionLogbookEntries.filter(h => normalizeString(h.ex) === key);
+
+      if (matchingLogEntries.length === 0) {
+        group.hasData = false;
+        group.sets = [];
+      } else {
+        group.sets = matchingLogEntries;
+        group.hasData = true;
+      }
     });
 
+    // Apply program ordering
+    const orderedGroupKeys = Object.keys(exGroups).sort((a, b) => exGroups[a].order - exGroups[b].order);
+
+    // Group exercises into phase sections
     const sections = [
       { title: 'Warm Up', items: [], color: '#fd7e14' },
       { title: 'Work Block', items: [], color: '#22c55e' },
@@ -377,14 +494,15 @@ export default function MyProgress() {
       'cool down': 'Cool Down', 'cooldown': 'Cool Down'
     };
 
-    Object.values(exGroups).forEach(group => {
+    orderedGroupKeys.forEach(key => {
+      const group = exGroups[key];
       const phaseTitle = phaseMapping[group.phase?.toLowerCase()] || group.phase;
       const section = sections.find(s => s.title === phaseTitle);
       if (section) section.items.push(group);
     });
 
     return sections.filter(s => s.items.length > 0);
-  }, [selectedSession, sessions, phaseLookup, programsData, exerciseMediaMap]);
+  }, [selectedSession, sessions, programsData, libraryData, history, exerciseMediaMap, phaseLookup]);
 
   const uniqueExercises = useMemo(() => {
     return [...new Set(history.map(h => h.ex).filter(Boolean))].sort();
@@ -747,7 +865,6 @@ export default function MyProgress() {
                     {sessionSections.map(section => (
                       <div
                         key={section.title}
-                        className="pv-phase-card"
                         style={{
                           borderTopColor: section.color,
                           borderTopStyle: 'solid',
@@ -762,7 +879,6 @@ export default function MyProgress() {
                         }}
                       >
                         <div
-                          className="pv-phase-header"
                           style={{
                             backgroundColor: section.color,
                             color: '#fff',
@@ -785,12 +901,31 @@ export default function MyProgress() {
                             return (
                               <div key={group.name} style={{ marginBottom: '16px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', overflow: 'hidden' }}>
                                 
-                                {/* Exercise Header with Optional Media Toggle */}
+                                {/* Exercise Header with Program-Fidelity Markers (A3) */}
                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
-                                  <h4 style={{ fontSize: '15px', color: '#0f172a', margin: 0, fontWeight: '700' }}>
+                                  <h4 style={{ fontSize: '15px', color: '#0f172a', margin: 0, fontWeight: '700', display: 'flex', alignItems: 'center', gap: '6px' }}>
                                     {group.name}
+                                    
+                                    {/* Superset marker */}
+                                    {group.advanced && group.advanced.setType === 'superset' && <span title="Superset">🔗</span>}
+                                    
+                                    {/* Drop set marker */}
+                                    {group.advanced && group.advanced.setType === 'drop' && (
+                                      <img src="/drop-set-icon.png" alt="Drop Set 📉" style={{ width: '16px', height: '16px' }} onError={(e) => { e.target.style.display='none'; e.target.insertAdjacentText('afterend', '📉'); }} />
+                                    )}
+                                    
+                                    {/* Unilateral markers */}
+                                    {group.advanced && group.advanced.execution === 'uni-both' && (
+                                      <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#4f46e5', color: 'white', fontWeight: '800', fontSize: '10px', width: '16px', height: '16px', borderRadius: '50%' }}>U</span>
+                                    )}
+                                    {group.advanced && group.advanced.execution === 'uni-left' && (
+                                      <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#4f46e5', color: 'white', fontWeight: '800', fontSize: '10px', width: '16px', height: '16px', borderRadius: '50%' }}>L</span>
+                                    )}
+                                    {group.advanced && group.advanced.execution === 'uni-right' && (
+                                      <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#4f46e5', color: 'white', fontWeight: '800', fontSize: '10px', width: '16px', height: '16px', borderRadius: '50%' }}>R</span>
+                                    )}
                                   </h4>
-
+                                  
                                   {hasMedia && (
                                     <button
                                       onClick={() => toggleMedia(mediaKey)}
@@ -838,29 +973,110 @@ export default function MyProgress() {
                                   </div>
                                 )}
 
-                                {/* Sets */}
-                                <div style={{ padding: '8px 12px' }}>
-                                  {group.sets.map((set, idx) => (
-                                    <div
-                                      key={idx}
-                                      style={{
-                                        display: 'flex',
-                                        justifyContent: 'space-between',
-                                        alignItems: 'center',
-                                        padding: '8px 10px',
-                                        borderBottom: idx === group.sets.length - 1 ? 'none' : '1px solid #e2e8f0',
-                                        fontSize: '14px'
-                                      }}
-                                    >
-                                      <div>
-                                        <strong style={{ color: '#475569' }}>Set {idx + 1}:</strong> {set.reps} reps {set.intensity ? '@ ' + set.intensity + '%' : ''}
-                                      </div>
-                                      <div style={{ fontWeight: '700', color: '#008ed3' }}>
-                                        {set.wt}kg x {set.reps}
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
+                                {/* ===== STEP A: SET RENDERING LOOP WITH METRIC CLASSIFICATION (A1/A2) ===== */}
+                                {group.sets.length > 0 ? (
+                                  <div style={{ padding: '8px 12px' }}>
+                                    {group.sets.map((set, idx) => {
+                                      // Parse the joined reps field (contains weight | reps | time | distance)
+                                      const repsString = String(set.reps || '');
+                                      const parts = repsString.split(' | ').filter(Boolean);
+                                      const classified = parts.map(part => classifyMetricValue(part));
+                                      
+                                      // Get intensity from the logbook
+                                      const intensityPercent = set.intensity ? `@ ${set.intensity}%` : '';
+                                      
+                                      // Determine what metrics this exercise should show (from library configuration)
+                                      let showWeight = true, showTime = false, showDistance = false;
+                                      
+                                      if (group.libraryRow) {
+                                        // Column 4 in library is the calcType (weight/time/distance)
+                                        const calcType = String(group.libraryRow[3] || '').trim().toLowerCase();
+                                        
+                                        if (calcType === 'weight' || calcType === 'yes' || calcType === '') {
+                                          showWeight = true;
+                                          showTime = false;
+                                          showDistance = false;
+                                        } else if (calcType === 'time') {
+                                          showWeight = false;
+                                          showTime = true;
+                                          showDistance = false;
+                                        } else if (calcType === 'distance') {
+                                          showWeight = false;
+                                          showTime = false;
+                                          showDistance = true;
+                                        }
+                                      }
+                                      
+                                      // Find matching values from classified parts
+                                      const weightVal = classified.find(c => c.type === 'weight' || (c.type === 'reps' && idx === 0))?.value || set.wt || '0';
+                                      const timeVal = classified.find(c => c.type === 'time')?.value || '—';
+                                      const distanceVal = classified.find(c => c.type === 'distance')?.value || '—';
+                                      const repsVal = classified.find(c => c.type === 'reps' && c.label === 'Reps')?.value || '—';
+                                      
+                                      return (
+                                        <div
+                                          key={idx}
+                                          style={{
+                                            display: 'flex',
+                                            justifyContent: 'space-between',
+                                            alignItems: 'flex-start',
+                                            padding: '8px 10px',
+                                            borderBottom: idx === group.sets.length - 1 ? 'none' : '1px solid #e2e8f0',
+                                            fontSize: '14px'
+                                          }}
+                                        >
+                                          <div style={{ flex: 1 }}>
+                                            <div style={{ fontWeight: '700', color: '#475569', marginBottom: '4px' }}>
+                                              Set {idx + 1}: {set.reps} {intensityPercent}
+                                            </div>
+                                            {(set.tempo || set.rest || (group.tempo || group.rest)) && (
+                                              <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
+                                                {(set.tempo || group.tempo) && <>Tempo: <span style={{ color: '#008ed3' }}>{set.tempo || group.tempo}</span>}</>}
+                                                {(set.tempo || group.tempo) && (set.rest || group.rest) && ' | '}
+                                                {(set.rest || group.rest) && <>Rest: <span style={{ color: '#008ed3' }}>{set.rest || group.rest}</span></>}
+                                              </div>
+                                            )}
+                                          </div>
+                                          
+                                          <div style={{ textAlign: 'right', minWidth: '100px' }}>
+                                            {/* Weight line - always shown if program enables it (even if zero) */}
+                                            {showWeight && (
+                                              <div style={{ fontWeight: '700', color: '#008ed3', marginBottom: '2px' }}>
+                                                {weightVal} <span style={{ color: '#64748b', fontWeight: '400' }}>kg</span>
+                                              </div>
+                                            )}
+                                            
+                                            {/* Time line - shown if time metric enabled */}
+                                            {showTime && (
+                                              <div style={{ fontWeight: '700', color: '#008ed3', marginBottom: '2px' }}>
+                                                {timeVal}
+                                              </div>
+                                            )}
+                                            
+                                            {/* Distance line - shown if distance metric enabled */}
+                                            {showDistance && (
+                                              <div style={{ fontWeight: '700', color: '#008ed3', marginBottom: '2px' }}>
+                                                {distanceVal}
+                                              </div>
+                                            )}
+                                            
+                                            {/* Reps count - always shown if not replaced by time/distance */}
+                                            {repsVal && repsVal !== '—' && (
+                                              <div style={{ fontSize: '12px', color: '#64748b' }}>
+                                                x {repsVal}
+                                              </div>
+                                            )}
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                ) : (
+                                  // No data logged for this exercise — show placeholder (requirement B)
+                                  <div style={{ padding: '12px', fontStyle: 'italic', color: '#94a3b8' }}>
+                                    No sets logged for this exercise
+                                  </div>
+                                )}
                               </div>
                             );
                           })}
@@ -943,6 +1159,7 @@ export default function MyProgress() {
                               <div className="mp-hist-ex">{item.ex}</div>
                             </div>
                             <div>
+                              {/* ===== FIXED FILTER LIST: Respects metric configuration ===== */}
                               <div className="mp-hist-weight">
                                 {item.wt} <span className="mp-max-unit">kg</span>
                               </div>
