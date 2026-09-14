@@ -1,5 +1,4 @@
-Preview
-const GOOGLE_SCRIPT_API_URL = "https://script.google.com/macros/s/AKfycbzIBfOpFxgmTYWlFDuKPVSx30tXJRlyWhhvZVBqkAO_nKeF1GfGTFVvTolLr-CBpoHl8A/exec";
+export const GOOGLE_SCRIPT_API_URL = "https://script.google.com/macros/s/AKfycbzIBfOpFxgmTYWlFDuKPVSx30tXJRlyWhhvZVBqkAO_nKeF1GfGTFVvTolLr-CBpoHl8A/exec";
 
 // ==========================================
 // MASSIVE PIPE (Legacy)
@@ -7,7 +6,7 @@ const GOOGLE_SCRIPT_API_URL = "https://script.google.com/macros/s/AKfycbzIBfOpFx
 export const fetchAllData = async () => {
   try {
     let response = await fetch(`${GOOGLE_SCRIPT_API_URL}?action=getFullData&t=${Date.now()}`);
-    if (!response.ok) { return { athletes: [], programs: [], library: [], error: "Failed to connect to database" }; } // HTTP error guard
+    if (!response.ok) { return { athletes: [], programs: [], library: [], error: "Failed to connect to database" }; } 
     let json = await response.json();
     return { athletes: json.athletes || [], programs: json.programs || json.program || [], library: json.library || [], error: null };
   } catch (error) {
@@ -21,7 +20,7 @@ export const fetchAllData = async () => {
 export const fetchAthletes = async () => {
   try {
     let response = await fetch(`${GOOGLE_SCRIPT_API_URL}?action=getAthletes&t=${Date.now()}`);
-    if (!response.ok) { return { athletes: [], error: "Failed to connect" }; } // HTTP error guard
+    if (!response.ok) { return { athletes: [], error: "Failed to connect" }; } 
     let json = await response.json();
     return { athletes: json.athletes || [], error: null };
   } catch (error) { return { athletes: [], error: "Failed to connect" }; }
@@ -30,7 +29,7 @@ export const fetchAthletes = async () => {
 export const fetchPrograms = async () => {
   try {
     let response = await fetch(`${GOOGLE_SCRIPT_API_URL}?action=getPrograms&t=${Date.now()}`);
-    if (!response.ok) { return { programs: [], error: "Failed to connect" }; } // HTTP error guard
+    if (!response.ok) { return { programs: [], error: "Failed to connect" }; } 
     let json = await response.json();
     return { programs: json.programs || [], error: null };
   } catch (error) { return { programs: [], error: "Failed to connect" }; }
@@ -39,7 +38,7 @@ export const fetchPrograms = async () => {
 export const fetchLibrary = async () => {
   try {
     let response = await fetch(`${GOOGLE_SCRIPT_API_URL}?action=getLibrary&t=${Date.now()}`);
-    if (!response.ok) { return { library: [], error: "Failed to connect" }; } // HTTP error guard
+    if (!response.ok) { return { library: [], error: "Failed to connect" }; } 
     let json = await response.json();
     return { library: json.library || [], error: null };
   } catch (error) { return { library: [], error: "Failed to connect" }; }
@@ -52,7 +51,7 @@ export const saveWellnessLog = async (payload) => {
   try {
     let url = `${GOOGLE_SCRIPT_API_URL}?action=saveWellness&data=${encodeURIComponent(JSON.stringify(payload))}&t=${Date.now()}`;
     let resp = await fetch(url);
-    if (!resp.ok) { return { status: 'Error', message: 'HTTP ' + resp.status }; } // HTTP error guard
+    if (!resp.ok) { return { status: 'Error', message: 'HTTP ' + resp.status }; } 
     return await resp.json();
   } catch (err) { return { status: 'Error', message: err.message }; }
 };
@@ -60,20 +59,18 @@ export const saveWellnessLog = async (payload) => {
 export const fetchWellnessLogs = async () => {
   try {
     let resp = await fetch(`${GOOGLE_SCRIPT_API_URL}?action=getWellness&t=${Date.now()}`);
-    if (!resp.ok) { return { data: [] }; } // HTTP error guard
+    if (!resp.ok) { return { data: [] }; } 
     return await resp.json();
   } catch (err) { return { data: [] }; }
 };
 
 export const saveScheduleSession = async (payload) => {
   try {
-    // POST instead of GET: prevents silent network-layer retries that caused
-    // duplicate rows when Apps Script responded slowly.
     let resp = await fetch(`${GOOGLE_SCRIPT_API_URL}?action=saveSchedule&t=${Date.now()}`, {
       method: 'POST',
       body: JSON.stringify({ data: JSON.stringify(payload) })
     });
-    if (!resp.ok) { return { status: 'Error', message: 'HTTP ' + resp.status }; } // HTTP error guard
+    if (!resp.ok) { return { status: 'Error', message: 'HTTP ' + resp.status }; } 
     return await resp.json();
   } catch (err) { return { status: 'Error', message: err.message }; }
 };
@@ -81,7 +78,7 @@ export const saveScheduleSession = async (payload) => {
 export const fetchSchedule = async () => {
   try {
     let resp = await fetch(`${GOOGLE_SCRIPT_API_URL}?action=getSchedule&t=${Date.now()}`);
-    if (!resp.ok) { return { data: [] }; } // HTTP error guard
+    if (!resp.ok) { return { data: [] }; } 
     return await resp.json();
   } catch (err) { return { data: [] }; }
 };
@@ -90,7 +87,7 @@ export const saveMedicalLog = async (payload) => {
   try {
     let url = `${GOOGLE_SCRIPT_API_URL}?action=saveMedical&data=${encodeURIComponent(JSON.stringify(payload))}&t=${Date.now()}`;
     let resp = await fetch(url);
-    if (!resp.ok) { return { status: 'Error', message: 'HTTP ' + resp.status }; } // HTTP error guard
+    if (!resp.ok) { return { status: 'Error', message: 'HTTP ' + resp.status }; } 
     return await resp.json();
   } catch (err) { return { status: 'Error', message: err.message }; }
 };
@@ -98,7 +95,7 @@ export const saveMedicalLog = async (payload) => {
 export const fetchMedicalLogs = async () => {
   try {
     let resp = await fetch(`${GOOGLE_SCRIPT_API_URL}?action=getMedical&t=${Date.now()}`);
-    if (!resp.ok) { return { data: [] }; } // HTTP error guard
+    if (!resp.ok) { return { data: [] }; } 
     return await resp.json();
   } catch (err) { return { data: [] }; }
 };
@@ -110,18 +107,17 @@ export const fetchLogbookByAthlete = async (athleteName) => {
   try {
     let url = `${GOOGLE_SCRIPT_API_URL}?action=getLogbookByAthlete&athlete=${encodeURIComponent(athleteName)}&t=${Date.now()}`;
     let resp = await fetch(url);
-    if (!resp.ok) { return { status: "Error", data: [] }; } // HTTP error guard
+    if (!resp.ok) { return { status: "Error", data: [] }; } 
     return await resp.json();
   } catch (err) { return { status: "Error", data: [] }; }
 };
-// Alias to prevent import errors
 export const getLogbookByAthlete = fetchLogbookByAthlete;
 
 export const getLatestMaxes = async (athleteName) => {
   try {
     let url = `${GOOGLE_SCRIPT_API_URL}?action=getLatestMaxes&athlete=${encodeURIComponent(athleteName)}&t=${Date.now()}`;
     let resp = await fetch(url);
-    if (!resp.ok) { return { status: "Error", maxes: {} }; } // HTTP error guard
+    if (!resp.ok) { return { status: "Error", maxes: {} }; } 
     return await resp.json();
   } catch (err) { return { status: "Error", maxes: {} }; }
 };
@@ -130,16 +126,19 @@ export const getLastLoggedWeight = async (athleteName, exerciseName) => {
   try {
     let url = `${GOOGLE_SCRIPT_API_URL}?action=getLastLoggedWeight&athlete=${encodeURIComponent(athleteName)}&exercise=${encodeURIComponent(exerciseName)}&t=${Date.now()}`;
     let resp = await fetch(url);
-    if (!resp.ok) { return { status: "NotFound" }; } // HTTP error guard
+    if (!resp.ok) { return { status: "NotFound" }; } 
     return await resp.json();
   } catch (err) { return { status: "NotFound" }; }
 };
 
-export const createAthlete = async ({ email, name }) => {
+// Fixed to accept both object syntax and standard arguments to prevent crashes
+export const createAthlete = async (emailOrObj, nameStr) => {
   try {
+    const email = typeof emailOrObj === 'object' ? emailOrObj.email : emailOrObj;
+    const name = typeof emailOrObj === 'object' ? emailOrObj.name : nameStr;
     let url = `${GOOGLE_SCRIPT_API_URL}?action=createAthlete&email=${encodeURIComponent(email)}&name=${encodeURIComponent(name)}&t=${Date.now()}`;
     let resp = await fetch(url);
-    if (!resp.ok) { return { status: 'Error', message: 'HTTP ' + resp.status }; } // HTTP error guard
+    if (!resp.ok) { return { status: 'Error', message: 'HTTP ' + resp.status }; } 
     return await resp.json();
   } catch (err) { return { status: 'Error', message: err.message }; }
 };
@@ -148,7 +147,7 @@ export const getAthleteByEmail = async (email) => {
   try {
     let url = `${GOOGLE_SCRIPT_API_URL}?action=getAthleteByEmail&email=${encodeURIComponent(email)}&t=${Date.now()}`;
     let resp = await fetch(url);
-    if (!resp.ok) { return { status: 'Error', message: 'HTTP ' + resp.status }; } // HTTP error guard
+    if (!resp.ok) { return { status: 'Error', message: 'HTTP ' + resp.status }; } 
     return await resp.json();
   } catch (err) { return { status: 'Error', message: err.message }; }
 };
@@ -159,14 +158,14 @@ export const saveSession = async (payload) => {
       method: 'POST',
       body: JSON.stringify({ data: JSON.stringify(payload) })
     });
-    if (!resp.ok) { return { status: 'Error', message: 'HTTP ' + resp.status }; } // HTTP error guard
+    if (!resp.ok) { return { status: 'Error', message: 'HTTP ' + resp.status }; } 
     return await resp.json();
   } catch (err) { return { status: 'Error', message: err.message }; }
 };
 
 export async function fetchExerciseLibrary(options = {}) {
   const response = await fetch(`${GOOGLE_SCRIPT_API_URL}?action=getLibrary&t=${Date.now()}`, options);
-  if (!response.ok) { return []; } // HTTP error guard
+  if (!response.ok) { return []; } 
   const json = await response.json();
   const lib = [];
   const rawLibrary = json.library || [];
@@ -187,7 +186,7 @@ export const deleteProgram = async (programName) => {
   try {
     let url = `${GOOGLE_SCRIPT_API_URL}?action=deleteProgram&pName=${encodeURIComponent(programName)}&t=${Date.now()}`;
     let resp = await fetch(url);
-    if (!resp.ok) { return { status: 'Error', message: 'HTTP ' + resp.status }; } // HTTP error guard
+    if (!resp.ok) { return { status: 'Error', message: 'HTTP ' + resp.status }; } 
     return await resp.json();
   } catch (err) { return { status: 'Error', message: err.message }; }
 };
@@ -196,7 +195,7 @@ export const updateAssignment = async (athleteName, assignment) => {
   try {
     let url = `${GOOGLE_SCRIPT_API_URL}?action=updateAssignment&aName=${encodeURIComponent(athleteName)}&assignment=${encodeURIComponent(assignment)}&t=${Date.now()}`;
     let resp = await fetch(url);
-    if (!resp.ok) { return { status: 'Error', message: 'HTTP ' + resp.status }; } // HTTP error guard
+    if (!resp.ok) { return { status: 'Error', message: 'HTTP ' + resp.status }; } 
     return await resp.json();
   } catch (err) { return { status: 'Error', message: err.message }; }
 };
@@ -205,7 +204,7 @@ export const saveFullProgram = async (programRows) => {
   try {
     let url = `${GOOGLE_SCRIPT_API_URL}?action=saveFullProgram&t=${Date.now()}`;
     let resp = await fetch(url, { method: 'POST', body: JSON.stringify({ programData: JSON.stringify(programRows) }) });
-    if (!resp.ok) { return { status: 'Error', message: 'HTTP ' + resp.status }; } // HTTP error guard
+    if (!resp.ok) { return { status: 'Error', message: 'HTTP ' + resp.status }; } 
     return await resp.json();
   } catch (err) { return { status: 'Error', message: err.message }; }
 };
@@ -215,17 +214,17 @@ export const assignProgramBulk = async (athleteRows, programAssignment, columnId
     let payload = JSON.stringify({ athleteRows, programAssignment, columnId });
     let url = `${GOOGLE_SCRIPT_API_URL}?action=assignProgram&data=${encodeURIComponent(payload)}&t=${Date.now()}`;
     let resp = await fetch(url);
-    if (!resp.ok) { return { status: 'Error', message: 'HTTP ' + resp.status }; } // HTTP error guard
+    if (!resp.ok) { return { status: 'Error', message: 'HTTP ' + resp.status }; } 
     return await resp.json();
   } catch (err) { return { status: 'Error', message: err.message }; }
 };
-export const assignProgramToAthletes = assignProgramBulk; // Alias just in case
+export const assignProgramToAthletes = assignProgramBulk; 
 
 export const addExerciseToLibrary = async (exerciseData) => {
   try {
     let url = `${GOOGLE_SCRIPT_API_URL}?action=addExercise&data=${encodeURIComponent(JSON.stringify(exerciseData))}&t=${Date.now()}`;
     let resp = await fetch(url);
-    if (!resp.ok) { return { status: 'Error', message: 'HTTP ' + resp.status }; } // HTTP error guard
+    if (!resp.ok) { return { status: 'Error', message: 'HTTP ' + resp.status }; } 
     return await resp.json();
   } catch (err) { return { status: 'Error', message: err.message }; }
 };
@@ -234,19 +233,18 @@ export const deleteExerciseFromLibrary = async (exerciseName) => {
   try {
     let url = `${GOOGLE_SCRIPT_API_URL}?action=deleteExercise&exName=${encodeURIComponent(exerciseName)}&t=${Date.now()}`;
     let resp = await fetch(url);
-    if (!resp.ok) { return { status: 'Error', message: 'HTTP ' + resp.status }; } // HTTP error guard
+    if (!resp.ok) { return { status: 'Error', message: 'HTTP ' + resp.status }; } 
     return await resp.json();
   } catch (err) { return { status: 'Error', message: err.message }; }
 };
 
-// Safe alias pointing to addExercise (which handles upsert in Code.gs)
 export const updateExerciseInLibrary = addExerciseToLibrary;
 
 export const fetchHelpVideos = async () => {
   try {
     let url = `${GOOGLE_SCRIPT_API_URL}?action=getHelpVideos&t=${Date.now()}`;
     let resp = await fetch(url);
-    if (!resp.ok) { return {}; } // HTTP error guard
+    if (!resp.ok) { return {}; } 
     let json = await resp.json();
     return json.data || json.helpVideos || json;
   } catch (err) { return {}; }
@@ -256,7 +254,7 @@ export const updateProgram = async (oldName, programRows) => {
   try {
     let url = `${GOOGLE_SCRIPT_API_URL}?action=updateProgram&t=${Date.now()}`;
     let resp = await fetch(url, { method: 'POST', body: JSON.stringify({ oldName: oldName, programData: JSON.stringify(programRows) }) });
-    if (!resp.ok) { return { status: 'Error', message: 'HTTP ' + resp.status }; } // HTTP error guard
+    if (!resp.ok) { return { status: 'Error', message: 'HTTP ' + resp.status }; } 
     return await resp.json();
   } catch (err) { return { status: 'Error', message: err.message }; }
 };
@@ -266,20 +264,10 @@ export const updateProgram = async (oldName, programRows) => {
 // ==========================================
 export const updateLogbookEntry = async ({ athlete, sessionDate, program, exercise, setNumber, field, newValue, editorEmail, editorRole }) => {
   try {
-    const payload = {
-      athlete,
-      sessionDate,
-      program,
-      exercise,
-      setNumber,
-      field,
-      newValue,
-      editorEmail,
-      editorRole
-    };
+    const payload = { athlete, sessionDate, program, exercise, setNumber, field, newValue, editorEmail, editorRole };
     let url = `${GOOGLE_SCRIPT_API_URL}?action=updateLogbookEntry&data=${encodeURIComponent(JSON.stringify(payload))}&t=${Date.now()}`;
     let resp = await fetch(url);
-    if (!resp.ok) { return { status: 'Error', message: 'HTTP ' + resp.status }; } // HTTP error guard
+    if (!resp.ok) { return { status: 'Error', message: 'HTTP ' + resp.status }; } 
     return await resp.json();
   } catch (err) { return { status: 'Error', message: err.message }; }
 };
@@ -287,22 +275,13 @@ export const updateLogbookEntry = async ({ athlete, sessionDate, program, exerci
 export const fetchAuditLog = async (filters = {}) => {
   try {
     let url = `${GOOGLE_SCRIPT_API_URL}?action=fetchAuditLog&t=${Date.now()}`;
-
-    if (filters.athlete) {
-      url += `&athlete=${encodeURIComponent(filters.athlete)}`;
-    }
-    if (filters.program) {
-      url += `&program=${encodeURIComponent(filters.program)}`;
-    }
-    if (filters.dateStart) {
-      url += `&dateStart=${encodeURIComponent(filters.dateStart)}`;
-    }
-    if (filters.dateEnd) {
-      url += `&dateEnd=${encodeURIComponent(filters.dateEnd)}`;
-    }
+    if (filters.athlete) url += `&athlete=${encodeURIComponent(filters.athlete)}`;
+    if (filters.program) url += `&program=${encodeURIComponent(filters.program)}`;
+    if (filters.dateStart) url += `&dateStart=${encodeURIComponent(filters.dateStart)}`;
+    if (filters.dateEnd) url += `&dateEnd=${encodeURIComponent(filters.dateEnd)}`;
 
     let resp = await fetch(url);
-    if (!resp.ok) { return { status: 'Error', message: 'HTTP ' + resp.status }; } // HTTP error guard
+    if (!resp.ok) { return { status: 'Error', message: 'HTTP ' + resp.status }; } 
     return await resp.json();
   } catch (err) { return { status: 'Error', message: err.message }; }
 };
@@ -338,3 +317,19 @@ export function parseProgramsFromRaw(rawPrograms, coachEmail) {
   }
   return programs;
 }
+
+// ==========================================
+// FAILSAFE DEFAULT EXPORT
+// ==========================================
+const api = {
+  fetchAllData, fetchAthletes, fetchPrograms, fetchLibrary, saveWellnessLog, 
+  fetchWellnessLogs, saveScheduleSession, fetchSchedule, saveMedicalLog, 
+  fetchMedicalLogs, fetchLogbookByAthlete, getLogbookByAthlete, getLatestMaxes, 
+  getLastLoggedWeight, createAthlete, getAthleteByEmail, saveSession, 
+  fetchExerciseLibrary, deleteProgram, updateAssignment, saveFullProgram, 
+  assignProgramBulk, assignProgramToAthletes, addExerciseToLibrary, 
+  deleteExerciseFromLibrary, updateExerciseInLibrary, fetchHelpVideos, 
+  updateProgram, updateLogbookEntry, fetchAuditLog, getMediaType, 
+  parseProgramsFromRaw, GOOGLE_SCRIPT_API_URL
+};
+export default api;
