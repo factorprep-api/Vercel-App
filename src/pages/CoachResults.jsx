@@ -507,10 +507,6 @@ export default function CoachResults() {
         </div>
       </div>
 
-          <button onClick={() => navigate('/audit')} style={{ padding: '10px 20px', borderRadius: '8px', border: 'none', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '700', cursor: 'pointer', backgroundColor: '#e2e8f0', color: '#64748b' }}>
-            <ShieldCheck size={18} /> Edit Audit Log
-          </button>
-
       {mainTab === 'performance' && (
         <div>
           <div style={styles.card}>
@@ -530,8 +526,23 @@ export default function CoachResults() {
                 <label style={styles.label}>To</label>
                 <input type="date" value={dateRange.end} onChange={(e) => setDateRange((p) => ({ ...p, end: e.target.value }))} style={styles.input} />
               </div>
-              <div style={{ ...styles.filterActions }}>
+                          <div style={{ ...styles.filterActions }}>
                 <button style={styles.btnSecondary} onClick={exportCSV}>Export CSV</button>
+                <button
+                  onClick={() => navigate('/audit')}
+                  style={{
+                    background: '#fff',
+                    border: '1px solid #008ed3',
+                    color: '#008ed3',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    padding: '8px 16px',
+                    borderRadius: '8px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Audit
+                </button>
                 <button style={styles.btnSecondary} onClick={() => window.print()}>Print</button>
               </div>
             </div>
