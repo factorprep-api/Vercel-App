@@ -43,6 +43,17 @@ function normalizeString(str) {
   return String(str || '').toLowerCase().replace(/\./g, ' ').replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim();
 }
 
+function getLibraryRowName(lib) {
+  if (!lib) return '';
+  if (Array.isArray(lib)) return String(lib[0] || '');
+  if (typeof lib === 'object') return String(lib.name || '');
+  return '';
+}
+function getLibraryCalcType(lib) {
+  if (!lib || !Array.isArray(lib)) return '';
+  return String(lib[3] || '').trim();
+}
+
 function getYouTubeId(url) {
   if (!url) return null;
   const match = String(url).match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/i);
@@ -74,7 +85,7 @@ function extractMediaUrl(rawVid) {
 
 // ===== HELPER FUNCTION FOR METRIC CLASSIFICATION =====
 function classifyMetricValue(value) {
-  if (!value || value === '0' || value === '') return null;
+  if (value === null || value === undefined || String(value).trim() === '') return null;
 
   const trimmed = String(value).trim();
 
@@ -176,15 +187,15 @@ export default function MyProgress() {
         const parsed = JSON.parse(cached);
         if (parsed.athleteName) {
           setAthleteName(parsed.athleteName);
-          if (parsed.maxes) setMaxes(parsed.maxes);
-          if (parsed.history) {
+          if (Array.isArray(parsed.maxes)) setMaxes(parsed.maxes);
+          if (Array.isArray(parsed.history)) {
             setHistory(parsed.history);
             setHistoryLoaded(true);
             setLoading(false);
           }
-          if (parsed.programs) setProgramsData(parsed.programs);
-          if (parsed.library) setLibraryData(parsed.library);
-          if (parsed.wellness) setWellnessLogs(parsed.wellness);
+          if (Array.isArray(parsed.programs)) setProgramsData(parsed.programs);
+          if (Array.isArray(parsed.library)) setLibraryData(parsed.library);
+          if (Array.isArray(parsed.wellness)) setWellnessLogs(parsed.wellness);
         }
       } catch {}
     }
@@ -210,14 +221,14 @@ export default function MyProgress() {
 
       // Fetch Logbook history
       const logResult = await fetchLogbookByAthlete(name).catch(() => ({ data: [] }));
-      const logData = logResult.data || [];
+      const logData = Array.isArray(logResult.data) ? logResult.data : [];
       const formattedHistory = logData.map(item => ({
         date: String(item.date || '').split('T')[0],
         prog: item.prog || '',
         ex: item.ex || '',
         intensity: item.intensity || '',
-        wt: item.wt || '',
-        reps: item.reps || ''
+        wt: (item.wt === null || item.wt === undefined) ? '' : item.wt,
+        reps: (item.reps === null || item.reps === undefined) ? '' : item.reps
       }));
       setHistory(formattedHistory);
       setHistoryLoaded(true);
@@ -230,9 +241,9 @@ export default function MyProgress() {
         fetchLibrary().catch(() => ({ library: [] }))
       ]);
 
-      const athletes = allData.athletes || [];
-      const programs = allData.programs || [];
-      const library = (Array.isArray(libRes) && libRes.length) ? libRes : (libRes.library || allData.library || []);
+      const athletes = Array.isArray(allData.athletes) ? allData.athletes : [];
+      const programs = Array.isArray(allData.programs) ? allData.programs : [];
+      const library = (Array.isArray(libRes) && libRes.length) ? libRes : ((libRes && libRes.library) || allData.library || []);
 
       setProgramsData(programs);
       setLibraryData(library);
@@ -393,7 +404,7 @@ export default function MyProgress() {
   const sessionSections = useMemo(() => {
     if (!selectedSession) return [];
 
-    const programDefinitionRows = programsData.slice(1).filter(
+    const programDefinitionRows = (Array.isArray(programsData) ? programsData : []).slice(1).filter(
       r => String(r[0] || '').trim() === selectedSession.prog
     );
 
@@ -402,6 +413,7 @@ export default function MyProgress() {
       const exGroups = {};
       history.forEach(item => {
         if (item.prog !== selectedSession.prog) return;
+        if (String(item.date || '').split('T')[0] !== String(selectedSession.date || '').split('T')[0]) return;
         const key = normalizeString(item.ex);
         if (!exGroups[key]) {
           exGroups[key] = {
@@ -463,7 +475,7 @@ export default function MyProgress() {
           phase: phase,
           sets: [],
           mediaUrl: exerciseMediaMap[key] || '',
-          libraryRow: libraryData.find(lib => normalizeString(lib[0]) === key) || null,
+          libraryRow: (Array.isArray(libraryData) ? libraryData.find(lib => normalizeString(getLibraryRowName(lib)) === key) : null) || null,
           programRowIndices: [programOrder],
           order: orderCounter++,
           tempo: tempo,
@@ -476,7 +488,7 @@ export default function MyProgress() {
     });
 
     // Join logbook data onto program structure
-    const sessionLogbookEntries = history.filter(h => h.prog === selectedSession.prog);
+    const sessionLogbookEntries = history.filter(h => h.prog === selectedSession.prog && String(h.date || '').split('T')[0] === String(selectedSession.date || '').split('T')[0]);
 
     Object.keys(exGroups).forEach(key => {
       const group = exGroups[key];
@@ -614,11 +626,7 @@ export default function MyProgress() {
   async function handleEditSubmit() {
     if (!editingSet || !selectedSession) return;
 
-    const trimmedValue = String(editValueInput).trim();
-    if (trimmedValue === '') {
-      setEditMessage('Please enter a value.');
-      return;
-    }
+    const trimmedValue = String(editValueInput).trim() === '' ? '0' : String(editValueInput).trim();
     if (trimmedValue === String(editingSet.currentValue ?? '')) {
       setEditMessage('Value unchanged — nothing to update.');
       return;
@@ -1076,7 +1084,7 @@ export default function MyProgress() {
                                       let showWeight = true, showTime = false, showDistance = false;
 
                                       if (group.libraryRow) {
-                                        const calcType = String(group.libraryRow[3] || '').trim().toLowerCase();
+                                        const calcType = getLibraryCalcType(group.libraryRow).toLowerCase();
 
                                         if (calcType === 'weight' || calcType === 'yes' || calcType === '') {
                                           showWeight = true;
@@ -1093,7 +1101,7 @@ export default function MyProgress() {
                                         }
                                       }
 
-                                      const weightVal = classified.find(c => c.type === 'weight' || (c.type === 'reps' && idx === 0))?.value || set.wt || '0';
+                                      const weightVal = (set.wt === null || set.wt === undefined || String(set.wt).trim() === '') ? '0' : String(set.wt);
                                       const timeVal = classified.find(c => c.type === 'time')?.value || '—';
                                       const distanceVal = classified.find(c => c.type === 'distance')?.value || '—';
                                       const repsVal = classified.find(c => c.type === 'reps' && c.label === 'Reps')?.value || '—';

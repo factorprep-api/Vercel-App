@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
 import { fetchAuditLog } from '../api';
+import { Search, Loader2, ShieldCheck } from 'lucide-react';
 
 export default function AuditView() {
   const { role: userRole, userEmail } = useAuth();
@@ -85,17 +86,11 @@ export default function AuditView() {
       <div className="mp-body">
 
         {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', marginBottom: '20px' }}>
-          <button
-            onClick={() => navigate(-1)}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#008ed3', display: 'flex', marginRight: '12px', padding: 0 }}
-            title="Back"
-          >
-            <ArrowLeft size={28} />
-          </button>
-           <h2 style={{ fontSize: '24px', color: '#0f172a', fontWeight: '700', margin: 0, fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+        <div style={{ marginBottom: '20px' }}>
+          <h2 style={{ fontSize: '24px', color: '#0f172a', fontWeight: '700', margin: 0, fontFamily: 'system-ui, -apple-system, sans-serif' }}>
             Edit Audit Log
           </h2>
+        </div>
 
         {/* Filter Panel */}
         <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '20px', marginBottom: '20px', boxShadow: '0 2px 6px rgba(0,0,0,0.04)' }}>
