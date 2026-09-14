@@ -21,6 +21,14 @@ function getWeekColor(monday) {
   return WEEK_COLORS[((weekIndex % 4) + 4) % 4];
 }
 
+function getTodayYMD() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 // ===== SESSION TYPE COLOR CODING =====
 const TYPE_COLORS = {
   'Field Session': '#10b981',
@@ -54,6 +62,7 @@ export default function AthleteSchedule() {
 
   // Manual Log State
   const [showManualLog, setShowManualLog] = useState(false);
+  const [manualDate, setManualDate] = useState(getTodayYMD()); // New Date Picker State
   const [type, setType] = useState('Field Session');
   const [duration, setDuration] = useState(60);
   const [rpe, setRpe] = useState(7);
@@ -77,7 +86,6 @@ export default function AthleteSchedule() {
     setLoadingHistory(true);
     setError(null);
     try {
-      // 1. Check pods + load schedule + load medical vault (for injury dots)
       const [athRes, allDataRes, res, medRes] = await Promise.all([
         getAthleteByEmail(userEmail).catch(() => ({ status: 'Error' })),
         fetchAllData().catch(() => ({ athletes: [] })),
@@ -93,7 +101,6 @@ export default function AthleteSchedule() {
         setActivePods(String(userRow[11] || '').toLowerCase().split(',').map(s => s.trim()).filter(Boolean));
       }
 
-      // 2. Parse Medical Vault entries for this athlete (used for injury dot grading)
       const medData = medRes.data || [];
       const myInjuries = [];
       if (medData.length > 1) {
@@ -103,7 +110,7 @@ export default function AthleteSchedule() {
           if (mName !== nameToMatch.toLowerCase()) return;
           let md = new Date(m[0]);
           if (isNaN(md.getTime())) return;
-                const rawGrade = (m[10] === '' || m[10] === null || m[10] === undefined) ? null : Number(m[10]);
+          const rawGrade = (m[10] === '' || m[10] === null || m[10] === undefined) ? null : Number(m[10]);
           myInjuries.push({
             rawDate: md,
             grade: (rawGrade === null || isNaN(rawGrade)) ? null : Math.min(3, Math.max(0, rawGrade)),
@@ -114,7 +121,6 @@ export default function AthleteSchedule() {
       }
       setMedicalInjuries(myInjuries);
 
-      // 3. Load Schedule Data (12 Columns)
       const logs = res.data || [];
       if (logs.length > 1) {
         const myLogs = [];
@@ -133,7 +139,6 @@ export default function AthleteSchedule() {
               const aLoad = Number(r[9]) || (aMins * aRpe);
               const rowNotes = String(r[11] || '');
 
-              // Dynamic Status Derivation across 12 columns
               let sessionStatus = 'Proposed';
               if (aMins > 0) {
                 const lowerNotes = rowNotes.toLowerCase();
@@ -167,7 +172,6 @@ export default function AthleteSchedule() {
         const completed = myLogs.filter(s => s.status !== 'Proposed');
         const proposed = myLogs.filter(s => s.status === 'Proposed');
 
-        // Hide proposed sessions if the athlete already logged a completed session for that exact type within 48 hours
         const activeGhostCards = proposed.filter(p => {
           return !completed.some(c => c.type === p.type && Math.abs(c.rawDate - p.rawDate) < 86400000 * 2);
         });
@@ -189,10 +193,6 @@ export default function AthleteSchedule() {
 
   const hasMedicalPod = activePods.includes('medical');
 
-   // ===== INJURY DOT GRADER =====
-  // Matches Medical Vault entries within ±24h of a session.
-  // Grade colors: 0 = green, 1 = yellow, 2 = orange, 3 = red. No grade = no dot.
-  // Sessions flagged as injuries through the schedule itself (no medical entry) fall back to red.
   const GRADE_COLORS = { 0: '#16a34a', 1: '#eab308', 2: '#f97316', 3: '#dc2626' };
 
   function getInjuryMarker(session) {
@@ -201,13 +201,11 @@ export default function AthleteSchedule() {
       return { color: GRADE_COLORS[match.grade], grade: match.grade, bodyPart: match.bodyPart };
     }
     if (session.status === 'Injury') {
-      return { color: '#dc2626', grade: null, bodyPart: null }; // flagged but ungraded fallback
+      return { color: '#dc2626', grade: null, bodyPart: null };
     }
     return null;
   }
 
-  // ===== LOAD CARDS =====
-  // Rolling last 7 days, regardless of where we are in the week
   const rolling7DayLoad = useMemo(() => {
     if (completedSessions.length === 0) return 0;
     const sevenDaysAgo = new Date();
@@ -215,21 +213,30 @@ export default function AthleteSchedule() {
     return completedSessions.filter(s => s.rawDate >= sevenDaysAgo).reduce((sum, s) => sum + s.actualLoad, 0);
   }, [completedSessions]);
 
-  // Current training week (Monday start) — accumulates day by day, resets Monday
   const weekToDateLoad = useMemo(() => {
     const monday = getWeekMonday(new Date());
     return completedSessions.filter(s => s.rawDate >= monday).reduce((sum, s) => sum + s.actualLoad, 0);
   }, [completedSessions]);
 
+  // FIX 1: Duplicate log guard applied here
   async function handleSaveManual() {
-    setSaving(true); setError(null);
+    if (saving) return; // Strict guard to prevent double-logging from rapid taps
+    
+    setSaving(true); 
+    setError(null);
     const nameToSave = athleteName || userEmail.split('@')[0];
 
     const payload = {
-      email: userEmail, athlete: nameToSave, type: type,
-      proposedMins: 0, proposedRpe: 0,
-      actualMins: parseInt(duration), actualRpe: parseInt(rpe),
-      location: 'Mobile Log', notes: notes
+      email: userEmail, 
+      athlete: nameToSave, 
+      type: type,
+      date: manualDate, // Sends the custom selected date to the backend
+      proposedMins: 0, 
+      proposedRpe: 0,
+      actualMins: parseInt(duration), 
+      actualRpe: parseInt(rpe),
+      location: 'Mobile Log', 
+      notes: notes
     };
 
     try {
@@ -244,6 +251,7 @@ export default function AthleteSchedule() {
   }
 
   async function handleSaveAudit() {
+    if (saving) return;
     if ((auditMode === 'modified' || auditMode === 'injury') && (!actualMins || !actualRpe)) {
       alert("Please enter your actual Minutes and RPE."); return;
     }
@@ -294,7 +302,6 @@ export default function AthleteSchedule() {
     return Object.values(dailyMap).slice(-14);
   }, [completedSessions]);
 
-  // Group recent sessions by training week (Monday start), newest week first
   const weekGroups = useMemo(() => {
     const recent = [...completedSessions].reverse();
     const groups = [];
@@ -324,7 +331,6 @@ export default function AthleteSchedule() {
     );
   }
 
-  // Render the small session card used in calendar view cells
   const renderCalendarMiniCard = (s, i) => {
     const tColor = getTypeColor(s.type);
     const injury = getInjuryMarker(s);
@@ -421,7 +427,15 @@ export default function AthleteSchedule() {
             <div style={{ flex: 1, height: '1px', background: '#cbd5e1' }} />
           </div>
 
-          <button onClick={() => setShowManualLog(true)} style={{ width: '100%', padding: '16px', background: '#fff', border: '2px solid #e2e8f0', borderRadius: '12px', fontWeight: '700', color: '#334155', cursor: 'pointer', display: 'flex', justifyContent: 'center', gap: '8px', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
+          <button 
+            onClick={() => {
+              setShowManualLog(true);
+              setManualDate(getTodayYMD()); // Reset date to today on open
+              setType('Field Session');
+              setDuration(60);
+              setRpe(7);
+            }} 
+            style={{ width: '100%', padding: '16px', background: '#fff', border: '2px solid #e2e8f0', borderRadius: '12px', fontWeight: '700', color: '#334155', cursor: 'pointer', display: 'flex', justifyContent: 'center', gap: '8px', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
             + Log Unplanned Session
           </button>
         </>
@@ -495,8 +509,21 @@ export default function AthleteSchedule() {
           <div style={{ display: 'flex', alignItems: 'center', marginBottom: '16px', cursor: 'pointer', color: '#64748b', fontWeight: '600' }} onClick={() => setShowManualLog(false)}>
             <ArrowLeft size={18} style={{ marginRight: '6px' }} /> Back to Upcoming
           </div>
+          
+          {/* FIX 3: Date Picker added in the first place */}
           <div className="as-card">
-            <div className="as-card-header"><h3 className="as-card-title"><Calendar size={20} color="#008ed3" /> Session Type</h3></div>
+            <div className="as-card-header"><h3 className="as-card-title"><Calendar size={20} color="#008ed3" /> Session Date</h3></div>
+            <input 
+              type="date" 
+              className="as-select" 
+              value={manualDate} 
+              max={getTodayYMD()} 
+              onChange={(e) => setManualDate(e.target.value)} 
+            />
+          </div>
+
+          <div className="as-card">
+            <div className="as-card-header"><h3 className="as-card-title"><List size={20} color="#008ed3" /> Session Type</h3></div>
             <select className="as-select" value={type} onChange={(e) => setType(e.target.value)}>
               <option value="Field Session">Field Session</option>
               <option value="Competition">Competition</option>
@@ -528,7 +555,6 @@ export default function AthleteSchedule() {
 
       {activeTab === 'analytics' && (
         <>
-          {/* ===== TWO LOAD CARDS: Rolling 7-Day + Current Training Week (Monday start) ===== */}
           <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
             <div style={{ flex: 1, backgroundColor: '#fff', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', textAlign: 'center' }}>
               <div style={{ fontSize: '12px', fontWeight: '700', color: '#64748b', textTransform: 'uppercase' }}>Last 7 Days</div>
@@ -559,7 +585,6 @@ export default function AthleteSchedule() {
             </div>
           </div>
 
-          {/* ===== RECENT SESSIONS: AGENDA / CALENDAR TOGGLE ===== */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '24px 0 12px 0' }}>
             <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a' }}>Recent Sessions</h3>
             <button className="view-toggle-btn" onClick={() => setViewMode(viewMode === 'agenda' ? 'calendar' : 'agenda')}>
@@ -570,13 +595,11 @@ export default function AthleteSchedule() {
           {completedSessions.length === 0 ? (
             <p style={{ color: '#64748b', textAlign: 'center' }}>No sessions logged.</p>
           ) : viewMode === 'agenda' ? (
-            /* ===== AGENDA VIEW — sessions grouped by training week (Monday start), color-coded ===== */
             weekGroups.map((group, gi) => {
               const currentMonday = getWeekMonday(new Date());
               const isThisWeek = group.monday.getTime() === currentMonday.getTime();
               return (
                 <div key={gi}>
-                  {/* Week header: colored to match the cards below */}
                   <div className="week-group-header">
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <span style={{ display: 'inline-block', width: '18px', height: '4px', borderRadius: '2px', backgroundColor: group.color }}></span>
@@ -598,10 +621,11 @@ export default function AthleteSchedule() {
                       return (
                         <div key={i} style={{ padding: '12px 16px', background: '#fff', border: '1px solid #e2e8f0', borderLeft: `4px solid ${group.color}`, borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <div>
+                            {/* FIX 2: Added s.type (Session Name) next to the status icons */}
                             <div style={{ fontWeight: '700', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              {/* Injury dot — graded by Medical Vault pain level */}
                                  {injury && <span title={injury.bodyPart ? `Injury${injury.grade !== null ? ` (Grade ${injury.grade})` : ''}: ${injury.bodyPart}` : 'Injury logged'} style={{ width: '9px', height: '9px', borderRadius: '50%', backgroundColor: injury.color, flexShrink: 0, boxShadow: '0 0 0 1.5px #fff' }}></span>}
                               {s.status !== 'Actual' && <StatusIcon size={14} color={statusColor} title={`Status: ${s.status}`} />}
+                              {s.type}
                             </div>
                             <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>{s.dateStr} • {s.actualMins}m @ RPE {s.actualRpe}</div>
                           </div>
@@ -614,7 +638,6 @@ export default function AthleteSchedule() {
               );
             })
           ) : (
-            /* ===== CALENDAR VIEW — weeks as Mon–Sun grids, oldest at top, current week at bottom ===== */
             (() => {
               const sorted = [...completedSessions].sort((a, b) => a.rawDate - b.rawDate);
               const currentMonday = getWeekMonday(new Date());
