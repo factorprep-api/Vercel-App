@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
 import { fetchAuditLog } from '../api';
-import { ArrowLeft, ShieldCheck, Search, Loader2 } from 'lucide-react';
 
 export default function AuditView() {
   const { role: userRole, userEmail } = useAuth();
@@ -94,10 +93,9 @@ export default function AuditView() {
           >
             <ArrowLeft size={28} />
           </button>
-          <h2 style={{ fontSize: '24px', color: '#0f172a', fontWeight: '700', margin: 0, fontFamily: 'system-ui, -apple-system, sans-serif', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <ShieldCheck size={26} color="#4f46e5" /> Edit Audit Log
+           <h2 style={{ fontSize: '24px', color: '#0f172a', fontWeight: '700', margin: 0, fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+            Edit Audit Log
           </h2>
-        </div>
 
         {/* Filter Panel */}
         <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '20px', marginBottom: '20px', boxShadow: '0 2px 6px rgba(0,0,0,0.04)' }}>

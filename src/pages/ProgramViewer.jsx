@@ -482,7 +482,7 @@ export default function ProgramViewer() {
     const key = groupId + '_' + detailIdx; setInputValues(prev => ({ ...prev, [key]: { ...prev[key], [field]: value } }));
   }
 
-  // The Smart Saving Logic
+   // The Smart Saving Logic — saves ALL exercises from the program
   function handleSaveClick() {
     if (!workoutGroups.length) return;
     
@@ -501,7 +501,32 @@ export default function ProgramViewer() {
         const tm = input.time || targets.time || (targetData.metric === 'time' ? targetData.val : '');
         const dst = input.dist || targets.distance || (targetData.metric === 'distance' ? targetData.val : '');
 
-        if (!wt && !rp && !tm && !dst) return;
+        // FIXED: Every exercise is logged, even with zeros or programmed values
+        // Removed the early return that skipped unset fields
+        
+        let finalReps = [];
+        if (rp) finalReps.push(`${rp}`);
+        if (tm) finalReps.push(`${tm}`);
+        if (dst) finalReps.push(`${dst}`);
+        const repsString = finalReps.join(' | ');
+
+        // Always log — use 0 for weight if nothing entered, preserve reps/time/distance as-is
+        const wtNum = parseFloat(wt) || 0;
+        
+        setsToLog.push({ exercise: group.name, weight: wtNum, reps: repsString, intensity: set.intensity || '' });
+      });
+    });
+
+    if (!setsToLog.length) { alert('Nothing to save.'); return; }
+
+    // If they have the Schedule Pod, pop open the sRPE Modal!
+    if (activePods.includes('schedule')) {
+      setPendingSets(setsToLog);
+      setShowSrpeModal(true);
+    } else {
+      executeSave(setsToLog);
+    }
+  }
         const wtNum = parseFloat(wt) || 0;
         
         let finalReps = [];

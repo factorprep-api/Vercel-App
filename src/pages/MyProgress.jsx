@@ -533,35 +533,35 @@ export default function MyProgress() {
 
   const metricConfigs = {
     Grip: {
-      label: 'Grip Strength',
+      label: 'Dyno',
       unit: 'kg',
       color: '#0284c7',
       icon: Dumbbell,
       description: 'Max handgrip dynamometer peak output'
     },
     Feeling: {
-      label: 'Overall Feeling',
+      label: 'Feeling',
       unit: '/10',
       color: '#16a34a',
       icon: Smile,
       description: 'Subjective systemic readiness and energy level'
     },
     Soreness: {
-      label: 'Muscle Soreness',
+      label: 'Soreness',
       unit: '/10',
       color: '#ea580c',
       icon: Zap,
       description: 'Physical DOMS and localized muscular stiffness'
     },
     Sleep: {
-      label: 'Sleep Duration',
+      label: 'Sleep',
       unit: 'hrs',
       color: '#8b5cf6',
       icon: Moon,
       description: 'Total restorative sleep logged overnight'
     },
     Nutrition: {
-      label: 'Nutrition & Fuel',
+      label: 'Nutrition',
       unit: '/10',
       color: '#10b981',
       icon: Utensils,
