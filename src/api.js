@@ -60,8 +60,12 @@ export const fetchWellnessLogs = async () => {
 
 export const saveScheduleSession = async (payload) => {
   try {
-    let url = `${GOOGLE_SCRIPT_API_URL}?action=saveSchedule&data=${encodeURIComponent(JSON.stringify(payload))}&t=${Date.now()}`;
-    let resp = await fetch(url);
+    // POST instead of GET: prevents silent network-layer retries that caused
+    // duplicate rows when Apps Script responded slowly.
+    let resp = await fetch(`${GOOGLE_SCRIPT_API_URL}?action=saveSchedule&t=${Date.now()}`, {
+      method: 'POST',
+      body: JSON.stringify({ data: JSON.stringify(payload) })
+    });
     return await resp.json();
   } catch (err) { return { status: 'Error', message: err.message }; }
 };
