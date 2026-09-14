@@ -4,12 +4,12 @@ import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
 import {
   fetchAllData,
-  fetchAthletes,
   fetchLogbookByAthlete,
   getAthleteByEmail,
   fetchWellnessLogs,
   fetchLibrary,
-  getMediaType
+  getMediaType,
+  updateLogbookEntry
 } from '../api';
 import {
   ArrowLeft,
@@ -23,7 +23,9 @@ import {
   Moon,
   Utensils,
   Video,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Pencil,
+  X
 } from 'lucide-react';
 import {
   LineChart,
@@ -39,6 +41,17 @@ import './my-progress.css';
 
 function normalizeString(str) {
   return String(str || '').toLowerCase().replace(/\./g, ' ').replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+function getLibraryRowName(lib) {
+  if (!lib) return '';
+  if (Array.isArray(lib)) return String(lib[0] || '');
+  if (typeof lib === 'object') return String(lib.name || '');
+  return '';
+}
+function getLibraryCalcType(lib) {
+  if (!lib || !Array.isArray(lib)) return '';
+  return String(lib[3] || '').trim();
 }
 
 function getYouTubeId(url) {
@@ -70,8 +83,50 @@ function extractMediaUrl(rawVid) {
   return '';
 }
 
+// ===== HELPER FUNCTION FOR METRIC CLASSIFICATION =====
+function classifyMetricValue(value) {
+  if (value === null || value === undefined || String(value).trim() === '') return null;
+
+  const trimmed = String(value).trim();
+
+  const distMatch = trimmed.match(/^(\d+(?:\.\d+)?)\s*(m|km)$/i);
+  if (distMatch) {
+    return { type: 'distance', value: trimmed, label: 'Distance' };
+  }
+
+  const secMatch = trimmed.match(/^(\d+(?:\.\d+)?)\s*s$/i);
+  if (secMatch) {
+    return { type: 'time', value: trimmed, label: 'Time' };
+  }
+  const timeMatch = trimmed.match(/^(\d+):(\d+)$/);
+  if (timeMatch) {
+    return { type: 'time', value: trimmed, label: 'Time' };
+  }
+
+  const numVal = parseFloat(trimmed);
+  if (!isNaN(numVal)) {
+    return { type: 'reps', value: trimmed, label: 'Reps' };
+  }
+
+  return null;
+}
+
+const editButtonStyle = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: '4px',
+  padding: '3px 8px',
+  borderRadius: '5px',
+  border: '1px solid #cbd5e1',
+  background: '#ffffff',
+  color: '#64748b',
+  fontSize: '11px',
+  fontWeight: '700',
+  cursor: 'pointer'
+};
+
 export default function MyProgress() {
-  const { userEmail, athleteName: authAthleteName } = useAuth();
+  const { userEmail, athleteName: authAthleteName, role: userRole } = useAuth();
   const navigate = useNavigate();
   const loadedRef = useRef(false);
 
@@ -89,7 +144,7 @@ export default function MyProgress() {
 
   // Active Tab: 'wellness' | 'maxes' | 'history'
   const [activeTab, setActiveTab] = useState(() => (hasWellnessPod ? 'wellness' : 'maxes'));
-  const [selectedMetric, setSelectedMetric] = useState('Grip'); // 'Grip' | 'Feeling' | 'Soreness' | 'Sleep' | 'Nutrition'
+  const [selectedMetric, setSelectedMetric] = useState('Grip');
 
   // Data states
   const [loading, setLoading] = useState(true);
@@ -104,6 +159,12 @@ export default function MyProgress() {
   const [exerciseFilter, setExerciseFilter] = useState('All');
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const [expandedMediaMap, setExpandedMediaMap] = useState({});
+
+  // ===== STEP B: EDIT STATE =====
+  const [editingSet, setEditingSet] = useState(null); // { exerciseName, setNumber, field, currentValue, metricLabel }
+  const [editValueInput, setEditValueInput] = useState('');
+  const [editSaving, setEditSaving] = useState(false);
+  const [editMessage, setEditMessage] = useState(null);
 
   // Sync tab if user does not have wellness pod
   useEffect(() => {
@@ -126,15 +187,15 @@ export default function MyProgress() {
         const parsed = JSON.parse(cached);
         if (parsed.athleteName) {
           setAthleteName(parsed.athleteName);
-          if (parsed.maxes) setMaxes(parsed.maxes);
-          if (parsed.history) {
+          if (Array.isArray(parsed.maxes)) setMaxes(parsed.maxes);
+          if (Array.isArray(parsed.history)) {
             setHistory(parsed.history);
             setHistoryLoaded(true);
             setLoading(false);
           }
-          if (parsed.programs) setProgramsData(parsed.programs);
-          if (parsed.library) setLibraryData(parsed.library);
-          if (parsed.wellness) setWellnessLogs(parsed.wellness);
+          if (Array.isArray(parsed.programs)) setProgramsData(parsed.programs);
+          if (Array.isArray(parsed.library)) setLibraryData(parsed.library);
+          if (Array.isArray(parsed.wellness)) setWellnessLogs(parsed.wellness);
         }
       } catch {}
     }
@@ -160,14 +221,14 @@ export default function MyProgress() {
 
       // Fetch Logbook history
       const logResult = await fetchLogbookByAthlete(name).catch(() => ({ data: [] }));
-      const logData = logResult.data || [];
+      const logData = Array.isArray(logResult.data) ? logResult.data : [];
       const formattedHistory = logData.map(item => ({
         date: String(item.date || '').split('T')[0],
         prog: item.prog || '',
         ex: item.ex || '',
         intensity: item.intensity || '',
-        wt: item.wt || '',
-        reps: item.reps || ''
+        wt: (item.wt === null || item.wt === undefined) ? '' : item.wt,
+        reps: (item.reps === null || item.reps === undefined) ? '' : item.reps
       }));
       setHistory(formattedHistory);
       setHistoryLoaded(true);
@@ -180,9 +241,9 @@ export default function MyProgress() {
         fetchLibrary().catch(() => ({ library: [] }))
       ]);
 
-      const athletes = allData.athletes || [];
-      const programs = allData.programs || [];
-      const library = (Array.isArray(libRes) && libRes.length) ? libRes : (libRes.library || allData.library || []);
+      const athletes = Array.isArray(allData.athletes) ? allData.athletes : [];
+      const programs = Array.isArray(allData.programs) ? allData.programs : [];
+      const library = (Array.isArray(libRes) && libRes.length) ? libRes : ((libRes && libRes.library) || allData.library || []);
 
       setProgramsData(programs);
       setLibraryData(library);
@@ -339,30 +400,110 @@ export default function MyProgress() {
     return lookup;
   }, [programsData]);
 
-  // Build structured Phase sections for selectedSession
+  // ===== PROGRAM-JOIN RECONSTRUCTION (Step A) =====
   const sessionSections = useMemo(() => {
     if (!selectedSession) return [];
-    const session = sessions.find(s => s.date === selectedSession.date && s.prog === selectedSession.prog);
-    if (!session) return [];
 
+    const programDefinitionRows = (Array.isArray(programsData) ? programsData : []).slice(1).filter(
+      r => String(r[0] || '').trim() === selectedSession.prog
+    );
+
+    // FALLBACK: If program doesn't exist anymore, use logbook-only rendering
+    if (programDefinitionRows.length === 0) {
+      const exGroups = {};
+      history.forEach(item => {
+        if (item.prog !== selectedSession.prog) return;
+        if (String(item.date || '').split('T')[0] !== String(selectedSession.date || '').split('T')[0]) return;
+        const key = normalizeString(item.ex);
+        if (!exGroups[key]) {
+          exGroups[key] = {
+            name: item.ex,
+            sets: [],
+            phase: null,
+            mediaUrl: exerciseMediaMap[key] || ''
+          };
+        }
+        exGroups[key].sets.push(item);
+      });
+
+      const sections = [
+        { title: 'Warm Up', items: [], color: '#fd7e14' },
+        { title: 'Work Block', items: [], color: '#22c55e' },
+        { title: 'Other Content', items: [], color: '#888888' },
+        { title: 'Cool Down', items: [], color: '#ef4444' },
+      ];
+
+      const phaseMapping = {
+        'warm up': 'Warm Up', 'warmup': 'Warm Up',
+        'work block': 'Work Block', 'workblock': 'Work Block',
+        'cool down': 'Cool Down', 'cooldown': 'Cool Down'
+      };
+
+      Object.values(exGroups).forEach(group => {
+        const lookupKey = normalizeString(selectedSession.prog) + '|' + normalizeString(group.name);
+        group.phase = phaseLookup[lookupKey] || 'Other Content';
+        const phaseTitle = phaseMapping[group.phase?.toLowerCase()] || group.phase;
+        const section = sections.find(s => s.title === phaseTitle);
+        if (section) section.items.push(group);
+      });
+
+      return sections.filter(s => s.items.length > 0);
+    }
+
+    // FULL RECONSTRUCTION: Program definition drives the skeleton
     const exGroups = {};
-    session.sets.forEach(set => {
-      const key = normalizeString(set.ex);
+    let orderCounter = 0;
+
+    programDefinitionRows.forEach((row, programOrder) => {
+      const phase = String(row[2] || '').trim() || 'Work Block';
+      const exName = String(row[3] || '').trim();
+      if (!exName) return;
+
+      const key = normalizeString(exName);
       if (!exGroups[key]) {
+        const tempo = String(row[7] || '').trim();
+        const rest = String(row[8] || '').trim();
+        let advanced = null;
+        try {
+          if (row.length > 13 && row[13]) {
+            advanced = JSON.parse(String(row[13]));
+          }
+        } catch(e) {}
+
         exGroups[key] = {
-          name: set.ex,
+          name: exName,
+          phase: phase,
           sets: [],
-          phase: null,
-          mediaUrl: exerciseMediaMap[key] || ''
+          mediaUrl: exerciseMediaMap[key] || '',
+          libraryRow: (Array.isArray(libraryData) ? libraryData.find(lib => normalizeString(getLibraryRowName(lib)) === key) : null) || null,
+          programRowIndices: [programOrder],
+          order: orderCounter++,
+          tempo: tempo,
+          rest: rest,
+          advanced: advanced
         };
+      } else {
+        exGroups[key].programRowIndices.push(programOrder);
       }
-      exGroups[key].sets.push(set);
     });
 
-    Object.values(exGroups).forEach(group => {
-      const lookupKey = normalizeString(selectedSession.prog) + '|' + normalizeString(group.name);
-      group.phase = phaseLookup[lookupKey] || 'Other Content';
+    // Join logbook data onto program structure
+    const sessionLogbookEntries = history.filter(h => h.prog === selectedSession.prog && String(h.date || '').split('T')[0] === String(selectedSession.date || '').split('T')[0]);
+
+    Object.keys(exGroups).forEach(key => {
+      const group = exGroups[key];
+      const matchingLogEntries = sessionLogbookEntries.filter(h => normalizeString(h.ex) === key);
+
+      if (matchingLogEntries.length === 0) {
+        group.hasData = false;
+        group.sets = [];
+      } else {
+        group.sets = matchingLogEntries;
+        group.hasData = true;
+      }
     });
+
+    const orderedGroupKeys = Object.keys(exGroups).sort((a, b) => exGroups[a].order - exGroups[b].order);
 
     const sections = [
       { title: 'Warm Up', items: [], color: '#fd7e14' },
@@ -377,14 +518,15 @@ export default function MyProgress() {
       'cool down': 'Cool Down', 'cooldown': 'Cool Down'
     };
 
-    Object.values(exGroups).forEach(group => {
+    orderedGroupKeys.forEach(key => {
+      const group = exGroups[key];
       const phaseTitle = phaseMapping[group.phase?.toLowerCase()] || group.phase;
       const section = sections.find(s => s.title === phaseTitle);
       if (section) section.items.push(group);
     });
 
     return sections.filter(s => s.items.length > 0);
-  }, [selectedSession, sessions, phaseLookup, programsData, exerciseMediaMap]);
+  }, [selectedSession, sessions, programsData, libraryData, history, exerciseMediaMap, phaseLookup]);
 
   const uniqueExercises = useMemo(() => {
     return [...new Set(history.map(h => h.ex).filter(Boolean))].sort();
@@ -403,35 +545,35 @@ export default function MyProgress() {
 
   const metricConfigs = {
     Grip: {
-      label: 'Grip Strength',
+      label: 'Dyno',
       unit: 'kg',
       color: '#0284c7',
       icon: Dumbbell,
       description: 'Max handgrip dynamometer peak output'
     },
     Feeling: {
-      label: 'Overall Feeling',
+      label: 'Feeling',
       unit: '/10',
       color: '#16a34a',
       icon: Smile,
       description: 'Subjective systemic readiness and energy level'
     },
     Soreness: {
-      label: 'Muscle Soreness',
+      label: 'Soreness',
       unit: '/10',
       color: '#ea580c',
       icon: Zap,
       description: 'Physical DOMS and localized muscular stiffness'
     },
     Sleep: {
-      label: 'Sleep Duration',
+      label: 'Sleep',
       unit: 'hrs',
       color: '#8b5cf6',
       icon: Moon,
       description: 'Total restorative sleep logged overnight'
     },
     Nutrition: {
-      label: 'Nutrition & Fuel',
+      label: 'Nutrition',
       unit: '/10',
       color: '#10b981',
       icon: Utensils,
@@ -467,10 +609,82 @@ export default function MyProgress() {
     }));
   };
 
+  // ===== STEP B: EDIT HANDLERS =====
+  const openEditModal = (exerciseName, setNumber, field, currentValue, metricLabel) => {
+    setEditingSet({ exerciseName, setNumber, field, currentValue, metricLabel });
+    setEditValueInput(currentValue === null || currentValue === undefined ? '' : String(currentValue));
+    setEditMessage(null);
+  };
+
+  const closeEditModal = () => {
+    setEditingSet(null);
+    setEditValueInput('');
+    setEditSaving(false);
+    setEditMessage(null);
+  };
+
+  async function handleEditSubmit() {
+    if (!editingSet || !selectedSession) return;
+
+    const trimmedValue = String(editValueInput).trim() === '' ? '0' : String(editValueInput).trim();
+    if (trimmedValue === String(editingSet.currentValue ?? '')) {
+      setEditMessage('Value unchanged — nothing to update.');
+      return;
+    }
+
+    setEditSaving(true);
+    setEditMessage(null);
+
+    const result = await updateLogbookEntry({
+      athlete: athleteName,
+      sessionDate: selectedSession.date,
+      program: selectedSession.prog,
+      exercise: editingSet.exerciseName,
+      setNumber: editingSet.setNumber,
+      field: editingSet.field,
+      newValue: trimmedValue,
+      editorEmail: userEmail,
+      editorRole: userRole === 'coach' ? 'coach' : 'athlete'
+    });
+
+    setEditSaving(false);
+
+    if (result.status === 'Success') {
+      // Update the local history copy so the screen refreshes instantly (no reload)
+      const historyCopy = history.map(item => ({ ...item }));
+      let matchCount = 0;
+      for (let i = 0; i < historyCopy.length; i++) {
+        const item = historyCopy[i];
+        if (item.date === selectedSession.date &&
+            item.prog === selectedSession.prog &&
+            normalizeString(item.ex) === normalizeString(editingSet.exerciseName)) {
+          matchCount++;
+          if (matchCount === editingSet.setNumber) {
+            if (editingSet.field === 'weight') item.wt = trimmedValue;
+            if (editingSet.field === 'reps') item.reps = trimmedValue;
+            break;
+          }
+        }
+      }
+      setHistory(historyCopy);
+      try {
+        const cached = localStorage.getItem('fp_progress_data');
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          parsed.history = historyCopy;
+          localStorage.setItem('fp_progress_data', JSON.stringify(parsed));
+        }
+      } catch {}
+      closeEditModal();
+    } else {
+      setEditMessage('Update failed: ' + (result.message || 'Unknown error'));
+    }
+  }
+
   return (
     <div className="mp-container">
       <div className="mp-body">
-        
+
         {/* Standard App Header */}
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: '20px' }}>
           <button
@@ -747,7 +961,6 @@ export default function MyProgress() {
                     {sessionSections.map(section => (
                       <div
                         key={section.title}
-                        className="pv-phase-card"
                         style={{
                           borderTopColor: section.color,
                           borderTopStyle: 'solid',
@@ -762,7 +975,6 @@ export default function MyProgress() {
                         }}
                       >
                         <div
-                          className="pv-phase-header"
                           style={{
                             backgroundColor: section.color,
                             color: '#fff',
@@ -784,11 +996,30 @@ export default function MyProgress() {
 
                             return (
                               <div key={group.name} style={{ marginBottom: '16px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', overflow: 'hidden' }}>
-                                
-                                {/* Exercise Header with Optional Media Toggle */}
+
+                                {/* Exercise Header with Program-Fidelity Markers */}
                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
-                                  <h4 style={{ fontSize: '15px', color: '#0f172a', margin: 0, fontWeight: '700' }}>
+                                  <h4 style={{ fontSize: '15px', color: '#0f172a', margin: 0, fontWeight: '700', display: 'flex', alignItems: 'center', gap: '6px' }}>
                                     {group.name}
+
+                                    {/* Superset marker */}
+                                    {group.advanced && group.advanced.setType === 'superset' && <span title="Superset">🔗</span>}
+
+                                    {/* Drop set marker */}
+                                    {group.advanced && group.advanced.setType === 'drop' && (
+                                      <img src="/drop-set-icon.png" alt="Drop Set 📉" style={{ width: '16px', height: '16px' }} onError={(e) => { e.target.style.display='none'; e.target.insertAdjacentText('afterend', '📉'); }} />
+                                    )}
+
+                                    {/* Unilateral markers */}
+                                    {group.advanced && group.advanced.execution === 'uni-both' && (
+                                      <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#4f46e5', color: 'white', fontWeight: '800', fontSize: '10px', width: '16px', height: '16px', borderRadius: '50%' }}>U</span>
+                                    )}
+                                    {group.advanced && group.advanced.execution === 'uni-left' && (
+                                      <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#4f46e5', color: 'white', fontWeight: '800', fontSize: '10px', width: '16px', height: '16px', borderRadius: '50%' }}>L</span>
+                                    )}
+                                    {group.advanced && group.advanced.execution === 'uni-right' && (
+                                      <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#4f46e5', color: 'white', fontWeight: '800', fontSize: '10px', width: '16px', height: '16px', borderRadius: '50%' }}>R</span>
+                                    )}
                                   </h4>
 
                                   {hasMedia && (
@@ -838,29 +1069,123 @@ export default function MyProgress() {
                                   </div>
                                 )}
 
-                                {/* Sets */}
-                                <div style={{ padding: '8px 12px' }}>
-                                  {group.sets.map((set, idx) => (
-                                    <div
-                                      key={idx}
-                                      style={{
-                                        display: 'flex',
-                                        justifyContent: 'space-between',
-                                        alignItems: 'center',
-                                        padding: '8px 10px',
-                                        borderBottom: idx === group.sets.length - 1 ? 'none' : '1px solid #e2e8f0',
-                                        fontSize: '14px'
-                                      }}
-                                    >
-                                      <div>
-                                        <strong style={{ color: '#475569' }}>Set {idx + 1}:</strong> {set.reps} reps {set.intensity ? '@ ' + set.intensity + '%' : ''}
-                                      </div>
-                                      <div style={{ fontWeight: '700', color: '#008ed3' }}>
-                                        {set.wt}kg x {set.reps}
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
+                                {/* ===== SET RENDERING LOOP WITH EDIT BUTTONS (Step A + B) ===== */}
+                                {group.sets.length > 0 ? (
+                                  <div style={{ padding: '8px 12px' }}>
+                                    {group.sets.map((set, idx) => {
+                                      // Parse the joined reps field
+                                      const repsString = String(set.reps || '');
+                                      const parts = repsString.split(' | ').filter(Boolean);
+                                      const classified = parts.map(part => classifyMetricValue(part));
+
+                                      const intensityPercent = set.intensity ? `@ ${set.intensity}%` : '';
+
+                                      // Determine what metrics this exercise should show (from library configuration)
+                                      let showWeight = true, showTime = false, showDistance = false;
+
+                                      if (group.libraryRow) {
+                                        const calcType = getLibraryCalcType(group.libraryRow).toLowerCase();
+
+                                        if (calcType === 'weight' || calcType === 'yes' || calcType === '') {
+                                          showWeight = true;
+                                          showTime = false;
+                                          showDistance = false;
+                                        } else if (calcType === 'time') {
+                                          showWeight = false;
+                                          showTime = true;
+                                          showDistance = false;
+                                        } else if (calcType === 'distance') {
+                                          showWeight = false;
+                                          showTime = false;
+                                          showDistance = true;
+                                        }
+                                      }
+
+                                      const weightVal = (set.wt === null || set.wt === undefined || String(set.wt).trim() === '') ? '0' : String(set.wt);
+                                      const timeVal = classified.find(c => c.type === 'time')?.value || '—';
+                                      const distanceVal = classified.find(c => c.type === 'distance')?.value || '—';
+                                      const repsVal = classified.find(c => c.type === 'reps' && c.label === 'Reps')?.value || '—';
+
+                                      // Label for the value field edit button, based on metric type
+                                      const valueFieldLabel = showTime ? 'Time (as logged)' : (showDistance ? 'Distance (as logged)' : 'Reps / Value (as logged)');
+
+                                      return (
+                                        <div
+                                          key={idx}
+                                          style={{
+                                            display: 'flex',
+                                            justifyContent: 'space-between',
+                                            alignItems: 'flex-start',
+                                            padding: '8px 10px',
+                                            borderBottom: idx === group.sets.length - 1 ? 'none' : '1px solid #e2e8f0',
+                                            fontSize: '14px'
+                                          }}
+                                        >
+                                          <div style={{ flex: 1 }}>
+                                            <div style={{ fontWeight: '700', color: '#475569', marginBottom: '4px' }}>
+                                              Set {idx + 1}: {set.reps} {intensityPercent}
+                                            </div>
+                                            {(set.tempo || set.rest || (group.tempo || group.rest)) && (
+                                              <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
+                                                {(set.tempo || group.tempo) && <>Tempo: <span style={{ color: '#008ed3' }}>{set.tempo || group.tempo}</span></>}
+                                                {(set.tempo || group.tempo) && (set.rest || group.rest) && ' | '}
+                                                {(set.rest || group.rest) && <>Rest: <span style={{ color: '#008ed3' }}>{set.rest || group.rest}</span></>}
+                                              </div>
+                                            )}
+                                          </div>
+
+                                          <div style={{ textAlign: 'right', minWidth: '100px' }}>
+                                            {/* Metric lines */}
+                                            {showWeight && (
+                                              <div style={{ fontWeight: '700', color: '#008ed3', marginBottom: '2px' }}>
+                                                {weightVal} <span style={{ color: '#64748b', fontWeight: '400' }}>kg</span>
+                                              </div>
+                                            )}
+                                            {showTime && (
+                                              <div style={{ fontWeight: '700', color: '#008ed3', marginBottom: '2px' }}>
+                                                {timeVal}
+                                              </div>
+                                            )}
+                                            {showDistance && (
+                                              <div style={{ fontWeight: '700', color: '#008ed3', marginBottom: '2px' }}>
+                                                {distanceVal}
+                                              </div>
+                                            )}
+                                            {repsVal && repsVal !== '—' && (
+                                              <div style={{ fontSize: '12px', color: '#64748b' }}>
+                                                x {repsVal}
+                                              </div>
+                                            )}
+
+                                            {/* ===== STEP B: EDIT BUTTONS ===== */}
+                                            <div style={{ display: 'flex', gap: '6px', marginTop: '6px', justifyContent: 'flex-end' }}>
+                                              {showWeight && (
+                                                <button
+                                                  onClick={() => openEditModal(group.name, idx + 1, 'weight', set.wt, 'Weight (kg)')}
+                                                  title="Edit weight for this set"
+                                                  style={editButtonStyle}
+                                                >
+                                                  <Pencil size={11} /> kg
+                                                </button>
+                                              )}
+                                              <button
+                                                onClick={() => openEditModal(group.name, idx + 1, 'reps', set.reps, valueFieldLabel)}
+                                                title="Edit the logged value for this set"
+                                                style={editButtonStyle}
+                                              >
+                                                <Pencil size={11} /> value
+                                              </button>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                ) : (
+                                  <div style={{ padding: '12px', fontStyle: 'italic', color: '#94a3b8' }}>
+                                    No sets logged for this exercise
+                                  </div>
+                                )}
                               </div>
                             );
                           })}
@@ -959,6 +1284,113 @@ export default function MyProgress() {
           </>
         )}
       </div>
+
+      {/* ===== STEP B: EDIT MODAL ===== */}
+      {editingSet && selectedSession && (
+        <div
+          onClick={() => { if (!editSaving) closeEditModal(); }}
+          style={{
+            position: 'fixed',
+            top: 0, left: 0, right: 0, bottom: 0,
+            background: 'rgba(15, 23, 42, 0.8)',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 10000,
+            padding: '20px'
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: '#ffffff',
+              borderRadius: '16px',
+              width: '100%',
+              maxWidth: '420px',
+              padding: '24px',
+              boxShadow: '0 20px 40px rgba(0,0,0,0.2)'
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h3 style={{ margin: 0, fontSize: '20px', color: '#0f172a' }}>Edit Set</h3>
+              <button onClick={() => { if (!editSaving) closeEditModal(); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', padding: 0 }}>
+                <X size={22} />
+              </button>
+            </div>
+
+            <p style={{ margin: '0 0 4px 0', fontSize: '14px', fontWeight: '700', color: '#0f172a' }}>
+              {selectedSession.prog}
+            </p>
+            <p style={{ margin: '0 0 16px 0', fontSize: '13px', color: '#64748b' }}>
+              {editingSet.exerciseName} — Set {editingSet.setNumber} · Field: {editingSet.metricLabel}
+            </p>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '16px' }}>
+              <div>
+                <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: '700', textTransform: 'uppercase' }}>Current</div>
+                <div style={{ fontSize: '18px', fontWeight: '800', color: '#334155' }}>
+                  {editingSet.currentValue === '' || editingSet.currentValue === null || editingSet.currentValue === undefined ? '(blank)' : String(editingSet.currentValue)}
+                </div>
+              </div>
+              <div style={{ fontSize: '20px', color: '#94a3b8' }}>→</div>
+              <div style={{ flex: 1 }}>
+                <label style={{ display: 'block', fontSize: '11px', color: '#94a3b8', fontWeight: '700', textTransform: 'uppercase', marginBottom: '4px' }}>New</label>
+                <input
+                  type="text"
+                  autoFocus
+                  value={editValueInput}
+                  onChange={e => setEditValueInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter' && !editSaving) handleEditSubmit(); }}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    fontSize: '18px',
+                    fontWeight: '700',
+                    textAlign: 'center',
+                    borderRadius: '8px',
+                    border: '2px solid #008ed3',
+                    outline: 'none'
+                  }}
+                />
+              </div>
+            </div>
+
+            {editingSet.field === 'reps' && (
+              <p style={{ margin: '0 0 16px 0', fontSize: '12px', color: '#64748b', fontStyle: 'italic' }}>
+                This is the value exactly as it was saved (e.g. "8" or "45s | 800m"). Enter the corrected version in the same format.
+              </p>
+            )}
+
+            <p style={{ margin: '0 0 20px 0', fontSize: '12px', color: '#d97706' }}>
+              ⚠ Edits are permanent and recorded in the audit log. Corrected values feed into future target-load calculations.
+            </p>
+
+            {editMessage && (
+              <p style={{ margin: '0 0 16px 0', fontSize: '13px', fontWeight: '700', color: '#dc2626' }}>
+                {editMessage}
+              </p>
+            )}
+
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button
+                onClick={() => { if (!editSaving) closeEditModal(); }}
+                disabled={editSaving}
+                style={{ flex: 1, padding: '13px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#f8fafc', fontWeight: '700', color: '#475569', cursor: 'pointer' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleEditSubmit}
+                disabled={editSaving}
+                style={{ flex: 1, padding: '13px', borderRadius: '8px', border: 'none', background: '#008ed3', color: '#ffffff', fontWeight: '800', cursor: 'pointer' }}
+              >
+                {editSaving ? 'Saving...' : 'Confirm Edit'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <HelpButton pageName="My Progress" position="bottom-right" />
     </div>
   );

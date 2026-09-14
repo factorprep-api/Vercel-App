@@ -233,6 +233,198 @@ function doGet(e) {
   }
 
   // ==========================================
+  // LOGBOOK EDIT FUNCTIONALITY (Step B)
+  // ==========================================
+
+  if (action === "updateLogbookEntry") {
+    var dataObj = parsePayload(e);
+
+    var editAthlete = String(dataObj.athlete || "").trim();
+    var editSessionDate = String(dataObj.sessionDate || "").trim();
+    var editProgram = String(dataObj.program || "").trim();
+    var editExercise = String(dataObj.exercise || "").trim();
+    var editSetNumber = parseInt(dataObj.setNumber) || 0;
+    var editField = String(dataObj.field || "").toLowerCase();
+    var editNewValue = String(dataObj.newValue || "").trim();
+    var editorEmail = String(dataObj.editorEmail || "").trim();
+    var editorRole = String(dataObj.editorRole || "").trim();
+
+    if (!editAthlete || !editSessionDate || !editProgram || !editExercise || !editSetNumber || !editField || !editNewValue) {
+      return jsonResponse({ status: "Error", message: "Missing required fields for update" });
+    }
+
+    // Only fields adjustable at save time may be edited
+    if (editField !== "weight" && editField !== "reps") {
+      return jsonResponse({ status: "Error", message: "Only 'weight' or 'reps' fields can be edited" });
+    }
+
+    var editLogSheet = sheetApp.getSheetByName("Logbook");
+    if (!editLogSheet) {
+      return jsonResponse({ status: "Error", message: "Logbook sheet not found" });
+    }
+
+    var editLogData = editLogSheet.getDataRange().getValues();
+    var editHeaders = editLogData[0] || [];
+
+    var dateCol = -1, athleteCol = -1, progCol = -1, exCol = -1, wtCol = -1, repsCol = -1;
+    for (var c = 0; c < editHeaders.length; c++) {
+      var eh = String(editHeaders[c]).toLowerCase().trim();
+      if (eh === "date") dateCol = c;
+      if (eh === "athlete") athleteCol = c;
+      if (eh === "program") progCol = c;
+      if (eh === "exercise") exCol = c;
+      if (eh === "weight") wtCol = c;
+      if (eh === "reps") repsCol = c;
+    }
+
+    if (dateCol === -1 || athleteCol === -1 || progCol === -1 || exCol === -1 || wtCol === -1 || repsCol === -1) {
+      return jsonResponse({ status: "Error", message: "Required columns not found in Logbook" });
+    }
+
+    // Find the target row using the composite key:
+    // (athlete + session date + program + exercise + set position)
+    // Sets were appended in program order, so the Nth matching row is set N.
+    // NOTE: the Logbook date column stores full ISO timestamps (e.g. 2026-09-03T14:22:33.456Z)
+    // while the frontend sends the session date as YYYY-MM-DD — compare only the first 10 chars.
+    var targetRow = -1;
+    var setCounter = 0;
+
+    for (var r = 1; r < editLogData.length; r++) {
+      var rowAthlete = String(editLogData[r][athleteCol] || "").trim().toLowerCase();
+      var rowDatePart = String(editLogData[r][dateCol] || "").substring(0, 10);
+      var rowProgram = String(editLogData[r][progCol] || "").trim();
+      var rowExercise = String(editLogData[r][exCol] || "").trim().toLowerCase();
+
+      if (rowAthlete === editAthlete.toLowerCase() &&
+          rowDatePart === editSessionDate &&
+          rowProgram === editProgram &&
+          rowExercise === editExercise.toLowerCase()) {
+        setCounter++;
+        if (setCounter === editSetNumber) {
+          targetRow = r + 1; // 1-indexed for getRange
+          break;
+        }
+      }
+    }
+
+    if (targetRow === -1) {
+      return jsonResponse({
+        status: "NotFound",
+        message: "Logbook entry not found for this athlete, date, program, exercise and set number"
+      });
+    }
+
+    // Capture the old value BEFORE updating (for the audit trail)
+    var editOldValue = "";
+    var editTargetColIndex = (editField === "weight") ? wtCol : repsCol;
+    editOldValue = editLogData[targetRow - 1][editTargetColIndex];
+    if (editOldValue === null || editOldValue === undefined) { editOldValue = ""; }
+
+    // Write the new value — numbers stay numbers so Sheets treats them as numeric
+    var editNewCellValue;
+    var editParsed = parseFloat(editNewValue);
+    if (!isNaN(editParsed) && isFinite(editParsed)) {
+      editNewCellValue = editParsed;
+    } else {
+      editNewCellValue = editNewValue;
+    }
+    editLogSheet.getRange(targetRow, editTargetColIndex + 1).setValue(editNewCellValue);
+
+    // Append the audit record (Step C) — the edit is not complete unless it is on record
+    var auditSheet = sheetApp.getSheetByName("Audit_Log");
+    if (!auditSheet) {
+      return jsonResponse({
+        status: "Error",
+        message: "CRITICAL: Logbook row was updated, but Audit_Log sheet not found. Edit succeeded, audit record missing. Run action=initSheets to provision Audit_Log."
+      });
+    }
+
+    auditSheet.appendRow([
+      new Date().toISOString(),  // Date of edit
+      editorEmail,               // Who_Email
+      editorRole,                // Who_Role
+      editAthlete,               // Athlete_Name
+      editSessionDate,           // Session_Date
+      editProgram,               // Program_Name
+      editExercise,              // Exercise_Name
+      editSetNumber,             // Set_Number
+      editField,                 // Field_Changed
+      editOldValue,              // Old_Value
+      editNewCellValue           // New_Value
+    ]);
+
+    return jsonResponse({
+      status: "Success",
+      message: "Entry updated successfully",
+      audited: true,
+      updatedRow: targetRow,
+      oldValue: editOldValue,
+      newValue: editNewCellValue
+    });
+  }
+
+  // ==========================================
+  // AUDIT TRAIL (Step C)
+  // ==========================================
+
+  if (action === "fetchAuditLog") {
+    var auditSheet = sheetApp.getSheetByName("Audit_Log");
+    if (!auditSheet) {
+      return jsonResponse({ status: "Empty", message: "Audit_Log sheet not found", data: [] });
+    }
+
+    var auditData = auditSheet.getDataRange().getValues();
+    var auditFiltered = [];
+
+    var auditAthleteFilter = String(e.parameter.athlete || "").trim().toLowerCase();
+    var auditProgramFilter = String(e.parameter.program || "").trim().toLowerCase();
+    var auditDateStart = String(e.parameter.dateStart || "").trim();
+    var auditDateEnd = String(e.parameter.dateEnd || "").trim();
+
+    for (var i = 1; i < auditData.length; i++) {
+      var row = auditData[i];
+      if (!row || !row[0]) continue;
+
+      if (auditAthleteFilter && String(row[3] || "").trim().toLowerCase() !== auditAthleteFilter) {
+        continue;
+      }
+      if (auditProgramFilter && String(row[5] || "").trim().toLowerCase() !== auditProgramFilter) {
+        continue;
+      }
+      var auditSessionDate = String(row[4] || "");
+      if (auditDateStart && auditSessionDate < auditDateStart) {
+        continue;
+      }
+      if (auditDateEnd && auditSessionDate > auditDateEnd) {
+        continue;
+      }
+
+      auditFiltered.push({
+        date: row[0],
+        whoEmail: row[1],
+        whoRole: row[2],
+        athlete: row[3],
+        sessionDate: row[4],
+        program: row[5],
+        exercise: row[6],
+        setNumber: row[7],
+        fieldChanged: row[8],
+        oldValue: row[9],
+        newValue: row[10]
+      });
+    }
+
+    // Most recent first (rows are appended chronologically)
+    auditFiltered.reverse();
+
+    return jsonResponse({
+      status: "Success",
+      count: auditFiltered.length,
+      data: auditFiltered
+    });
+  }
+
+  // ==========================================
   // DATA FETCHING
   // ==========================================
 
@@ -310,11 +502,11 @@ function doGet(e) {
     var athlete = String(dataObj.athlete || "").trim();
     var prog = String(dataObj.prog || "").trim();
     var isoTimestamp = new Date().toISOString();
-    
+
     // 1. Log Attendance
     var attSheet = sheetApp.getSheetByName("Attendance");
     if (attSheet) { attSheet.appendRow([isoTimestamp, athlete, prog]); }
-    
+
     // 2. Log sets to Logbook
     var sets = dataObj.sets || [];
     var logSheet = sheetApp.getSheetByName("Logbook");
@@ -346,8 +538,8 @@ function doGet(e) {
     }
 
     // 4. Calculate PBs/Maxes across all metrics
-    var newMaxCandidates = {}; 
-    
+    var newMaxCandidates = {};
+
     for (var s = 0; s < sets.length; s++) {
       var exName = String(sets[s].exercise || "").trim();
       var lowerEx = exName.toLowerCase();
@@ -356,13 +548,13 @@ function doGet(e) {
 
       var intensityRaw = parseFloat(sets[s].intensity) || 0;
       var intensityVal = intensityRaw > 1 ? intensityRaw / 100 : intensityRaw;
-      
+
       // STRICT PB GATEKEEPER: Only calculate PBs on 100% effort sets!
       if (intensityVal < 1.00) continue;
 
-      if (calcType === "weight") { 
+      if (calcType === "weight") {
         var weight = parseFloat(sets[s].weight) || 0;
-        var repsNum = parseInt(sets[s].reps) || 0; 
+        var repsNum = parseInt(sets[s].reps) || 0;
         if (weight > 0 && repsNum >= 1) {
           var normalizedWeight = weight / intensityVal;
           var calculated1RM = Math.round(normalizedWeight * (1 + 0.0333 * repsNum));
@@ -372,7 +564,7 @@ function doGet(e) {
         }
       }
       else if (calcType === "time") {
-        var timeSecs = parseTimeToSecondsGAS(sets[s].reps); 
+        var timeSecs = parseTimeToSecondsGAS(sets[s].reps);
         if (timeSecs > 0) {
           var impliedMaxTime = timeSecs * intensityVal;
           if (!newMaxCandidates[exName] || impliedMaxTime < newMaxCandidates[exName].val) {
@@ -394,7 +586,7 @@ function doGet(e) {
     // 5. Compare with existing Maxes & Save
     var maxSheet = sheetApp.getSheetByName("Athlete_Maxes");
     var prList = [];
-    
+
     if (maxSheet && Object.keys(newMaxCandidates).length > 0) {
       var maxData = maxSheet.getDataRange().getValues();
 
@@ -442,10 +634,10 @@ function doGet(e) {
     var exercisesDone = {};
     for (var s2 = 0; s2 < sets.length; s2++) { exercisesDone[sets[s2].exercise] = true; }
     var workoutSummary = Object.keys(exercisesDone).join(", ") + " (" + sets.length + " sets total)";
-    
+
     var histSheet = sheetApp.getSheetByName("History");
     if (histSheet) { histSheet.appendRow([isoTimestamp, athlete, prog, workoutSummary, prSummary]); }
-    
+
     return jsonResponse({
       status: "Success",
       loggedSets: sets.length,
@@ -458,7 +650,7 @@ function doGet(e) {
   // ==========================================
   // POD ENDPOINTS (WELLNESS, MEDICAL, SCHEDULE)
   // ==========================================
-  
+
   if (action === "saveWellness") {
     var sheet = sheetApp.getSheetByName("Wellness_Logs");
     if (!sheet) return jsonResponse({ status: "Error", message: "Wellness_Logs sheet not found" });
@@ -484,9 +676,9 @@ function doGet(e) {
   if (action === "saveSchedule") {
     var sheet = sheetApp.getSheetByName("Schedule_Master");
     if (!sheet) return jsonResponse({ status: "Error", message: "Schedule_Master sheet not found" });
-    
+
     var dataObj = parsePayload(e);
-    
+
     var propMins = Number(dataObj.proposedMins) || 0;
     var propRpe = Number(dataObj.proposedRpe) || 0;
     var propLoad = propMins * propRpe;
@@ -520,7 +712,7 @@ function doGet(e) {
   if (action === "saveMedical") {
     var sheet = sheetApp.getSheetByName("Medical_Vault");
     if (!sheet) return jsonResponse({ status: "Error", message: "Medical_Vault sheet not found" });
-    var dataObj = parsePayload(e);
+       var dataObj = parsePayload(e);
     sheet.appendRow([
       new Date().toISOString(),
       dataObj.email || "",
@@ -531,7 +723,8 @@ function doGet(e) {
       dataObj.trainingStatus || "",
       dataObj.notes || "",
       dataObj.isResolved || "No",
-      ""
+      "",
+      dataObj.injuryGrade !== undefined && dataObj.injuryGrade !== "" ? dataObj.injuryGrade : ""
     ]);
     return jsonResponse({ status: "Success" });
   }
@@ -599,7 +792,7 @@ function doGet(e) {
     if (!athleteName || !newAssignment) {
       return jsonResponse({ status: "Error", message: "Athlete name and assignment required" });
     }
-    
+
     var headers = data[0] || [];
     var assignColIndex = -1;
     for (var c = 0; c < headers.length; c++) {
@@ -608,12 +801,12 @@ function doGet(e) {
     if (assignColIndex === -1) {
       return jsonResponse({ status: "Error", message: "Program Assignment column not found" });
     }
-    
+
     for (var r = 1; r < data.length; r++) {
       if (String(data[r][0]).trim().toLowerCase() === athleteName.toLowerCase()) {
         var targetCell = sheet.getRange(r + 1, assignColIndex + 1);
         var currentVal = String(targetCell.getValue() || "").trim();
-        
+
         var valArr = currentVal ? currentVal.split(',').map(function(s){return s.trim();}) : [];
         if (valArr.indexOf(newAssignment) === -1) {
           var finalVal = currentVal ? currentVal + ", " + newAssignment : newAssignment;
@@ -633,23 +826,23 @@ function doGet(e) {
     if (columnId === undefined || columnId === null || columnId < 0) {
       return jsonResponse({ status: "Error", message: "Invalid column ID" });
     }
-    
+
     var sheet = sheetApp.getSheetByName("Athletes");
     if (!sheet) { return jsonResponse({ status: "Error", message: "Athletes sheet not found" }); }
-    
+
     var updatedCount = 0;
     for (var r = 0; r < targetRows.length; r++) {
       var rowNum = parseInt(targetRows[r]) + 1;
-      if (rowNum >= 2) { 
+      if (rowNum >= 2) {
         var targetCell = sheet.getRange(rowNum, parseInt(columnId) + 1);
         var currentVal = String(targetCell.getValue() || "").trim();
-        
+
         var valArr = currentVal ? currentVal.split(',').map(function(s){return s.trim();}) : [];
         if (valArr.indexOf(programAssignment) === -1) {
           var finalVal = currentVal ? currentVal + ", " + programAssignment : programAssignment;
           targetCell.setValue(finalVal);
         }
-        updatedCount++; 
+        updatedCount++;
       }
     }
     return jsonResponse({ status: "Success", rowsUpdated: updatedCount });
@@ -706,7 +899,9 @@ function doGet(e) {
       // POD SHEETS
       {name: "Wellness_Logs", headers: ["Date", "Email", "Athlete", "Grip", "Feeling", "Soreness", "Sleep", "Nutrition"]},
       {name: "Medical_Vault", headers: ["Date Logged", "Email", "Athlete", "Body Part", "Pain Level", "Mechanism", "Training Status", "Notes", "Is Resolved", "Date Resolved"]},
-      {name: "Schedule_Master", headers: ["Date", "Email", "Athlete", "Type", "Proposed Mins", "Proposed RPE", "Proposed Load", "Actual Mins", "Actual RPE", "Actual Load", "Location", "Coach Notes"]}
+      {name: "Schedule_Master", headers: ["Date", "Email", "Athlete", "Type", "Proposed Mins", "Proposed RPE", "Proposed Load", "Actual Mins", "Actual RPE", "Actual Load", "Location", "Coach Notes"]},
+      // AUDIT SHEET (Step C)
+      {name: "Audit_Log", headers: ["Date", "Who_Email", "Who_Role", "Athlete_Name", "Session_Date", "Program_Name", "Exercise_Name", "Set_Number", "Field_Changed", "Old_Value", "New_Value"]}
     ];
     requiredSheets.forEach(function(info) {
       var existingSheet = ss.getSheetByName(info.name);
@@ -733,9 +928,10 @@ function doGet(e) {
       "createAthlete", "getLogbookByAthlete", "getLatestMaxes", "getLastLoggedWeight", "updateProgram",
       "saveEntireSession", "saveFullProgram", "deleteProgram", "addAthlete", "deleteAthlete",
       "updateAssignment", "assignProgram", "addExercise", "initSheets", "saveWellness",
-      "getWellness", "saveSchedule", "getSchedule", "saveMedical", "getMedical"
+      "getWellness", "saveSchedule", "getSchedule", "saveMedical", "getMedical",
+      "updateLogbookEntry", "fetchAuditLog"
     ],
-    version: "9.1-audit-engine-fixed"
+    version: "9.2-edit-audit"
   });
 }
 
@@ -786,10 +982,10 @@ function getSafeSheetData(sheetApp, sheetName) {
 function loadMergedLibrary(sheetApp) {
   var customSheet = sheetApp.getSheetByName("Custom_Library");
   var masterSheet = sheetApp.getSheetByName("Exercise_Library") || sheetApp.getSheetByName("Bunny_Library");
-  
+
   var customRows = [];
   var masterRows = [];
-  
+
   if (customSheet) {
     try {
       var customData = customSheet.getDataRange().getValues();
@@ -801,7 +997,7 @@ function loadMergedLibrary(sheetApp) {
       }
     } catch(e) {}
   }
-  
+
   if (masterSheet) {
     try {
       var masterData = masterSheet.getDataRange().getValues();
@@ -813,7 +1009,7 @@ function loadMergedLibrary(sheetApp) {
       }
     } catch(e) {}
   }
-  
+
   var seenNames = {};
   var combinedRows = [];
   for (var i = 0; i < customRows.length; i++) {

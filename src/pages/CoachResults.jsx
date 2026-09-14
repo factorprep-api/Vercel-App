@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
 import { fetchAthletes, fetchLogbookByAthlete, fetchAllData, fetchWellnessLogs, fetchMedicalLogs, saveMedicalLog } from '../api';
-import { ArrowLeft, Search, AlertCircle, Heart, Moon, Utensils, HandMetal, Smile, BarChart2, LayoutGrid, Dumbbell, Activity, ShieldAlert, X } from 'lucide-react';
+import { ArrowLeft, Search, AlertCircle, Heart, Moon, Utensils, HandMetal, Smile, BarChart2, LayoutGrid, Dumbbell, Activity, ShieldAlert, ShieldCheck, X } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 const COLORS = {
@@ -144,7 +144,10 @@ export default function CoachResults() {
       let athleteList = [];
       if (rawAthletes.length > 1) {
       const headers = rawAthletes[0];
-      const nameIdx = headers.findIndex(h => ['name', 'athlete'].includes(String(h).toLowerCase()));
+      const nameIdx = headers.findIndex(h => {
+        const s = String(h).toLowerCase();
+        return s.includes('name') || s.includes('athlete');
+      });
       const nameCol = nameIdx > -1 ? nameIdx : 0; 
 
       athleteList = rawAthletes.slice(1).map(row => {
@@ -222,12 +225,23 @@ export default function CoachResults() {
       parsedLogs.forEach(l => { if (!logsByAthlete[l.athlete]) logsByAthlete[l.athlete] = []; logsByAthlete[l.athlete].push(l); });
       Object.values(logsByAthlete).forEach(arr => arr.sort((a,b) => a.rawDate - b.rawDate));
 
+      // Find column indices dynamically
+      const headers = rawAthletes[0] || [];
+      const nameIdx = headers.findIndex(h => {
+        const s = String(h).toLowerCase();
+        return s.includes('name') || s.includes('athlete');
+      });
+      const podsIdx = headers.findIndex(h => String(h).toLowerCase().includes('pod'));
+      
+      const nameCol = nameIdx > -1 ? nameIdx : 0;
+      const podsCol = podsIdx > -1 ? podsIdx : 11;
+
       const roster = [];
       for (let i = 1; i < rawAthletes.length; i++) {
         const row = rawAthletes[i];
         if (!row) continue;
-        const name = String(row[0] || '').trim();
-        const pods = String(row[11] || '').toLowerCase();
+        const name = String(row[nameCol] || '').trim();
+        const pods = String(row[podsCol] || '').toLowerCase();
         
         if (name && pods.includes('wellness')) {
           const athLogs = logsByAthlete[name] || [];
@@ -512,8 +526,23 @@ export default function CoachResults() {
                 <label style={styles.label}>To</label>
                 <input type="date" value={dateRange.end} onChange={(e) => setDateRange((p) => ({ ...p, end: e.target.value }))} style={styles.input} />
               </div>
-              <div style={{ ...styles.filterActions }}>
+                          <div style={{ ...styles.filterActions }}>
                 <button style={styles.btnSecondary} onClick={exportCSV}>Export CSV</button>
+                <button
+                  onClick={() => navigate('/audit')}
+                  style={{
+                    background: '#fff',
+                    border: '1px solid #008ed3',
+                    color: '#008ed3',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    padding: '8px 16px',
+                    borderRadius: '8px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Audit
+                </button>
                 <button style={styles.btnSecondary} onClick={() => window.print()}>Print</button>
               </div>
             </div>
