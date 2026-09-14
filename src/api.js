@@ -139,8 +139,6 @@ export const getAthleteByEmail = async (email) => {
 
 export const saveSession = async (payload) => {
   try {
-    // POST instead of GET: prevents silent network-layer retries that caused
-    // duplicate rows when Apps Script responded slowly.
     let resp = await fetch(`${GOOGLE_SCRIPT_API_URL}?action=saveEntireSession&t=${Date.now()}`, {
       method: 'POST',
       body: JSON.stringify({ data: JSON.stringify(payload) })

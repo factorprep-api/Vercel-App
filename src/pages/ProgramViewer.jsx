@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { Play, ChevronDown, ChevronUp, Video, Image as ImageIcon, Save, CheckCircle, MessageSquare, UserPlus, Globe, Timer, Pause, RotateCcw, Plus, Minus, X, ArrowLeft } from 'lucide-react';
 import { getYouTubeId } from '../utils/helpers';
 import { useAuth } from '../hooks/useAuth';
-// Imported saveScheduleSession
 import { fetchAllData, getAthleteByEmail, saveSession, getMediaType, getLatestMaxes, fetchLogbookByAthlete, saveScheduleSession } from '../api';
 import HelpButton from '../components/HelpButton';
 import './program-viewer.css';
@@ -162,7 +161,6 @@ export default function ProgramViewer() {
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   
-  // sRPE Schedule State
   const [showSrpeModal, setShowSrpeModal] = useState(false);
   const [pendingSets, setPendingSets] = useState(null);
   const [sessionDuration, setSessionDuration] = useState(60);
@@ -181,11 +179,10 @@ export default function ProgramViewer() {
   const { userEmail, isLoading: authLoading } = useAuth();
   const navigate = useNavigate();
 
-  // Active Pods Checker
   const activePods = useMemo(() => {
     if (athleteRowIndex === null || !athletesData.length) return [];
     const row = athletesData[athleteRowIndex] || [];
-    const podsString = String(row[11] || '').toLowerCase(); // Col L
+    const podsString = String(row[11] || '').toLowerCase();
     return podsString.split(',').map(s => s.trim());
   }, [athletesData, athleteRowIndex]);
 
@@ -482,9 +479,7 @@ export default function ProgramViewer() {
     const key = groupId + '_' + detailIdx; setInputValues(prev => ({ ...prev, [key]: { ...prev[key], [field]: value } }));
   }
 
-   // The Smart Saving Logic — saves ALL exercises from the program
-  // The Smart Saving Logic — saves ALL exercises from the program
-  function handleSaveClick() {
+   function handleSaveClick() {
     if (!workoutGroups.length) return;
     
     const setsToLog = [];
@@ -502,16 +497,12 @@ export default function ProgramViewer() {
         const tm = input.time || targets.time || (targetData.metric === 'time' ? targetData.val : '');
         const dst = input.dist || targets.distance || (targetData.metric === 'distance' ? targetData.val : '');
 
-        // FIXED: Every exercise is logged, even with zeros or programmed values
-        // Removed the early return that skipped unset fields
-        
         let finalReps = [];
         if (rp) finalReps.push(`${rp}`);
         if (tm) finalReps.push(`${tm}`);
         if (dst) finalReps.push(`${dst}`);
         const repsString = finalReps.join(' | ');
 
-        // Always log — use 0 for weight if nothing entered, preserve reps/time/distance as-is
         const wtNum = parseFloat(wt) || 0;
         
         setsToLog.push({ exercise: group.name, weight: wtNum, reps: repsString, intensity: set.intensity || '' });
@@ -520,31 +511,6 @@ export default function ProgramViewer() {
 
     if (!setsToLog.length) { alert('Nothing to save.'); return; }
 
-    // If they have the Schedule Pod, pop open the sRPE Modal!
-    if (activePods.includes('schedule')) {
-      setPendingSets(setsToLog);
-      setShowSrpeModal(true);
-    } else {
-      executeSave(setsToLog);
-    }
-  }
-        const wtNum = parseFloat(wt) || 0;
-        
-        let finalReps = [];
-        if (rp) finalReps.push(`${rp}`);
-        if (tm) finalReps.push(`${tm}`);
-        if (dst) finalReps.push(`${dst}`);
-        const repsString = finalReps.join(' | ');
-
-        if (wtNum > 0 || finalReps.length > 0) {
-          setsToLog.push({ exercise: group.name, weight: wtNum, reps: repsString, intensity: set.intensity || '' });
-        }
-      });
-    });
-
-    if (!setsToLog.length) { alert('Nothing to save.'); return; }
-
-    // If they have the Schedule Pod, pop open the sRPE Modal!
     if (activePods.includes('schedule')) {
       setPendingSets(setsToLog);
       setShowSrpeModal(true);
@@ -554,16 +520,17 @@ export default function ProgramViewer() {
   }
 
   async function executeSave(setsToLog, dur = null, rpeVal = null) {
+    // ... rest of executeSave continues
+
+  async function executeSave(setsToLog, dur = null, rpeVal = null) {
     setSaving(true);
     const loggedProgStr = selectedProgram;
     const payload = { athlete: athleteName, prog: loggedProgStr, sets: setsToLog };
     
     try {
-      // 1. Save standard Logbook entries
       const res = await saveSession(payload);
       
       if (res.status === 'Success') { 
-        // 2. If Schedule Pod is active, save the Load cleanly!
         if (dur !== null && rpeVal !== null) {
           const schedPayload = {
             email: userEmail,
@@ -632,12 +599,10 @@ export default function ProgramViewer() {
         .pv-timer-play:hover { background-color: #0077b5; transform: scale(1.05); }
         .pv-timer-play.is-playing { background-color: #ef4444; box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3); }
         
-        /* sRPE Modal */
         .srpe-modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15, 23, 42, 0.8); backdrop-filter: blur(4px); display: flex; justify-content: center; align-items: center; z-index: 10000; padding: 20px; }
         .srpe-modal-content { background: white; border-radius: 20px; width: 100%; max-width: 400px; padding: 24px; box-shadow: 0 20px 40px rgba(0,0,0,0.2); }
       `}</style>
 
-      {/* sRPE MODAL POPUP */}
       {showSrpeModal && (
         <div className="srpe-modal-overlay">
           <div className="srpe-modal-content">
@@ -666,7 +631,6 @@ export default function ProgramViewer() {
         </div>
       )}
 
-      {/* FAB TIMER */}
       <div className={`pv-floating-fab ${timerActive ? 'is-active' : ''}`}>
         {timerExpanded ? (
           <>
