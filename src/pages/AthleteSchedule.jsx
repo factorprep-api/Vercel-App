@@ -15,7 +15,6 @@ function getWeekMonday(date) {
 }
 
 function getWeekColor(monday) {
-  // Weeks alternate through 4 colors — color changes every Monday, cycle repeats roughly monthly
   const WEEK_COLORS = ['#008ed3', '#8b5cf6', '#f59e0b', '#10b981'];
   const weekIndex = Math.floor(getWeekMonday(monday).getTime() / (7 * 86400000));
   return WEEK_COLORS[((weekIndex % 4) + 4) % 4];
@@ -49,28 +48,25 @@ export default function AthleteSchedule() {
   const { userEmail, athleteName } = useAuth();
   const navigate = useNavigate();
 
-  const [activeTab, setActiveTab] = useState('log'); // 'log' or 'analytics'
+  const [activeTab, setActiveTab] = useState('log'); 
   const [activePods, setActivePods] = useState([]);
 
   const [completedSessions, setCompletedSessions] = useState([]);
   const [proposedSessions, setProposedSessions] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
-  const [medicalInjuries, setMedicalInjuries] = useState([]); // Medical Vault entries for injury dots
+  const [medicalInjuries, setMedicalInjuries] = useState([]); 
 
-  // Agenda / Calendar view toggle
-  const [viewMode, setViewMode] = useState('agenda'); // 'agenda' | 'calendar'
+  const [viewMode, setViewMode] = useState('agenda'); 
 
-  // Manual Log State
   const [showManualLog, setShowManualLog] = useState(false);
-  const [manualDate, setManualDate] = useState(getTodayYMD()); // New Date Picker State
+  const [manualDate, setManualDate] = useState(getTodayYMD()); 
   const [type, setType] = useState('Field Session');
   const [duration, setDuration] = useState(60);
   const [rpe, setRpe] = useState(7);
   const [notes, setNotes] = useState('');
 
-  // Audit Modal State
   const [selectedProposed, setSelectedProposed] = useState(null);
-  const [auditMode, setAuditMode] = useState(null); // 'exact', 'modified', 'injury'
+  const [auditMode, setAuditMode] = useState(null); 
   const [actualMins, setActualMins] = useState('');
   const [actualRpe, setActualRpe] = useState('');
 
@@ -192,7 +188,6 @@ export default function AthleteSchedule() {
   }
 
   const hasMedicalPod = activePods.includes('medical');
-
   const GRADE_COLORS = { 0: '#16a34a', 1: '#eab308', 2: '#f97316', 3: '#dc2626' };
 
   function getInjuryMarker(session) {
@@ -218,10 +213,8 @@ export default function AthleteSchedule() {
     return completedSessions.filter(s => s.rawDate >= monday).reduce((sum, s) => sum + s.actualLoad, 0);
   }, [completedSessions]);
 
-  // FIX 1: Duplicate log guard applied here
   async function handleSaveManual() {
-    if (saving) return; // Strict guard to prevent double-logging from rapid taps
-    
+    if (saving) return; 
     setSaving(true); 
     setError(null);
     const nameToSave = athleteName || userEmail.split('@')[0];
@@ -230,7 +223,7 @@ export default function AthleteSchedule() {
       email: userEmail, 
       athlete: nameToSave, 
       type: type,
-      date: manualDate, // Sends the custom selected date to the backend
+      date: manualDate, 
       proposedMins: 0, 
       proposedRpe: 0,
       actualMins: parseInt(duration), 
@@ -303,7 +296,8 @@ export default function AthleteSchedule() {
   }, [completedSessions]);
 
   const weekGroups = useMemo(() => {
-    const recent = [...completedSessions].reverse();
+    // Force strict newest-to-oldest sort for Agenda view
+    const recent = [...completedSessions].sort((a, b) => b.rawDate - a.rawDate);
     const groups = [];
     let lastMondayTime = null;
     recent.forEach(s => {
@@ -430,7 +424,7 @@ export default function AthleteSchedule() {
           <button 
             onClick={() => {
               setShowManualLog(true);
-              setManualDate(getTodayYMD()); // Reset date to today on open
+              setManualDate(getTodayYMD()); 
               setType('Field Session');
               setDuration(60);
               setRpe(7);
@@ -510,7 +504,6 @@ export default function AthleteSchedule() {
             <ArrowLeft size={18} style={{ marginRight: '6px' }} /> Back to Upcoming
           </div>
           
-          {/* FIX 3: Date Picker added in the first place */}
           <div className="as-card">
             <div className="as-card-header"><h3 className="as-card-title"><Calendar size={20} color="#008ed3" /> Session Date</h3></div>
             <input 
@@ -621,7 +614,6 @@ export default function AthleteSchedule() {
                       return (
                         <div key={i} style={{ padding: '12px 16px', background: '#fff', border: '1px solid #e2e8f0', borderLeft: `4px solid ${group.color}`, borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <div>
-                            {/* FIX 2: Added s.type (Session Name) next to the status icons */}
                             <div style={{ fontWeight: '700', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
                                  {injury && <span title={injury.bodyPart ? `Injury${injury.grade !== null ? ` (Grade ${injury.grade})` : ''}: ${injury.bodyPart}` : 'Injury logged'} style={{ width: '9px', height: '9px', borderRadius: '50%', backgroundColor: injury.color, flexShrink: 0, boxShadow: '0 0 0 1.5px #fff' }}></span>}
                               {s.status !== 'Actual' && <StatusIcon size={14} color={statusColor} title={`Status: ${s.status}`} />}
@@ -645,7 +637,8 @@ export default function AthleteSchedule() {
               const mondays = [];
               let cursor = new Date(currentMonday);
               while (cursor >= earliestMonday && mondays.length < 6) {
-                mondays.unshift(new Date(cursor));
+                // Changed from unshift to push to reverse the render order (Newest top, oldest bottom)
+                mondays.push(new Date(cursor));
                 cursor = new Date(cursor);
                 cursor.setDate(cursor.getDate() - 7);
               }
@@ -701,3 +694,4 @@ export default function AthleteSchedule() {
     </div>
   );
 }
+
