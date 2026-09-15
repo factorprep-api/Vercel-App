@@ -28,20 +28,36 @@ function getTodayYMD() {
   return `${y}-${m}-${day}`;
 }
 
-// ===== SESSION TYPE COLOR CODING =====
+// ===== SESSION TYPE COLOR CODING & ABBREVIATIONS =====
 const TYPE_COLORS = {
   'Field Session': '#10b981',
   'Competition': '#dc2626',
   'Conditioning': '#f59e0b',
-  'Rehabilitation': '#8b5cf6',
+  'Rehabilitation': '#ec4899', 
   'Recovery': '#06b6d4',
   'Speed / Agility': '#3b82f6',
-  'Prehabilitation': '#ec4899',
+  'Prehabilitation': '#f43f5e',
+  'Gym Workout': '#8b5cf6', // Added Gym Workout (Purple)
   'Other': '#64748b'
 };
 
 function getTypeColor(type) {
   return TYPE_COLORS[String(type || '').trim()] || '#64748b';
+}
+
+function getTypeAbbreviation(type) {
+  const map = {
+    'Field Session': 'Fld',
+    'Competition': 'Comp',
+    'Conditioning': 'Cond',
+    'Rehabilitation': 'Rehab',
+    'Recovery': 'Rec',
+    'Speed / Agility': 'Spd',
+    'Prehabilitation': 'Pre',
+    'Gym Workout': 'Gym',
+    'Other': 'Oth'
+  };
+  return map[String(type || '').trim()] || String(type || '').substring(0, 3);
 }
 
 export default function AthleteSchedule() {
@@ -76,7 +92,7 @@ export default function AthleteSchedule() {
 
   useEffect(() => {
     loadData();
-  }, [userEmail, activeTab]);
+  }, [userEmail ]);
 
   async function loadData() {
     setLoadingHistory(true);
@@ -296,7 +312,6 @@ export default function AthleteSchedule() {
   }, [completedSessions]);
 
   const weekGroups = useMemo(() => {
-    // Force strict newest-to-oldest sort for Agenda view
     const recent = [...completedSessions].sort((a, b) => b.rawDate - a.rawDate);
     const groups = [];
     let lastMondayTime = null;
@@ -330,8 +345,9 @@ export default function AthleteSchedule() {
     const injury = getInjuryMarker(s);
     return (
       <div key={i} style={{ background: '#f8fafc', border: `1px solid ${tColor}55`, borderLeft: `3px solid ${tColor}`, borderRadius: '6px', padding: '6px', marginBottom: '4px' }}>
-        <div style={{ fontSize: '10px', fontWeight: 800, color: tColor, display: 'flex', alignItems: 'center', gap: '4px', lineHeight: 1.2 }}>
-          {injury && <span title={injury.bodyPart ? `Injury${injury.grade !== null ? ` (Grade ${injury.grade})` : ''}: ${injury.bodyPart}` : 'Injury logged'} style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: injury.color, flexShrink: 0, boxShadow: `0 0 0 1.5px #fff` }}></span>}
+        <div style={{ fontSize: '11px', fontWeight: 800, color: tColor, display: 'flex', alignItems: 'center', gap: '4px', lineHeight: 1.2 }}>
+          {injury && <span title={injury.bodyPart ? `Injury${injury.grade !== null ? ` (Grade ${injury.grade})` : ''}: ${injury.bodyPart}` : 'Injury logged'} style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: injury.color, flexShrink: 0, boxShadow: `0 0 0 1px #fff` }}></span>}
+          {getTypeAbbreviation(s.type)}
         </div>
         <div style={{ fontSize: '10px', color: '#475569', fontWeight: 700, marginTop: '2px' }}>{s.actualMins}m @ RPE {s.actualRpe}</div>
         <div style={{ fontSize: '10px', color: '#008ed3', fontWeight: 800 }}>{s.actualLoad} AU</div>
@@ -525,6 +541,7 @@ export default function AthleteSchedule() {
               <option value="Recovery">Recovery</option>
               <option value="Speed / Agility">Speed / Agility</option>
               <option value="Prehabilitation">Prehabilitation</option>
+              <option value="Gym Workout">Gym Workout</option>
               <option value="Other">Other</option>
             </select>
           </div>
@@ -563,7 +580,7 @@ export default function AthleteSchedule() {
 
           <div className="as-card" style={{ padding: '20px 10px 10px 0' }}>
             <h3 style={{ margin: '0 0 16px 20px', fontSize: '16px', color: '#0f172a' }}>Load Trend (14 Days)</h3>
-            <div style={{ height: '220px', width: '100%' }}>
+            <div style={{ height: '220px', width: '100%' , minHeight: '220px' }}>
               {loadChartData.length === 0 ? <p style={{ textAlign: 'center', color: '#64748b', paddingTop: '40px' }}>No load data yet.</p> : (
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={loadChartData}>
@@ -600,7 +617,8 @@ export default function AthleteSchedule() {
                         {isThisWeek ? 'This Week' : `Week of ${group.monday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`}
                       </span>
                     </div>
-                    <span style={{ fontSize: '12px', fontWeight: 700, color: '#94a3b8' }}>{group.totalLoad} AU total</span>
+                    {/* Fixed: AU Load color matches week color */}
+                    <span style={{ fontSize: '12px', fontWeight: 800, color: group.color }}>{group.totalLoad} AU total</span>
                   </div>
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -612,7 +630,7 @@ export default function AthleteSchedule() {
                       if (s.status === 'Injury') { statusColor = '#dc2626'; StatusIcon = AlertCircle; }
 
                       return (
-                        <div key={i} style={{ padding: '12px 16px', background: '#fff', border: '1px solid #e2e8f0', borderLeft: `4px solid ${group.color}`, borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div key={i} style={{ padding: '12px 16px', background: '#fff', border: '1px solid #e2e8f0', borderLeft: `4px solid ${tColor}`, borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <div>
                             <div style={{ fontWeight: '700', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
                                  {injury && <span title={injury.bodyPart ? `Injury${injury.grade !== null ? ` (Grade ${injury.grade})` : ''}: ${injury.bodyPart}` : 'Injury logged'} style={{ width: '9px', height: '9px', borderRadius: '50%', backgroundColor: injury.color, flexShrink: 0, boxShadow: '0 0 0 1.5px #fff' }}></span>}
@@ -637,7 +655,6 @@ export default function AthleteSchedule() {
               const mondays = [];
               let cursor = new Date(currentMonday);
               while (cursor >= earliestMonday && mondays.length < 6) {
-                // Changed from unshift to push to reverse the render order (Newest top, oldest bottom)
                 mondays.push(new Date(cursor));
                 cursor = new Date(cursor);
                 cursor.setDate(cursor.getDate() - 7);
@@ -661,7 +678,8 @@ export default function AthleteSchedule() {
                           {isThisWeek ? 'This Week' : `Week of ${monday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`}
                         </span>
                       </div>
-                      <span style={{ fontSize: '12px', fontWeight: 700, color: '#94a3b8' }}>{weekLoad} AU total</span>
+                      {/* Fixed: AU Load color matches week color */}
+                      <span style={{ fontSize: '12px', fontWeight: 800, color: weekColor }}>{weekLoad} AU total</span>
                     </div>
 
                     <div className="cal-scroll">
@@ -694,4 +712,3 @@ export default function AthleteSchedule() {
     </div>
   );
 }
-
