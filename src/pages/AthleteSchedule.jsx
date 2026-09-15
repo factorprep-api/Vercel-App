@@ -76,7 +76,7 @@ export default function AthleteSchedule() {
 
   useEffect(() => {
     loadData();
-  }, [userEmail, activeTab]);
+  }, [userEmail]);
 
   async function loadData() {
     setLoadingHistory(true);
@@ -563,7 +563,7 @@ export default function AthleteSchedule() {
 
           <div className="as-card" style={{ padding: '20px 10px 10px 0' }}>
             <h3 style={{ margin: '0 0 16px 20px', fontSize: '16px', color: '#0f172a' }}>Load Trend (14 Days)</h3>
-            <div style={{ height: '220px', width: '100%' }}>
+            <div style={{ height: '220px', width: '100%' , minHeight: '220px' }}>
               {loadChartData.length === 0 ? <p style={{ textAlign: 'center', color: '#64748b', paddingTop: '40px' }}>No load data yet.</p> : (
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={loadChartData}>
