@@ -37,7 +37,7 @@ const TYPE_COLORS = {
   'Recovery': '#06b6d4',
   'Speed / Agility': '#3b82f6',
   'Prehabilitation': '#f43f5e',
-  'Gym Workout': '#8b5cf6', // Added Gym Workout (Purple)
+  'Gym Workout': '#8b5cf6',
   'Other': '#64748b'
 };
 
@@ -90,11 +90,15 @@ export default function AthleteSchedule() {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [error, setError] = useState(null);
 
+  // FIX 1: Add strict check for userEmail before firing
   useEffect(() => {
-    loadData();
-  }, [userEmail ]);
+    if (userEmail) {
+      loadData();
+    }
+  }, [userEmail]);
 
   async function loadData() {
+    if (!userEmail) return; // Secondary safety guard
     setLoadingHistory(true);
     setError(null);
     try {
@@ -580,9 +584,10 @@ export default function AthleteSchedule() {
 
           <div className="as-card" style={{ padding: '20px 10px 10px 0' }}>
             <h3 style={{ margin: '0 0 16px 20px', fontSize: '16px', color: '#0f172a' }}>Load Trend (14 Days)</h3>
-            <div style={{ height: '220px', width: '100%' , minHeight: '220px' }}>
+            {/* FIX 2: Recharts Rendering bug fixed via strictly defined wrapper and explicit 99% width & numeric height */}
+            <div style={{ height: 220, width: '100%', minHeight: '220px' }}>
               {loadChartData.length === 0 ? <p style={{ textAlign: 'center', color: '#64748b', paddingTop: '40px' }}>No load data yet.</p> : (
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="99%" height={220}>
                   <LineChart data={loadChartData}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                     <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#64748b' }} dy={10} />
@@ -617,7 +622,6 @@ export default function AthleteSchedule() {
                         {isThisWeek ? 'This Week' : `Week of ${group.monday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`}
                       </span>
                     </div>
-                    {/* Fixed: AU Load color matches week color */}
                     <span style={{ fontSize: '12px', fontWeight: 800, color: group.color }}>{group.totalLoad} AU total</span>
                   </div>
 
@@ -678,7 +682,6 @@ export default function AthleteSchedule() {
                           {isThisWeek ? 'This Week' : `Week of ${monday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`}
                         </span>
                       </div>
-                      {/* Fixed: AU Load color matches week color */}
                       <span style={{ fontSize: '12px', fontWeight: 800, color: weekColor }}>{weekLoad} AU total</span>
                     </div>
 
