@@ -369,7 +369,7 @@ export default function ProgramBuilder() {
               <input className="pb-input" value={form.name} onChange={e => setForm({...form, name: e.target.value})} placeholder="e.g. Push Workout A" />
             </div>
 
-            <div style={{ flex: 1 }}>
+           <div style={{ flex: 1 }}>
               <label className="pb-label">Category:</label>
               <select className="pb-input" value={form.category} onChange={e => setForm({...form, category: e.target.value})}>
                 {['Gym Workout', 'Field Session', 'Competition', 'Conditioning', 'Rehabilitation', 'Recovery', 'Speed / Agility', 'Prehabilitation', 'Other'].map(t => (
@@ -377,6 +377,7 @@ export default function ProgramBuilder() {
                 ))}
               </select>
             </div>
+          </div>
           
           <div className="pb-field-group">
             <div className="pb-label-row">
@@ -610,5 +611,5 @@ export default function ProgramBuilder() {
         </div>
       )}
     </div>
-  );
+  );(crying) 
 }
