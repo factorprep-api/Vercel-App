@@ -349,13 +349,17 @@ export default function CoachSchedule() {
           
           {loading ? <p style={{ color: '#64748b' }}>Calculating ACWR metrics...</p> : (
             <div style={{ overflowX: 'auto' }}>
-              <table className="cs-table">
+                           <table className="cs-table">
                 <thead>
                   <tr>
                     <th>Athlete</th>
                     <th>Acute Load (7D)</th>
                     <th>Chronic Load (28D Avg)</th>
+                    <th>Sessions (7D)</th>
                     <th>ACWR Status</th>
+                    <th>Monotony</th>
+                    <th>Strain</th>
+                    <th>Flags</th>
                     <th>Analytics</th>
                   </tr>
                 </thead>
@@ -367,7 +371,7 @@ export default function CoachSchedule() {
                     return (
                       <React.Fragment key={idx}>
                         <tr>
-                          <td style={{ whiteSpace: 'nowrap' }}>
+                          <td>
                             <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
                               <input
                                 type="checkbox"
@@ -382,7 +386,7 @@ export default function CoachSchedule() {
                           <td style={{ color: '#0ea5e9' }}>{Math.round(ath.acuteLoad)} AU</td>
                           <td style={{ color: '#64748b' }}>{Math.round(ath.chronicLoad)} AU</td>
                           <td style={{ color: ath.sessions7d === 0 ? '#dc2626' : '#475569', fontWeight: ath.sessions7d === 0 ? 800 : 600 }}>{ath.sessions7d}</td>
-                                                     <td>
+                          <td>
                             <span className="cs-badge" style={{ backgroundColor: status.bg, color: status.color, minWidth: '100px' }}>
                               {ath.acwr > 0 ? ath.acwr.toFixed(2) : '-'} | {status.text}
                             </span>
@@ -410,22 +414,12 @@ export default function CoachSchedule() {
                             <button onClick={() => setExpandedAthlete(isExpanded ? null : ath.name)} style={{ background: isExpanded ? '#0f172a' : '#f1f5f9', color: isExpanded ? 'white' : '#475569', border: 'none', padding: '6px 12px', borderRadius: '6px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
                               <BarChart2 size={14}/> {isExpanded ? 'Hide' : 'View'}
                             </button>
-                                       <tr>
-                    <th>Athlete</th>
-                    <th>Acute Load (7D)</th>
-                    <th>Chronic Load (28D Avg)</th>
-                    <th>Sessions (7D)</th>
-                    <th>ACWR Status</th>
-                    <th>Monotony</th>
-                    <th>Strain</th>
-                    <th>Flags</th>
-                    <th>Analytics</th>
-                  </tr>     </td>
+                          </td>
                         </tr>
-                         {isExpanded && (
+                        {isExpanded && (
                           <tr>
                             <td colSpan="9" style={{ padding: 0, borderBottom: '2px solid #e2e8f0' }}>
-                                       <div style={{ background: '#f8fafc', padding: '20px', borderTop: '1px solid #e2e8f0' }}>
+                              <div style={{ background: '#f8fafc', padding: '20px', borderTop: '1px solid #e2e8f0' }}>
                                 <h4 style={{ margin: '0 0 16px 0', color: '#0f172a', fontSize: '14px' }}>14-Day Load by Session Type</h4>
                                 <div style={{ height: '200px', width: '100%' }}>
                                   <ResponsiveContainer width="100%" height="100%">
@@ -441,7 +435,7 @@ export default function CoachSchedule() {
                                   </ResponsiveContainer>
                                 </div>
                                 <h4 style={{ margin: '16px 0 8px 0', color: '#0f172a', fontSize: '14px' }}>Daily Intensity (Load-Weighted RPE)</h4>
-                                                 <div style={{ height: '60px', width: '100%' }}>
+                                <div style={{ height: '60px', width: '100%' }}>
                                   <ResponsiveContainer width="100%" height="100%">
                                     <BarChart data={ath.chartData}>
                                       <XAxis dataKey="date" axisLine={false} tickLine={false} tick={false} />
