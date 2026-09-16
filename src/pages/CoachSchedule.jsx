@@ -3,8 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
 import { fetchAthletes, fetchSchedule, saveScheduleSession } from '../api';
-import { ArrowLeft, Calendar, BarChart2, Plus, AlertCircle, CheckCircle, Clock, X, AlertTriangle, Users } from 'lucide-react';
-import { BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { ArrowLeft, Calendar, BarChart2, Plus, AlertCircle, CheckCircle, Clock, X, AlertTriangle, Users, Layers } from 'lucide-react';
+import { BarChart, Bar, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 // ===== SESSION TYPE COLORS (aligned with AthleteSchedule) =====
 const TYPE_COLORS = {
@@ -37,7 +37,11 @@ export default function CoachSchedule() {
   const [scheduleLogs, setScheduleLogs] = useState([]);
   const [expandedAthlete, setExpandedAthlete] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [squadSelection, setSquadSelection] = useState([]);
 
+  const toggleSquadAthlete = (name) => {
+    setSquadSelection(prev => prev.includes(name) ? prev.filter(n => n !== name) : [...prev, name]);
+  };
   // Propose Session Modal
   const [showModal, setShowModal] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -170,7 +174,47 @@ export default function CoachSchedule() {
           if (k !== 'date' && k !== 'avgRpe' && !chartTypes.includes(k)) chartTypes.push(k);
         });
       });
-      return { ...ath, acuteLoad, chronicLoad, acwr, chartData, chartTypes };
+
+      // Daily totals over the last 28 days (zeros included — rest days count toward monotony)
+      const dailyLoads = [];
+      for (let i = 27; i >= 0; i--) {
+        const dd = new Date(today); dd.setDate(today.getDate() - i);
+        const dayStart = new Date(dd.getFullYear(), dd.getMonth(), dd.getDate());
+        const dayEnd = new Date(dayStart); dayEnd.setDate(dayStart.getDate() + 1);
+        const total = athLogs.filter(l => l.rawDate >= dayStart && l.rawDate < dayEnd)
+                              .reduce((sum, l) => sum + l.actualLoad, 0);
+        dailyLoads.push(total);
+      }
+
+      // Foster's weekly monotony & strain
+      const last7 = dailyLoads.slice(-7);
+      const meanLoad = last7.reduce((a, b) => a + b, 0) / (last7.length || 1);
+      const stdLoad = Math.sqrt(last7.reduce((a, b) => a + Math.pow(b - meanLoad, 2), 0) / (last7.length || 1));
+      const monotony = stdLoad > 0 ? meanLoad / stdLoad : 0;
+      const weeklyLoad = last7.reduce((a, b) => a + b, 0);
+      const strain = monotony > 0 ? Math.round(monotony * weeklyLoad) : 0;
+
+      // Consistency: sessions logged in the last 7 days
+      const sessions7d = athLogs.filter(l => l.rawDate >= sevenDaysAgo).length;
+
+      // ACWR history: rolling 7d acute / 28d chronic, sampled over the last 14 days
+      const acwrHistory = [];
+      for (let i = 13; i >= 0; i--) {
+        const endIdx = dailyLoads.length - 1 - i;
+        const acuteWin = dailyLoads.slice(Math.max(0, endIdx - 6), endIdx + 1).reduce((a, b) => a + b, 0);
+        const chronicWin = dailyLoads.slice(Math.max(0, endIdx - 27), endIdx + 1).reduce((a, b) => a + b, 0) / 4;
+        acwrHistory.push({ day: 13 - i, acwr: chronicWin > 0 ? Math.round((acuteWin / chronicWin) * 100) / 100 : null });
+      }
+
+      // Coach-facing flags
+      const flags = [];
+      if (acwr > 1.5) flags.push({ label: 'Spike', detail: 'ACWR in danger zone — rapid load increase', color: '#dc2626' });
+      else if (acwr > 1.3) flags.push({ label: 'Caution', detail: 'ACWR elevated — monitor closely', color: '#f59e0b' });
+      if (monotony >= 2.0) flags.push({ label: 'Monotony', detail: 'Weekly monotony ≥ 2.0 — same load every day, no variation/rest', color: '#dc2626' });
+      if (acwr > 0 && acwr < 0.8) flags.push({ label: 'Undertraining', detail: 'ACWR below 0.8 — detraining risk', color: '#0ea5e9' });
+      if (sessions7d === 0 && chronicLoad > 0) flags.push({ label: 'Inactive', detail: 'No sessions logged in the last 7 days', color: '#dc2626' });
+
+      return { ...ath, acuteLoad, chronicLoad, acwr, chartData, chartTypes, monotony, strain, sessions7d, acwrHistory, flags };
     });
   }, [roster, scheduleLogs]);
 
@@ -196,6 +240,17 @@ export default function CoachSchedule() {
     // Filter out manual logs that didn't have a proposed load
     return Object.values(groups).filter(g => g.proposedLoad > 0);
   }, [scheduleLogs]);
+
+  const squadComparison = useMemo(() => {
+    if (squadSelection.length === 0) return null;
+    const rows = rosterWithLoads.filter(a => squadSelection.includes(a.name));
+    let maxDaily = 0;
+    rows.forEach(a => a.chartData.forEach(d => {
+      Object.keys(d).forEach(k => { if (k !== 'date' && k !== 'avgRpe') maxDaily = Math.max(maxDaily, d[k]); });
+    }));
+    const dateLabels = rows.length ? rows[0].chartData.map(d => d.date) : [];
+    return { rows, maxDaily, dateLabels };
+  }, [squadSelection, rosterWithLoads]);
 
   const getAcwrStatus = (acwr) => {
     if (acwr === 0) return { text: 'No Data', color: '#64748b', bg: '#f1f5f9' };
@@ -284,6 +339,7 @@ export default function CoachSchedule() {
       <div className="cs-tabs">
         <button className={`cs-tab ${activeTab === 'acwr' ? 'active' : ''}`} onClick={() => setActiveTab('acwr')}><BarChart2 size={18}/> Load Engine (ACWR)</button>
         <button className={`cs-tab ${activeTab === 'audit' ? 'active' : ''}`} onClick={() => setActiveTab('audit')}><Users size={18}/> Session Audit</button>
+        <button className={`cs-tab ${activeTab === 'squad' ? 'active' : ''}`} onClick={() => setActiveTab('squad')}><Layers size={18}/> Squad Comparison</button>
       </div>
 
       {/* --- TAB 1: ACWR LOAD ENGINE --- */}
@@ -304,26 +360,67 @@ export default function CoachSchedule() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredRoster.length === 0 ? <tr><td colSpan="5" style={{ color: '#64748b', textAlign: 'center' }}>No athletes found with Schedule Pod active.</td></tr> : 
+                  {filteredRoster.length === 0 ? <tr><td colSpan="9" style={{ color: '#64748b', textAlign: 'center' }}>No athletes found with Schedule Pod active.</td></tr> : 
                     filteredRoster.map((ath, idx) => {
                     const status = getAcwrStatus(ath.acwr);
                     const isExpanded = expandedAthlete === ath.name;
                     return (
                       <React.Fragment key={idx}>
                         <tr>
-                          <td>{ath.name}</td>
+                          <td style={{ whiteSpace: 'nowrap' }}>
+                            <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                              <input
+                                type="checkbox"
+                                checked={squadSelection.includes(ath.name)}
+                                onChange={() => toggleSquadAthlete(ath.name)}
+                                title="Add to Squad Comparison"
+                                style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                              />
+                              {ath.name}
+                            </label>
+                          </td>
                           <td style={{ color: '#0ea5e9' }}>{Math.round(ath.acuteLoad)} AU</td>
                           <td style={{ color: '#64748b' }}>{Math.round(ath.chronicLoad)} AU</td>
-                          <td>
+                          <td style={{ color: ath.sessions7d === 0 ? '#dc2626' : '#475569', fontWeight: ath.sessions7d === 0 ? 800 : 600 }}>{ath.sessions7d}</td>
+                                                     <td>
                             <span className="cs-badge" style={{ backgroundColor: status.bg, color: status.color, minWidth: '100px' }}>
                               {ath.acwr > 0 ? ath.acwr.toFixed(2) : '-'} | {status.text}
                             </span>
+                          </td>
+                          <td style={{ color: ath.monotony >= 2 ? '#dc2626' : '#475569', fontWeight: ath.monotony >= 2 ? 800 : 600 }}>
+                            {ath.monotony > 0 ? ath.monotony.toFixed(1) : '-'}
+                          </td>
+                          <td style={{ color: '#475569' }}>
+                            {ath.strain > 0 ? ath.strain.toLocaleString() : '-'}
+                          </td>
+                          <td>
+                            {ath.flags.length === 0 ? (
+                              <span style={{ color: '#16a34a', fontWeight: 700, fontSize: '13px', whiteSpace: 'nowrap' }}>✓ Clear</span>
+                            ) : (
+                              <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                                {ath.flags.map((f, fi) => (
+                                  <span key={fi} title={f.detail} className="cs-badge" style={{ backgroundColor: f.color + '15', color: f.color, fontSize: '11px', whiteSpace: 'nowrap' }}>
+                                    {f.label}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
                           </td>
                           <td>
                             <button onClick={() => setExpandedAthlete(isExpanded ? null : ath.name)} style={{ background: isExpanded ? '#0f172a' : '#f1f5f9', color: isExpanded ? 'white' : '#475569', border: 'none', padding: '6px 12px', borderRadius: '6px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
                               <BarChart2 size={14}/> {isExpanded ? 'Hide' : 'View'}
                             </button>
-                          </td>
+                                       <tr>
+                    <th>Athlete</th>
+                    <th>Acute Load (7D)</th>
+                    <th>Chronic Load (28D Avg)</th>
+                    <th>Sessions (7D)</th>
+                    <th>ACWR Status</th>
+                    <th>Monotony</th>
+                    <th>Strain</th>
+                    <th>Flags</th>
+                    <th>Analytics</th>
+                  </tr>     </td>
                         </tr>
                         {isExpanded && (
                           <tr>
@@ -344,7 +441,7 @@ export default function CoachSchedule() {
                                   </ResponsiveContainer>
                                 </div>
                                 <h4 style={{ margin: '16px 0 8px 0', color: '#0f172a', fontSize: '14px' }}>Daily Intensity (Load-Weighted RPE)</h4>
-                                <div style={{ height: '60px', width: '100%' }}>
+                                                 <div style={{ height: '60px', width: '100%' }}>
                                   <ResponsiveContainer width="100%" height="100%">
                                     <BarChart data={ath.chartData}>
                                       <XAxis dataKey="date" axisLine={false} tickLine={false} tick={false} />
@@ -358,6 +455,17 @@ export default function CoachSchedule() {
                                     </BarChart>
                                   </ResponsiveContainer>
                                 </div>
+                                <h4 style={{ margin: '16px 0 8px 0', color: '#0f172a', fontSize: '14px' }}>ACWR Trend (Last 14 Days)</h4>
+                                <div style={{ height: '80px', width: '100%' }}>
+                                  <ResponsiveContainer width="100%" height="100%">
+                                    <LineChart data={ath.acwrHistory}>
+                                      <XAxis dataKey="day" hide />
+                                      <YAxis domain={[0, 2]} hide />
+                                      <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
+                                      <Line type="monotone" dataKey="acwr" stroke="#64748b" strokeWidth={2} dot={{ r: 2 }} connectNulls />
+                                    </LineChart>
+                                  </ResponsiveContainer>
+                                </div>
                               </div>
                             </td>
                           </tr>
@@ -368,6 +476,72 @@ export default function CoachSchedule() {
                 </tbody>
               </table>
             </div>
+          )}
+        </div>
+      )}
+
+           {/* --- TAB 3: SQUAD COMPARISON --- */}
+      {activeTab === 'squad' && (
+        <div className="cs-card">
+          <h2 style={{ fontSize: '18px', color: '#0f172a', margin: '0 0 8px 0', fontWeight: '800' }}>Squad Comparison</h2>
+          <p style={{ fontSize: '13px', color: '#64748b', margin: '0 0 16px 0' }}>
+            Tick athletes in the Load Engine table, then compare their 14-day load profiles side by side. All bars share one scale — a taller bar means more load that day. Hover any day for the session-type breakdown.
+          </p>
+
+          {squadSelection.length === 0 ? (
+            <p style={{ color: '#64748b' }}>No athletes selected yet. Go to the Load Engine tab and tick the checkboxes beside athlete names, then return here.</p>
+          ) : (
+            <>
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: '8px', marginBottom: '4px' }}>
+                <div style={{ width: '140px', fontSize: '11px', color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>Athlete</div>
+                <div style={{ flex: 1, display: 'flex', gap: '2px' }}>
+                  {squadComparison.dateLabels.map(dl => (
+                    <div key={dl} style={{ flex: 1, textAlign: 'center', fontSize: '9px', color: '#94a3b8', fontWeight: 700 }}>
+                      {String(dl).split(' ')[1]}
+                    </div>
+                  ))}
+                </div>
+                <div style={{ width: '52px' }} />
+              </div>
+
+              {squadComparison.rows.map(ath => (
+                <div key={ath.name} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                  <div style={{ width: '140px', fontSize: '13px', fontWeight: 700, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={ath.name}>
+                    {ath.name}
+                  </div>
+                  <div style={{ flex: 1, display: 'flex', gap: '2px', height: '34px', alignItems: 'flex-end' }}>
+                    {ath.chartData.map((day, di) => {
+                      const typeKeys = Object.keys(day).filter(k => k !== 'date' && k !== 'avgRpe');
+                      const total = typeKeys.reduce((s, k) => s + day[k], 0);
+                      const pctOfMax = squadComparison.maxDaily > 0 ? (total / squadComparison.maxDaily) * 100 : 0;
+                      const breakdown = typeKeys.filter(k => day[k] > 0).map(k => `${k}: ${Math.round(day[k])} AU`).join('\n');
+                      const tooltipText = total > 0
+                        ? `${day.date} — ${ath.name}: ${Math.round(total)} AU\n${breakdown}`
+                        : `${day.date} — ${ath.name}: no load logged`;
+                      return (
+                        <div key={di} title={tooltipText} style={{ flex: 1, height: `${Math.max(pctOfMax, total > 0 ? 4 : 2)}%`, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', background: total > 0 ? 'transparent' : '#f1f5f9', borderRadius: '2px', minWidth: 0 }}>
+                          {total > 0 && typeKeys.filter(k => day[k] > 0).map(k => (
+                            <div key={k} style={{ width: '100%', height: `${(day[k] / total) * 100}%`, background: TYPE_COLORS[k] || '#64748b' }} />
+                          ))}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div style={{ width: '52px', textAlign: 'right', fontSize: '11px', fontWeight: 700, color: ath.flags.length > 0 ? '#dc2626' : '#16a34a' }}>
+                    {Math.round(ath.acuteLoad)} AU
+                  </div>
+                </div>
+              ))}
+
+              <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginTop: '16px', paddingTop: '12px', borderTop: '1px solid #e2e8f0' }}>
+                {Object.entries(TYPE_COLORS).map(([type, color]) => (
+                  <span key={type} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#475569', fontWeight: 600 }}>
+                    <span style={{ width: '10px', height: '10px', borderRadius: '2px', background: color, display: 'inline-block' }}></span>
+                    {type}
+                  </span>
+                ))}
+              </div>
+            </>
           )}
         </div>
       )}
