@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
-import { fetchAthletes, fetchLogbookByAthlete, fetchAllData, fetchWellnessLogs, fetchMedicalLogs, saveMedicalLog } from '../api';
+import { fetchAthletes, fetchLogbookByAthlete, fetchWellnessLogs, fetchMedicalLogs, saveMedicalLog } from '../api';
 import { ArrowLeft, Search, AlertCircle, Heart, Moon, Utensils, HandMetal, Smile, BarChart2, LayoutGrid, Dumbbell, Activity, ShieldAlert, ShieldCheck, X } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
@@ -188,7 +188,7 @@ export default function CoachResults() {
   async function loadWellnessAndMedical() {
     setWellnessLoading(true);
     try {
-      const [data, wellnessData, medicalData] = await Promise.all([ fetchAllData(), fetchWellnessLogs(), fetchMedicalLogs() ]);
+      const [data, wellnessData, medicalData] = await Promise.all([ fetchAthletes(), fetchWellnessLogs(), fetchMedicalLogs() ]);
       const rawAthletes = data.athletes || [];
       const logs = wellnessData.data || [];
       const medLogs = medicalData.data || [];

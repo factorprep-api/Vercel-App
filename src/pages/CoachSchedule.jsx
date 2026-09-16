@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
-import { fetchAllData, fetchSchedule, saveScheduleSession } from '../api';
+import { fetchAthletes, fetchSchedule, saveScheduleSession } from '../api';
 import { ArrowLeft, Calendar, BarChart2, Plus, AlertCircle, CheckCircle, Clock, X, AlertTriangle, Users } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
@@ -33,11 +33,11 @@ export default function CoachSchedule() {
     if (coachEmail) loadData();
   }, [userEmail]);
 
-  async function loadData() {
+   async function loadData() {
     try {
-      const [allData, schedData] = await Promise.all([ fetchAllData(), fetchSchedule() ]);
+      const [athRes, schedData] = await Promise.all([ fetchAthletes(), fetchSchedule() ]);
       
-      const athletes = allData.athletes || [];
+      const athletes = athRes.athletes || [];
       const validRoster = [];
       
       for (let i = 1; i < athletes.length; i++) {
