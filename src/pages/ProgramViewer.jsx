@@ -346,6 +346,15 @@ export default function ProgramViewer() {
     return url && url.toLowerCase() !== 'undefined' ? url : '';
   }, [selectedProgram, programData]);
 
+  const programCategory = useMemo(() => {
+    if (!selectedProgram || !programData.length) return 'Gym Workout';
+    const firstRow = programData.slice(1).find(r => String(r[0] || '').trim() === selectedProgram);
+    if (!firstRow) return 'Gym Workout';
+    const cat = String(firstRow[1] || '').trim();
+    const VALID_SESSION_TYPES = ['Gym Workout', 'Field Session', 'Competition', 'Conditioning', 'Rehabilitation', 'Recovery', 'Speed / Agility', 'Prehabilitation', 'Other'];
+    return VALID_SESSION_TYPES.includes(cat) ? cat : 'Gym Workout';
+  }, [selectedProgram, programData]);
+
   const workoutGroups = useMemo(() => {
     if (!selectedProgram || !programData.length) return [];
     let rows = programData.slice(1).filter(r => String(r[0] || '').trim() === selectedProgram);
@@ -532,12 +541,13 @@ export default function ProgramViewer() {
     if (!Array.isArray(setsToLog) || setsToLog.length === 0) { setSaving(false); return; }
     setSaving(true);
     const loggedProgStr = selectedProgram;
+    const sessionCategory = programCategory || 'Gym Workout';
     const payload = { athlete: athleteName, prog: loggedProgStr, sets: setsToLog };
     try {
       const res = await saveSession(payload);
       if (res.status === 'Success') {
         if (dur !== null && rpeVal !== null) {
-          const schedPayload = { email: userEmail, athlete: athleteName, type: 'Gym Workout', proposedMins: 0, proposedRpe: 0, actualMins: parseInt(dur), actualRpe: parseInt(rpeVal), location: 'App Logged', notes: `Program: ${loggedProgStr}`, status: 'Actual' };
+          const schedPayload = { email: userEmail, athlete: athleteName, type: sessionCategory, proposedMins: 0, proposedRpe: 0, actualMins: parseInt(dur), actualRpe: parseInt(rpeVal), location: 'App Logged', notes: `Program: ${loggedProgStr}`, status: 'Actual' };
           await saveScheduleSession(schedPayload);
         }
         setSaveSuccess(true);
