@@ -4,8 +4,28 @@ import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
 import { fetchAthletes, fetchSchedule, saveScheduleSession } from '../api';
 import { ArrowLeft, Calendar, BarChart2, Plus, AlertCircle, CheckCircle, Clock, X, AlertTriangle, Users } from 'lucide-react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
+// ===== SESSION TYPE COLORS (aligned with AthleteSchedule) =====
+const TYPE_COLORS = {
+  'Field Session': '#10b981',
+  'Competition': '#dc2626',
+  'Conditioning': '#f59e0b',
+  'Rehabilitation': '#ec4899',
+  'Recovery': '#06b6d4',
+  'Speed / Agility': '#3b82f6',
+  'Prehabilitation': '#f43f5e',
+  'Gym Workout': '#8b5cf6',
+  'Other': '#64748b'
+};
+
+// Intensity strip shading — green (low) → amber (moderate) → red (high)
+const getIntensityColor = (rpe) => {
+  if (rpe === null || rpe === undefined) return '#e2e8f0';
+  if (rpe <= 5) return '#22c55e';
+  if (rpe <= 7) return '#f59e0b';
+  return '#dc2626';
+};
 export default function CoachSchedule() {
   const { userEmail, role, isLoading: authLoading } = useAuth();
   const navigate = useNavigate();
@@ -122,16 +142,35 @@ export default function CoachSchedule() {
       const chartMap = {};
       for(let i=13; i>=0; i--) {
         const d = new Date(today); d.setDate(today.getDate() - i);
-        chartMap[d.toLocaleDateString('en-US', {month:'short', day:'numeric'})] = 0;
+        chartMap[d.toLocaleDateString('en-US', {month:'short', day:'numeric'})] = { rpeSum: 0, loadSum: 0 };
       }
       
       athLogs.filter(l => l.rawDate >= new Date(today.getTime() - 14*24*60*60*1000)).forEach(l => {
         const dStr = l.rawDate.toLocaleDateString('en-US', {month:'short', day:'numeric'});
-        if(chartMap[dStr] !== undefined) chartMap[dStr] += l.actualLoad;
+        const day = chartMap[dStr];
+        if(!day) return;
+        const type = l.type || 'Other';
+        day[type] = (day[type] || 0) + l.actualLoad;
+        day.loadSum += l.actualLoad;
+        day.rpeSum += l.actualLoad * l.actualRpe;
       });
-      const chartData = Object.keys(chartMap).map(k => ({ date: k, load: chartMap[k] }));
 
-      return { ...ath, acuteLoad, chronicLoad, acwr, chartData };
+      const chartData = Object.values(chartMap).map((day, idx) => {
+        const { rpeSum, loadSum, ...typeLoads } = day;
+        return {
+          date: Object.keys(chartMap)[idx],
+          ...typeLoads,
+          avgRpe: loadSum > 0 ? Math.round((rpeSum / loadSum) * 10) / 10 : null
+        };
+      });
+
+      const chartTypes = [];
+      chartData.forEach(day => {
+        Object.keys(day).forEach(k => {
+          if (k !== 'date' && k !== 'avgRpe' && !chartTypes.includes(k)) chartTypes.push(k);
+        });
+      });
+      return { ...ath, acuteLoad, chronicLoad, acwr, chartData, chartTypes };
     });
   }, [roster, scheduleLogs]);
 
@@ -289,17 +328,34 @@ export default function CoachSchedule() {
                         {isExpanded && (
                           <tr>
                             <td colSpan="5" style={{ padding: 0, borderBottom: '2px solid #e2e8f0' }}>
-                              <div style={{ background: '#f8fafc', padding: '20px', borderTop: '1px solid #e2e8f0' }}>
-                                <h4 style={{ margin: '0 0 16px 0', color: '#0f172a', fontSize: '14px' }}>14-Day Load Trend</h4>
+                                       <div style={{ background: '#f8fafc', padding: '20px', borderTop: '1px solid #e2e8f0' }}>
+                                <h4 style={{ margin: '0 0 16px 0', color: '#0f172a', fontSize: '14px' }}>14-Day Load by Session Type</h4>
                                 <div style={{ height: '200px', width: '100%' }}>
                                   <ResponsiveContainer width="100%" height="100%">
-                                    <LineChart data={ath.chartData}>
+                                    <BarChart data={ath.chartData}>
                                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#cbd5e1" />
                                       <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 11 }} />
                                       <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 11 }} />
                                       <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
-                                      <Line type="monotone" dataKey="load" stroke="#008ed3" strokeWidth={3} dot={{ r: 4, strokeWidth: 2 }} />
-                                    </LineChart>
+                                      {ath.chartTypes.map(t => (
+                                        <Bar key={t} dataKey={t} stackId="load" fill={TYPE_COLORS[t] || '#64748b'} />
+                                      ))}
+                                    </BarChart>
+                                  </ResponsiveContainer>
+                                </div>
+                                <h4 style={{ margin: '16px 0 8px 0', color: '#0f172a', fontSize: '14px' }}>Daily Intensity (Load-Weighted RPE)</h4>
+                                <div style={{ height: '60px', width: '100%' }}>
+                                  <ResponsiveContainer width="100%" height="100%">
+                                    <BarChart data={ath.chartData}>
+                                      <XAxis dataKey="date" axisLine={false} tickLine={false} tick={false} />
+                                      <YAxis domain={[0, 10]} hide />
+                                      <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
+                                      <Bar dataKey="avgRpe" radius={[3, 3, 0, 0]}>
+                                        {ath.chartData.map((d, i) => (
+                                          <Cell key={i} fill={getIntensityColor(d.avgRpe)} />
+                                        ))}
+                                      </Bar>
+                                    </BarChart>
                                   </ResponsiveContainer>
                                 </div>
                               </div>
