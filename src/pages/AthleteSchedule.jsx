@@ -4,7 +4,7 @@ import { ArrowLeft, Save, Calendar, Clock, Activity, CheckCircle, BarChart2, Ale
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
-import { saveScheduleSession, fetchSchedule, fetchAllData, getAthleteByEmail, fetchMedicalLogs } from '../api';
+import { saveScheduleSession, fetchSchedule, getAthleteByEmail, fetchMedicalLogs } from '../api';
 
 // ===== TRAINING WEEK HELPERS (Weeks start Monday) =====
 function getWeekMonday(date) {
@@ -102,20 +102,25 @@ export default function AthleteSchedule() {
     setLoadingHistory(true);
     setError(null);
     try {
-      const [athRes, allDataRes, res, medRes] = await Promise.all([
-        getAthleteByEmail(userEmail).catch(() => ({ status: 'Error' })),
-        fetchAllData().catch(() => ({ athletes: [] })),
-        fetchSchedule().catch(() => ({ data: [] })),
-        fetchMedicalLogs().catch(() => ({ data: [] }))
-      ]);
+      // Resolve the athlete first (2 attempts total) so the pod reads and the
+      // schedule/medical fetches can request only this athlete's rows.
+      let athRes = { status: 'Error' };
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const tryRes = await getAthleteByEmail(userEmail).catch(() => ({ status: 'Error' }));
+        if (tryRes.status === 'Success') { athRes = tryRes; break; }
+      }
 
       const nameToMatch = athRes.status === 'Success' ? (athRes.athleteName || athRes.name || athleteName || userEmail.split('@')[0]) : (athleteName || userEmail.split('@')[0]);
 
-      const athletes = allDataRes.athletes || [];
-      let userRow = athletes.find(r => String(r[0] || '').trim().toLowerCase() === nameToMatch.toLowerCase() || String(r[9] || '').trim().toLowerCase() === userEmail.toLowerCase());
-      if (userRow) {
-        setActivePods(String(userRow[11] || '').toLowerCase().split(',').map(s => s.trim()).filter(Boolean));
+      // Pods come straight from the athlete's own row (Column L) — no roster fetch needed.
+      if (athRes.status === 'Success' && Array.isArray(athRes.rowData)) {
+        setActivePods(String(athRes.rowData[11] || '').toLowerCase().split(',').map(s => s.trim()).filter(Boolean));
       }
+
+      const [res, medRes] = await Promise.all([
+        fetchSchedule(nameToMatch, userEmail).catch(() => ({ data: [] })),
+        fetchMedicalLogs(nameToMatch, userEmail).catch(() => ({ data: [] }))
+      ]);
 
       const medData = medRes.data || [];
       const myInjuries = [];

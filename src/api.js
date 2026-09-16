@@ -75,9 +75,12 @@ export const saveScheduleSession = async (payload) => {
   } catch (err) { return { status: 'Error', message: err.message }; }
 };
 
-export const fetchSchedule = async () => {
+export const fetchSchedule = async (athleteName, email) => {
   try {
-    let resp = await fetch(`${GOOGLE_SCRIPT_API_URL}?action=getSchedule&t=${Date.now()}`);
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=getSchedule&t=${Date.now()}`;
+    if (athleteName) url += `&athlete=${encodeURIComponent(athleteName)}`;
+    if (email) url += `&email=${encodeURIComponent(email)}`;
+    let resp = await fetch(url);
     if (!resp.ok) { return { data: [] }; } 
     return await resp.json();
   } catch (err) { return { data: [] }; }
@@ -92,9 +95,12 @@ export const saveMedicalLog = async (payload) => {
   } catch (err) { return { status: 'Error', message: err.message }; }
 };
 
-export const fetchMedicalLogs = async () => {
+export const fetchMedicalLogs = async (athleteName, email) => {
   try {
-    let resp = await fetch(`${GOOGLE_SCRIPT_API_URL}?action=getMedical&t=${Date.now()}`);
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=getMedical&t=${Date.now()}`;
+    if (athleteName) url += `&athlete=${encodeURIComponent(athleteName)}`;
+    if (email) url += `&email=${encodeURIComponent(email)}`;
+    let resp = await fetch(url);
     if (!resp.ok) { return { data: [] }; } 
     return await resp.json();
   } catch (err) { return { data: [] }; }
