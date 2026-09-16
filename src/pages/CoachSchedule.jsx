@@ -422,9 +422,9 @@ export default function CoachSchedule() {
                     <th>Analytics</th>
                   </tr>     </td>
                         </tr>
-                        {isExpanded && (
+                         {isExpanded && (
                           <tr>
-                            <td colSpan="5" style={{ padding: 0, borderBottom: '2px solid #e2e8f0' }}>
+                            <td colSpan="9" style={{ padding: 0, borderBottom: '2px solid #e2e8f0' }}>
                                        <div style={{ background: '#f8fafc', padding: '20px', borderTop: '1px solid #e2e8f0' }}>
                                 <h4 style={{ margin: '0 0 16px 0', color: '#0f172a', fontSize: '14px' }}>14-Day Load by Session Type</h4>
                                 <div style={{ height: '200px', width: '100%' }}>
