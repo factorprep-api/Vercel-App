@@ -56,9 +56,12 @@ export const saveWellnessLog = async (payload) => {
   } catch (err) { return { status: 'Error', message: err.message }; }
 };
 
-export const fetchWellnessLogs = async () => {
+export const fetchWellnessLogs = async (athleteName, email) => {
   try {
-    let resp = await fetch(`${GOOGLE_SCRIPT_API_URL}?action=getWellness&t=${Date.now()}`);
+    let url = `${GOOGLE_SCRIPT_API_URL}?action=getWellness&t=${Date.now()}`;
+    if (athleteName) url += `&athlete=${encodeURIComponent(athleteName)}`;
+    if (email) url += `&email=${encodeURIComponent(email)}`;
+    let resp = await fetch(url);
     if (!resp.ok) { return { data: [] }; } 
     return await resp.json();
   } catch (err) { return { data: [] }; }

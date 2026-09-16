@@ -3,11 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
 import {
-  fetchAllData,
   fetchLogbookByAthlete,
   getAthleteByEmail,
   fetchWellnessLogs,
   fetchLibrary,
+  fetchPrograms,
   getMediaType,
   updateLogbookEntry
 } from '../api';
@@ -209,60 +209,23 @@ export default function MyProgress() {
 
       const lowerEmail = userEmail.toLowerCase().trim();
 
-      // Resolve athlete name
-      const athleteResult = await getAthleteByEmail(userEmail).catch(() => ({}));
+      // Resolve the athlete — 2 attempts total
+      let athleteResult = { status: 'Error' };
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const tryRes = await getAthleteByEmail(userEmail).catch(() => ({ status: 'Error' }));
+        if (tryRes.status === 'Success') { athleteResult = tryRes; break; }
+      }
       let name = authAthleteName || '';
-      if (athleteResult && athleteResult.status === 'Success') {
+      if (athleteResult.status === 'Success') {
         name = athleteResult.athleteName || athleteResult.name || athleteResult.coachName || name || userEmail.split('@')[0];
       } else if (!name) {
         name = userEmail.split('@')[0];
       }
       setAthleteName(name);
 
-      // Fetch Logbook history
-      const logResult = await fetchLogbookByAthlete(name).catch(() => ({ data: [] }));
-      const logData = Array.isArray(logResult.data) ? logResult.data : [];
-      const formattedHistory = logData.map(item => ({
-        date: String(item.date || '').split('T')[0],
-        prog: item.prog || '',
-        ex: item.ex || '',
-        intensity: item.intensity || '',
-        wt: (item.wt === null || item.wt === undefined) ? '' : item.wt,
-        reps: (item.reps === null || item.reps === undefined) ? '' : item.reps
-      }));
-      setHistory(formattedHistory);
-      setHistoryLoaded(true);
-      setLoading(false);
-
-      // Fetch all supplemental data (Athletes, Programs, Library, Wellness) in parallel
-      const [allData, wellnessRes, libRes] = await Promise.all([
-        fetchAllData().catch(() => ({ athletes: [], programs: [], library: [] })),
-        fetchWellnessLogs().catch(() => ({ data: [] })),
-        fetchLibrary().catch(() => ({ library: [] }))
-      ]);
-
-      const athletes = Array.isArray(allData.athletes) ? allData.athletes : [];
-      const programs = Array.isArray(allData.programs) ? allData.programs : [];
-      const library = (Array.isArray(libRes) && libRes.length) ? libRes : ((libRes && libRes.library) || allData.library || []);
-
-      setProgramsData(programs);
-      setLibraryData(library);
-
-      // Match athlete in sheet for Column L pods & Column Maxes
-      let athleteRow = null;
-      let headers = athletes[0] || [];
-
-      for (let i = 1; i < athletes.length; i++) {
-        const row = athletes[i];
-        if (!row) continue;
-        const rowName = String(row[0] || '').trim();
-        const rowEmail = String(row[9] || '').trim().toLowerCase();
-        if (rowEmail === lowerEmail || (name && rowName.toLowerCase() === name.toLowerCase())) {
-          athleteRow = row;
-          if (!name) name = rowName;
-          break;
-        }
-      }
+      // Athlete's own row supplies pods (Column L) and core maxes — no roster fetch
+      const headers = Array.isArray(athleteResult.headers) ? athleteResult.headers : [];
+      const athleteRow = (athleteResult.status === 'Success' && Array.isArray(athleteResult.rowData)) ? athleteResult.rowData : null;
 
       if (athleteRow) {
         const pods = String(athleteRow[11] || '').toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
@@ -274,7 +237,6 @@ export default function MyProgress() {
         }
       }
 
-      // Parse Core Maxes from athlete row
       const parsedMaxes = [];
       if (athleteRow && headers.length) {
         const skipCols = ['pin', 'email', 'role', 'coach', 'notes', 'phone', 'password', 'program assignment', 'pods'];
@@ -289,7 +251,34 @@ export default function MyProgress() {
       }
       setMaxes(parsedMaxes);
 
-      // Parse Wellness Logs for athlete
+      // History, wellness (filtered server-side), library, programs — all in parallel
+      const [logResult, wellnessRes, libRes, progRes] = await Promise.all([
+        fetchLogbookByAthlete(name).catch(() => ({ data: [] })),
+        fetchWellnessLogs(name, lowerEmail).catch(() => ({ data: [] })),
+        fetchLibrary().catch(() => ({ library: [] })),
+        fetchPrograms().catch(() => ({ programs: [] }))
+      ]);
+
+      const logData = Array.isArray(logResult.data) ? logResult.data : [];
+      const formattedHistory = logData.map(item => ({
+        date: String(item.date || '').split('T')[0],
+        prog: item.prog || '',
+        ex: item.ex || '',
+        intensity: item.intensity || '',
+        wt: (item.wt === null || item.wt === undefined) ? '' : item.wt,
+        reps: (item.reps === null || item.reps === undefined) ? '' : item.reps
+      }));
+      setHistory(formattedHistory);
+      setHistoryLoaded(true);
+      setLoading(false);
+
+      const programs = Array.isArray(progRes.programs) ? progRes.programs : [];
+      const library = (Array.isArray(libRes) && libRes.length) ? libRes : ((libRes && libRes.library) || []);
+
+      setProgramsData(programs);
+      setLibraryData(library);
+
+      // Parse Wellness Logs for athlete (client-side filter kept as belt-and-braces)
       const rawWellness = wellnessRes.data || [];
       let myWellness = [];
       if (rawWellness.length > 1) {
