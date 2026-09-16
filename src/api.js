@@ -1,20 +1,6 @@
 export const GOOGLE_SCRIPT_API_URL = "https://script.google.com/macros/s/AKfycbzIBfOpFxgmTYWlFDuKPVSx30tXJRlyWhhvZVBqkAO_nKeF1GfGTFVvTolLr-CBpoHl8A/exec";
 
 // ==========================================
-// MASSIVE PIPE (Legacy)
-// ==========================================
-export const fetchAllData = async () => {
-  try {
-    let response = await fetch(`${GOOGLE_SCRIPT_API_URL}?action=getFullData&t=${Date.now()}`);
-    if (!response.ok) { return { athletes: [], programs: [], library: [], error: "Failed to connect to database" }; } 
-    let json = await response.json();
-    return { athletes: json.athletes || [], programs: json.programs || json.program || [], library: json.library || [], error: null };
-  } catch (error) {
-    return { athletes: [], programs: [], library: [], error: "Failed to connect to database" };
-  }
-};
-
-// ==========================================
 // LIGHTWEIGHT PIPES
 // ==========================================
 export const fetchAthletes = async () => {
@@ -331,7 +317,7 @@ export function parseProgramsFromRaw(rawPrograms, coachEmail) {
 // FAILSAFE DEFAULT EXPORT
 // ==========================================
 const api = {
-  fetchAllData, fetchAthletes, fetchPrograms, fetchLibrary, saveWellnessLog, 
+  fetchAthletes, fetchPrograms, fetchLibrary, saveWellnessLog, 
   fetchWellnessLogs, saveScheduleSession, fetchSchedule, saveMedicalLog, 
   fetchMedicalLogs, fetchLogbookByAthlete, getLogbookByAthlete, getLatestMaxes, 
   getLastLoggedWeight, createAthlete, getAthleteByEmail, saveSession, 

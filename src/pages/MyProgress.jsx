@@ -1020,9 +1020,9 @@ export default function MyProgress() {
                                         gap: '4px',
                                         padding: '4px 8px',
                                         borderRadius: '6px',
-                                        border: '1px solid #008ed3',
-                                        background: isMediaOpen ? '#008ed3' : '#008ed310',
-                                        color: isMediaOpen ? '#ffffff' : '#008ed3',
+                                        border: `1px solid ${section.color}`,
+                                        background: isMediaOpen ? section.color : `${section.color}10`,
+                                        color: isMediaOpen ? '#ffffff' : section.color,
                                         fontSize: '11px',
                                         fontWeight: '700',
                                         cursor: 'pointer'
