@@ -45,7 +45,7 @@ export default function ProgramBuilder() {
   const [saving, setSaving] = useState(false);
   const [draft, setDraft] = useState([]);
   
-  const [form, setForm] = useState({ name: '', category: '', notes: '', phase: 'Work Block', exercise: '', sets: '', reps: '', intensity: '', tempo: '', rest: '', privacyLevel: 'PRIVATE' });
+  const [form, setForm] = useState({ name: '', category: 'Gym Workout', notes: '', phase: 'Work Block', exercise: '', sets: '', reps: '', intensity: '', tempo: '', rest: '', privacyLevel: 'PRIVATE' });
   const [advanced, setAdvanced] = useState(DEFAULT_ADVANCED);
   const [showAdvanced, setShowAdvanced] = useState(false);
   
@@ -219,7 +219,7 @@ export default function ProgramBuilder() {
 
         showToast(loadProgramName && loadProgramName !== form.name ? 'Saved as new program!' : 'Program saved!');
         setDraft([]);
-        setForm(f => ({ ...f, name: '', notes: '', privacyLevel: 'PRIVATE' }));
+        setForm(f => ({ ...f, name: '', notes: '', privacyLevel: 'PRIVATE', category: 'Gym Workout' }));
         setLoadProgramName('');
         setMediaUrl('');
         setAdvanced(DEFAULT_ADVANCED);
@@ -368,11 +368,15 @@ export default function ProgramBuilder() {
               <label className="pb-label">Program Name (Required):</label>
               <input className="pb-input" value={form.name} onChange={e => setForm({...form, name: e.target.value})} placeholder="e.g. Push Workout A" />
             </div>
+
             <div style={{ flex: 1 }}>
-              <label className="pb-label">Category (Optional):</label>
-              <input className="pb-input" value={form.category} onChange={e => setForm({...form, category: e.target.value})} placeholder="e.g. Hypertrophy" />
+              <label className="pb-label">Category:</label>
+              <select className="pb-input" value={form.category} onChange={e => setForm({...form, category: e.target.value})}>
+                {['Gym Workout', 'Field Session', 'Competition', 'Conditioning', 'Rehabilitation', 'Recovery', 'Speed / Agility', 'Prehabilitation', 'Other'].map(t => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </select>
             </div>
-          </div>
           
           <div className="pb-field-group">
             <div className="pb-label-row">
