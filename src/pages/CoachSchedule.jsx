@@ -39,25 +39,8 @@ export default function CoachSchedule() {
   const [expandedAthlete, setExpandedAthlete] = useState(null);
   const [hoveredAthlete, setHoveredAthlete] = useState(null);
   const [drilledAthlete, setDrilledAthlete] = useState(null);
+
   const [squadAxis, setSquadAxis] = useState('rel');
-
-  const drilledAthleteData = drilledAthlete ? rosterWithLoads.find(a => a.name === drilledAthlete) : null;
-
-  const squadLineData = useMemo(() => {
-    if (!squadComparison) return [];
-    return squadComparison.dateLabels.map((date, idx) => {
-      const row = { date };
-      squadComparison.rows.forEach(a => {
-        let total = 0;
-        const d = a.chartData[idx];
-        Object.keys(d).forEach(k => { if (k !== 'date' && k !== 'avgRpe') total += d[k]; });
-        row[a.name] = squadAxis === 'rel'
-          ? (a.chronicLoad > 0 ? Math.round((total / (a.chronicLoad / 28)) * 100) : null)
-          : Math.round(total);
-      });
-      return row;
-    });
-  }, [squadComparison, squadAxis]);
   const [searchQuery, setSearchQuery] = useState('');
   const [squadSelection, setSquadSelection] = useState([]);
 
@@ -292,6 +275,24 @@ export default function CoachSchedule() {
     return { rows, maxDaily, dateLabels, teamTotals, teamTypes };
   }, [squadSelection, rosterWithLoads]);
 
+  const drilledAthleteData = drilledAthlete ? rosterWithLoads.find(a => a.name === drilledAthlete) : null;
+
+  const squadLineData = useMemo(() => {
+    if (!squadComparison) return [];
+    return squadComparison.dateLabels.map((date, idx) => {
+      const row = { date };
+      squadComparison.rows.forEach(a => {
+        let total = 0;
+        const d = a.chartData[idx];
+        Object.keys(d).forEach(k => { if (k !== 'date' && k !== 'avgRpe') total += d[k]; });
+        row[a.name] = squadAxis === 'rel'
+          ? (a.chronicLoad > 0 ? Math.round((total / (a.chronicLoad / 28)) * 100) : null)
+          : Math.round(total);
+      });
+      return row;
+    });
+  }, [squadComparison, squadAxis]);
+
   const getAcwrStatus = (acwr) => {
     if (acwr === 0) return { text: 'No Data', color: '#64748b', bg: '#f1f5f9' };
     if (acwr < 0.8) return { text: 'Under-Training', color: '#0ea5e9', bg: '#e0f2fe' };
@@ -515,67 +516,103 @@ export default function CoachSchedule() {
         </div>
       )}
 
-           {/* --- TAB 3: SQUAD COMPARISON --- */}
+        {/* --- TAB 3: SQUAD COMPARISON (LINE VIEW) --- */}
       {activeTab === 'squad' && (
         <div className="cs-card">
-          <h2 style={{ fontSize: '18px', color: '#0f172a', margin: '0 0 8px 0', fontWeight: '800' }}>Squad Comparison</h2>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '8px' }}>
+            <h2 style={{ fontSize: '18px', color: '#0f172a', margin: 0, fontWeight: '800' }}>Squad Comparison</h2>
+            <div style={{ display: 'flex', background: '#e2e8f0', padding: '4px', borderRadius: '8px' }}>
+              <button onClick={() => setSquadAxis('rel')} style={{ padding: '6px 14px', border: 'none', borderRadius: '6px', background: squadAxis === 'rel' ? '#fff' : 'transparent', color: squadAxis === 'rel' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer', boxShadow: squadAxis === 'rel' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>% of Normal</button>
+              <button onClick={() => setSquadAxis('au')} style={{ padding: '6px 14px', border: 'none', borderRadius: '6px', background: squadAxis === 'au' ? '#fff' : 'transparent', color: squadAxis === 'au' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer', boxShadow: squadAxis === 'au' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>Absolute AU</button>
+            </div>
+          </div>
           <p style={{ fontSize: '13px', color: '#64748b', margin: '0 0 16px 0' }}>
-            Tick athletes in the Load Engine table, then compare their 14-day load profiles side by side. All bars share one scale — a taller bar means more load that day. Hover any day for the session-type breakdown.
+            Daily load per athlete. Hover a line or name chip to spotlight it; click a chip to open the detail view below.
+            {squadAxis === 'rel' ? ' Values are % of each athlete\u2019s typical daily load \u2014 dashed red line marks 150%, the spike threshold.' : ' Values are raw training load in AU.'}
           </p>
 
           {squadSelection.length === 0 ? (
-            <p style={{ color: '#64748b' }}>No athletes selected yet. Go to the Load Engine tab and tick the checkboxes beside athlete names, then return here.</p>
+            <p style={{ color: '#64748b' }}>No athletes selected yet. Go to the Load Engine tab and tick checkboxes beside athlete names, then return here.</p>
           ) : (
             <>
-              <div style={{ display: 'flex', alignItems: 'flex-end', gap: '8px', marginBottom: '4px' }}>
-                <div style={{ width: '140px', fontSize: '11px', color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>Athlete</div>
-                <div style={{ flex: 1, display: 'flex', gap: '2px' }}>
-                  {squadComparison.dateLabels.map(dl => (
-                    <div key={dl} style={{ flex: 1, textAlign: 'center', fontSize: '9px', color: '#94a3b8', fontWeight: 700 }}>
-                      {String(dl).split(' ')[1]}
-                    </div>
-                  ))}
-                </div>
-                <div style={{ width: '52px' }} />
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
+                {squadComparison.rows.map((a, i) => {
+                  const color = SQUAD_COLORS[i % SQUAD_COLORS.length];
+                  const isSpot = hoveredAthlete === a.name || drilledAthlete === a.name;
+                  const isDrilled = drilledAthlete === a.name;
+                  return (
+                    <button key={a.name} onMouseEnter={() => setHoveredAthlete(a.name)} onMouseLeave={() => setHoveredAthlete(null)} onClick={() => setDrilledAthlete(isDrilled ? null : a.name)} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 12px', borderRadius: '999px', border: isDrilled ? `2px solid ${color}` : '1px solid #e2e8f0', background: isDrilled ? color + '15' : '#fff', color: isSpot ? '#0f172a' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer' }}>
+                      <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: color, display: 'inline-block' }}></span>
+                      {a.name}
+                    </button>
+                  );
+                })}
               </div>
 
-              {squadComparison.rows.map(ath => (
-                <div key={ath.name} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                  <div style={{ width: '140px', fontSize: '13px', fontWeight: 700, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={ath.name}>
-                    {ath.name}
-                  </div>
-                  <div style={{ flex: 1, display: 'flex', gap: '2px', height: '34px', alignItems: 'flex-end' }}>
-                    {ath.chartData.map((day, di) => {
-                      const typeKeys = Object.keys(day).filter(k => k !== 'date' && k !== 'avgRpe');
-                      const total = typeKeys.reduce((s, k) => s + day[k], 0);
-                      const pctOfMax = squadComparison.maxDaily > 0 ? (total / squadComparison.maxDaily) * 100 : 0;
-                      const breakdown = typeKeys.filter(k => day[k] > 0).map(k => `${k}: ${Math.round(day[k])} AU`).join('\n');
-                      const tooltipText = total > 0
-                        ? `${day.date} — ${ath.name}: ${Math.round(total)} AU\n${breakdown}`
-                        : `${day.date} — ${ath.name}: no load logged`;
+              <div style={{ height: '340px', width: '100%' }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={squadLineData} onMouseLeave={() => setHoveredAthlete(null)}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#cbd5e1" />
+                    <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 11 }} />
+                    <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 11 }} />
+                    <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
+                    {squadAxis === 'rel' && <ReferenceLine y={100} stroke="#94a3b8" strokeDasharray="4 4" />}
+                    {squadAxis === 'rel' && <ReferenceLine y={150} stroke="#dc2626" strokeDasharray="4 4" />}
+                    {squadComparison.rows.map((a, i) => {
+                      const color = SQUAD_COLORS[i % SQUAD_COLORS.length];
+                      const isSpot = hoveredAthlete === a.name || drilledAthlete === a.name;
                       return (
-                        <div key={di} title={tooltipText} style={{ flex: 1, height: `${Math.max(pctOfMax, total > 0 ? 4 : 2)}%`, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', background: total > 0 ? 'transparent' : '#f1f5f9', borderRadius: '2px', minWidth: 0 }}>
-                          {total > 0 && typeKeys.filter(k => day[k] > 0).map(k => (
-                            <div key={k} style={{ width: '100%', height: `${(day[k] / total) * 100}%`, background: TYPE_COLORS[k] || '#64748b' }} />
-                          ))}
-                        </div>
+                        <Line key={a.name} type="monotone" dataKey={a.name} stroke={isSpot ? color : '#cbd5e1'} strokeWidth={isSpot ? 3 : 1.5} dot={false} activeDot={{ r: 4 }} connectNulls onMouseOver={() => setHoveredAthlete(a.name)} />
                       );
                     })}
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+
+              {drilledAthlete && drilledAthleteData && (
+                <div style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid #e2e8f0' }}>
+                  <h4 style={{ margin: '0 0 16px 0', color: '#0f172a', fontSize: '14px' }}>{drilledAthleteData.name} — 14-Day Load by Session Type</h4>
+                  <div style={{ height: '200px', width: '100%' }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={drilledAthleteData.chartData}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#cbd5e1" />
+                        <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 11 }} />
+                        <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 11 }} />
+                        <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
+                        {drilledAthleteData.chartTypes.map(t => (
+                          <Bar key={t} dataKey={t} stackId="load" fill={TYPE_COLORS[t] || '#64748b'} />
+                        ))}
+                      </BarChart>
+                    </ResponsiveContainer>
                   </div>
-                  <div style={{ width: '52px', textAlign: 'right', fontSize: '11px', fontWeight: 700, color: ath.flags.length > 0 ? '#dc2626' : '#16a34a' }}>
-                    {Math.round(ath.acuteLoad)} AU
+                  <h4 style={{ margin: '16px 0 8px 0', color: '#0f172a', fontSize: '14px' }}>Daily Intensity (Load-Weighted RPE)</h4>
+                  <div style={{ height: '60px', width: '100%' }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={drilledAthleteData.chartData}>
+                        <XAxis dataKey="date" axisLine={false} tickLine={false} tick={false} />
+                        <YAxis domain={[0, 10]} hide />
+                        <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
+                        <Bar dataKey="avgRpe" radius={[3, 3, 0, 0]}>
+                          {drilledAthleteData.chartData.map((d, i) => (
+                            <Cell key={i} fill={getIntensityColor(d.avgRpe)} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <h4 style={{ margin: '16px 0 8px 0', color: '#0f172a', fontSize: '14px' }}>ACWR Trend (Last 14 Days)</h4>
+                  <div style={{ height: '80px', width: '100%' }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={drilledAthleteData.acwrHistory}>
+                        <XAxis dataKey="day" hide />
+                        <YAxis domain={[0, 2]} hide />
+                        <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
+                        <Line type="monotone" dataKey="acwr" stroke="#64748b" strokeWidth={2} dot={{ r: 2 }} connectNulls />
+                      </LineChart>
+                    </ResponsiveContainer>
                   </div>
                 </div>
-              ))}
-
-              <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginTop: '16px', paddingTop: '12px', borderTop: '1px solid #e2e8f0' }}>
-                {Object.entries(TYPE_COLORS).map(([type, color]) => (
-                  <span key={type} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#475569', fontWeight: 600 }}>
-                    <span style={{ width: '10px', height: '10px', borderRadius: '2px', background: color, display: 'inline-block' }}></span>
-                    {type}
-                  </span>
-                ))}
-              </div>
+              )}
             </>
           )}
         </div>
