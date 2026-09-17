@@ -132,32 +132,55 @@ export default function CoachSchedule() {
   }
 
   // --- ACWR MATH ---
+  const logsByAthlete = useMemo(() => {
+    const map = {};
+    scheduleLogs.forEach(l => {
+      if (!map[l.athlete]) map[l.athlete] = [];
+      map[l.athlete].push(l);
+    });
+    return map;
+  }, [scheduleLogs]);
+
   const rosterWithLoads = useMemo(() => {
     const today = new Date();
     const sevenDaysAgo = new Date(today); sevenDaysAgo.setDate(today.getDate() - 7);
     const twentyEightDaysAgo = new Date(today); twentyEightDaysAgo.setDate(today.getDate() - 28);
 
     return roster.map(ath => {
-      // Only count completed loads for ACWR
-      const athLogs = scheduleLogs.filter(l => l.athlete === ath.name && (l.status === 'Actual' || l.status === 'Modified' || l.status === 'Injury'));
-      
-      const acuteLoad = athLogs.filter(l => l.rawDate >= sevenDaysAgo).reduce((sum, l) => sum + l.actualLoad, 0);
-      const chronicTotal = athLogs.filter(l => l.rawDate >= twentyEightDaysAgo).reduce((sum, l) => sum + l.actualLoad, 0);
-      const chronicLoad = chronicTotal / 4; 
-      
+      const athLogs = logsByAthlete[ath.name] || [];
+      const athLogsFiltered = athLogs.filter(l => l.status === 'Actual' || l.status === 'Modified' || l.status === 'Injury');
+
+      // Build per-day load map once per athlete
+      const dailyMap = {};
+      athLogsFiltered.forEach(l => {
+        const dayKey = new Date(l.rawDate.getFullYear(), l.rawDate.getMonth(), l.rawDate.getDate()).getTime();
+        dailyMap[dayKey] = (dailyMap[dayKey] || 0) + l.actualLoad;
+      });
+
+      const dailyLoads = [];
+      for (let i = 27; i >= 0; i--) {
+        const dd = new Date(today); dd.setDate(today.getDate() - i);
+        dailyLoads.push(dailyMap[dd.getTime()] || 0);
+      }
+
+      const acuteLoad = dailyLoads.slice(-7).reduce((a, b) => a + b, 0);
+      const chronicLoad = dailyLoads.reduce((a, b) => a + b, 0) / 4;
+
       let acwr = 0;
       if (chronicLoad > 0) acwr = acuteLoad / chronicLoad;
 
+      // 14-Day Load by Session Type
       const chartMap = {};
-      for(let i=13; i>=0; i--) {
+      for (let i = 13; i >= 0; i--) {
         const d = new Date(today); d.setDate(today.getDate() - i);
-        chartMap[d.toLocaleDateString('en-US', {month:'short', day:'numeric'})] = { rpeSum: 0, loadSum: 0 };
+        chartMap[d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })] = { rpeSum: 0, loadSum: 0 };
       }
-      
-      athLogs.filter(l => l.rawDate >= new Date(today.getTime() - 14*24*60*60*1000)).forEach(l => {
-        const dStr = l.rawDate.toLocaleDateString('en-US', {month:'short', day:'numeric'});
+
+      athLogsFiltered.forEach(l => {
+        if (l.rawDate < new Date(today.getTime() - 14 * 24 * 60 * 60 * 1000)) return;
+        const dStr = l.rawDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
         const day = chartMap[dStr];
-        if(!day) return;
+        if (!day) return;
         const type = l.type || 'Other';
         day[type] = (day[type] || 0) + l.actualLoad;
         day.loadSum += l.actualLoad;
@@ -180,17 +203,6 @@ export default function CoachSchedule() {
         });
       });
 
-      // Daily totals over the last 28 days (zeros included — rest days count toward monotony)
-      const dailyLoads = [];
-      for (let i = 27; i >= 0; i--) {
-        const dd = new Date(today); dd.setDate(today.getDate() - i);
-        const dayStart = new Date(dd.getFullYear(), dd.getMonth(), dd.getDate());
-        const dayEnd = new Date(dayStart); dayEnd.setDate(dayStart.getDate() + 1);
-        const total = athLogs.filter(l => l.rawDate >= dayStart && l.rawDate < dayEnd)
-                              .reduce((sum, l) => sum + l.actualLoad, 0);
-        dailyLoads.push(total);
-      }
-
       // Foster's weekly monotony & strain
       const last7 = dailyLoads.slice(-7);
       const meanLoad = last7.reduce((a, b) => a + b, 0) / (last7.length || 1);
@@ -199,10 +211,8 @@ export default function CoachSchedule() {
       const weeklyLoad = last7.reduce((a, b) => a + b, 0);
       const strain = monotony > 0 ? Math.round(monotony * weeklyLoad) : 0;
 
-      // Consistency: sessions logged in the last 7 days
       const sessions7d = athLogs.filter(l => l.rawDate >= sevenDaysAgo).length;
 
-      // ACWR history: rolling 7d acute / 28d chronic, sampled over the last 14 days
       const acwrHistory = [];
       for (let i = 13; i >= 0; i--) {
         const endIdx = dailyLoads.length - 1 - i;
@@ -211,7 +221,6 @@ export default function CoachSchedule() {
         acwrHistory.push({ day: 13 - i, acwr: chronicWin > 0 ? Math.round((acuteWin / chronicWin) * 100) / 100 : null });
       }
 
-      // Coach-facing flags
       const flags = [];
       if (acwr > 1.5) flags.push({ label: 'Spike', detail: 'ACWR in danger zone — rapid load increase', color: '#dc2626' });
       else if (acwr > 1.3) flags.push({ label: 'Caution', detail: 'ACWR elevated — monitor closely', color: '#f59e0b' });
@@ -221,7 +230,7 @@ export default function CoachSchedule() {
 
       return { ...ath, acuteLoad, chronicLoad, acwr, chartData, chartTypes, monotony, strain, sessions7d, acwrHistory, flags };
     });
-  }, [roster, scheduleLogs]);
+  }, [roster, logsByAthlete]);
 
   // --- SESSION AUDIT GROUPING ---
   const groupedAuditSessions = useMemo(() => {
@@ -319,15 +328,15 @@ export default function CoachSchedule() {
     if (!form.date) return alert("Please select a date.");
     setSaving(true);
     try {
-      for (const athName of selectedAthletes) {
+      await Promise.all(selectedAthletes.map(athName => {
         const payload = {
           email: coachEmail, athlete: athName, type: form.type, 
           proposedMins: parseInt(form.duration), proposedRpe: parseInt(form.rpe), 
           actualMins: 0, actualRpe: 0, 
           location: form.location, notes: form.notes
         };
-        await saveScheduleSession(payload);
-      }
+        return saveScheduleSession(payload);
+      }));
       setShowModal(false);
       setSelectedAthletes([]);
       setForm({ ...form, notes: '', location: '' }); 
