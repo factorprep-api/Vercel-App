@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
@@ -84,7 +84,10 @@ function getWeekKey(dateStr) {
   if (isNaN(d.getTime())) return '1970-01-01';
   const monday = new Date(d);
   monday.setDate(d.getDate() - ((d.getDay() + 6) % 7));
-  return monday.toISOString().split('T')[0];
+  const y = monday.getFullYear();
+  const m = String(monday.getMonth() + 1).padStart(2, '0');
+  const day = String(monday.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
 function fmt(n) { return Math.round(n).toLocaleString(); }
@@ -113,6 +116,7 @@ export default function CoachResults() {
   const [wellnessSearch, setWellnessSearch] = useState('');
   const [activeWellnessMetric, setActiveWellnessMetric] = useState('grip');
   const [selectedChartUser, setSelectedChartUser] = useState('team');
+  const [wellnessTimeRange, setWellnessTimeRange] = useState('week');
   
   const [medicalModalOpen, setMedicalModalOpen] = useState(false);
   const [selectedMedicalAthlete, setSelectedMedicalAthlete] = useState(null);
@@ -174,10 +178,11 @@ export default function CoachResults() {
   }
 
   useEffect(() => {
-    if (selectedAthlete !== 'all') {
-      fetchLogbookByAthlete(selectedAthlete).then(res => {
-        setLogbook((res.data || []).map((e) => ({ ...e, name: selectedAthlete })));
-      });
+    if (selectedAthlete === 'all') {
+      const cached = localStorage.getItem(CACHE_KEY);
+      if (cached) {
+        try { setLogbook(JSON.parse(cached).logbook || []); } catch (e) {}
+      }
     }
   }, [selectedAthlete]);
 
@@ -188,8 +193,9 @@ export default function CoachResults() {
   async function loadWellnessAndMedical() {
     setWellnessLoading(true);
     try {
-      const [data, wellnessData, medicalData] = await Promise.all([ fetchAthletes(), fetchWellnessLogs(), fetchMedicalLogs() ]);
-      const rawAthletes = data.athletes || [];
+      const athRes = athletes.length > 0 ? { athletes } : await fetchAthletes();
+      const [wellnessData, medicalData] = await Promise.all([ fetchWellnessLogs(), fetchMedicalLogs() ]);
+      const rawAthletes = athRes.athletes || [];
       const logs = wellnessData.data || [];
       const medLogs = medicalData.data || [];
       
@@ -262,7 +268,7 @@ export default function CoachResults() {
           roster.push({
             id: i, name: name, grip: latest.grip, feeling: latest.feeling, soreness: latest.soreness, sleep: latest.sleep, nutrition: latest.nutrition,
             status: isFatigued ? 'fatigued' : 'normal',
-            medicalStatus, activeInjury, medicalHistory: athMed, history: athLogs.slice(-7)
+            medicalStatus, activeInjury, medicalHistory: athMed, history: athLogs
           });
         }
       }
@@ -291,8 +297,8 @@ export default function CoachResults() {
       });
       const teamHistory = Object.values(teamHistoryMap).map(day => ({
         date: day.date, rawDate: day.rawDate, grip: day.grip / day.count, feeling: day.feeling / day.count, soreness: day.soreness / day.count, sleep: day.sleep / day.count, nutrition: day.nutrition / day.count,
-      })).sort((a,b) => a.rawDate - b.rawDate).slice(-7);
-      
+      })).sort((a,b) => a.rawDate - b.rawDate);
+
       setTeamWellnessHistory(teamHistory);
     } catch (err) {}
     setWellnessLoading(false);
@@ -332,32 +338,49 @@ export default function CoachResults() {
     return map;
   }, [filteredMaxes]);
 
+  const memoizedLogbook = useMemo(() => {
+    return filteredLogbook.map(e => ({
+      ...e,
+      _volume: calcSetVolume(e, maxesByAthlete),
+      _zone: getIntensityZone(e.percentIntensity || e.intensity),
+    }));
+  }, [filteredLogbook, maxesByAthlete]);
+
+  const logbookByAthlete = useMemo(() => {
+    const map = {};
+    memoizedLogbook.forEach(e => {
+      if (!map[e.name]) map[e.name] = [];
+      map[e.name].push(e);
+    });
+    return map;
+  }, [memoizedLogbook]);
+
   const summary = useMemo(() => {
-    const entries = filteredLogbook;
+    const entries = memoizedLogbook;
     if (!entries.length) return { totalVolume: 0, sessions: 0, volAt85: 0, avgPerWeek: 0, weeksCovered: 0, zoneVolumes: [0,0,0,0,0] };
     const sessionDays = new Set(entries.map((e) => e.date));
     const zoneVolumes = [0, 0, 0, 0, 0];
     let totalVolume = 0;
     entries.forEach((e) => {
-      const vol = calcSetVolume(e, maxesByAthlete); totalVolume += vol;
-      const zone = getIntensityZone(e.percentIntensity || e.intensity); if (zone !== null) zoneVolumes[zone] += vol;
+      totalVolume += e._volume;
+      if (e._zone !== null) zoneVolumes[e._zone] += e._volume;
     });
     const volAt85Plus = zoneVolumes[3] + zoneVolumes[4];
     const pctAt85Plus = totalVolume > 0 ? (volAt85Plus / totalVolume) * 100 : 0;
     const weekKeys = new Set(entries.map((e) => getWeekKey(e.date)));
     const avgPerWeek = sessionDays.size / (weekKeys.size || 1);
     return { totalVolume, sessions: sessionDays.size, volAt85Plus, pctAt85Plus, avgPerWeek, weeksCovered: weekKeys.size || 1, zoneVolumes };
-  }, [filteredLogbook, maxesByAthlete]);
+  }, [memoizedLogbook]);
 
   const weeklyFrequency = useMemo(() => {
     const weekMap = {};
-    filteredLogbook.forEach((e) => {
+    memoizedLogbook.forEach((e) => {
       const wk = getWeekKey(e.date);
       if (!weekMap[wk]) weekMap[wk] = { week: wk, sessions: new Set(), volume: 0 };
-      weekMap[wk].sessions.add(e.date); weekMap[wk].volume += calcSetVolume(e, maxesByAthlete);
+      weekMap[wk].sessions.add(e.date); weekMap[wk].volume += e._volume;
     });
     return Object.values(weekMap).sort((a, b) => a.week.localeCompare(b.week)).map((w) => ({ ...w, sessionCount: w.sessions.size }));
-  }, [filteredLogbook, maxesByAthlete]);
+  }, [memoizedLogbook]);
 
   const progressionData = useMemo(() => {
     const weekMap = {};
@@ -383,17 +406,17 @@ export default function CoachResults() {
   const comparisonMatrix = useMemo(() => {
     if (selectedAthlete !== 'all') return [];
     return athletes.map((a) => {
-      const entries = filteredLogbook.filter((e) => e.name === a.name);
+      const entries = logbookByAthlete[a.name] || [];
       const sessionDays = new Set(entries.map((e) => e.date));
       const weekKeys = new Set(entries.map((e) => getWeekKey(e.date)));
       let totalVol = 0; let vol85 = 0;
       entries.forEach((e) => {
-        const vol = calcSetVolume(e, maxesByAthlete); totalVol += vol;
-        const pct = parseFloat(e.percentIntensity || e.intensity || 0); if (pct >= 85) vol85 += vol;
+        totalVol += e._volume;
+        const pct = parseFloat(e.percentIntensity || e.intensity || 0); if (pct >= 85) vol85 += e._volume;
       });
       return { name: a.name, sessions: sessionDays.size, avgPerWeek: sessionDays.size / (weekKeys.size || 1), totalVol, pctAt85: totalVol > 0 ? (vol85 / totalVol) * 100 : 0 };
     }).filter((a) => a.sessions > 0);
-  }, [athletes, filteredLogbook, selectedAthlete, maxesByAthlete]);
+  }, [athletes, logbookByAthlete, selectedAthlete]);
 
   function exportCSV() {
     const headers = ['Athlete', 'Date', 'Exercise', 'Sets', 'Reps', '% Intensity', 'Tempo', 'Rest', 'Weight(kg)', 'Set Volume(kg)'];
@@ -411,14 +434,18 @@ export default function CoachResults() {
     if (val >= 8) return 'status-green'; if (val <= 4) return 'status-red'; return 'status-amber';
   };
 
-  const filteredWellnessRoster = wellnessRoster.filter(p => p.name.toLowerCase().includes(wellnessSearch.toLowerCase()));
-  const getChartData = () => {
-    if (selectedChartUser === 'team') return teamWellnessHistory;
-    const athlete = wellnessRoster.find(a => a.id.toString() === selectedChartUser);
-    return athlete ? athlete.history : [];
-  };
+  const filteredWellnessRoster = useMemo(() => wellnessRoster.filter(p => p.name.toLowerCase().includes(wellnessSearch.toLowerCase())), [wellnessRoster, wellnessSearch]);
+  const wellnessChartData = useMemo(() => {
+    const baseData = selectedChartUser === 'team' ? teamWellnessHistory : (wellnessRoster.find(a => a.id.toString() === selectedChartUser)?.history || []);
+    if (!baseData.length) return baseData;
+    const today = new Date();
+    const cutoff = new Date(today);
+    if (wellnessTimeRange === 'week') cutoff.setDate(today.getDate() - 7);
+    else if (wellnessTimeRange === 'month') cutoff.setDate(today.getDate() - 30);
+    else if (wellnessTimeRange === 'season') cutoff.setDate(today.getDate() - 90);
+    return baseData.filter(d => d.rawDate >= cutoff);
+  }, [teamWellnessHistory, wellnessRoster, selectedChartUser, wellnessTimeRange]);
 
-  const wellnessChartData = getChartData();
   const avgGrip = wellnessChartData.length ? (wellnessChartData.reduce((acc, curr) => acc + curr.grip, 0) / wellnessChartData.length).toFixed(1) : 0;
   const avgFeeling = wellnessChartData.length ? (wellnessChartData.reduce((acc, curr) => acc + curr.feeling, 0) / wellnessChartData.length).toFixed(1) : 0;
   const avgSoreness = wellnessChartData.length ? (wellnessChartData.reduce((acc, curr) => acc + curr.soreness, 0) / wellnessChartData.length).toFixed(1) : 0;
@@ -761,12 +788,17 @@ export default function CoachResults() {
               </div>
 
               <div className="cr-chart-card">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-                  <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#0f172a', margin: 0 }}>7-Day Trend</h3>
-                  <select value={selectedChartUser} onChange={(e) => setSelectedChartUser(e.target.value)} className="cr-select">
-                    <option value="team">Team Average</option>
-                    <optgroup label="Active Roster">{wellnessRoster.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</optgroup>
-                  </select>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '8px' }}>
+                  <h3 style={{ fontSize: '18px', fontWeight: '700', color: '#0f172a', margin: 0 }}>{wellnessTimeRange === 'week' ? '7-Day Trend' : wellnessTimeRange === 'month' ? '30-Day Trend' : 'Season Trend'}</h3>
+                  <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                    {['week', 'month', 'season'].map(range => (
+                      <button key={range} onClick={() => setWellnessTimeRange(range)} style={{ padding: '4px 10px', borderRadius: '6px', border: wellnessTimeRange === range ? 'none' : '1px solid #e2e8f0', background: wellnessTimeRange === range ? '#008ed3' : '#fff', color: wellnessTimeRange === range ? '#fff' : '#008ed3', fontWeight: 700, fontSize: '11px', cursor: 'pointer' }}>{range === 'season' ? 'Season' : range.charAt(0).toUpperCase() + range.slice(1)}</button>
+                    ))}
+                    <select value={selectedChartUser} onChange={(e) => setSelectedChartUser(e.target.value)} className="cr-select" style={{ marginLeft: '8px', padding: '6px 12px', fontSize: '12px' }}>
+                      <option value="team">Team Average</option>
+                      <optgroup label="Active Roster">{wellnessRoster.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</optgroup>
+                    </select>
+                  </div>
                 </div>
                 
                 <div style={{ height: '300px', width: '100%' }}>
@@ -841,7 +873,7 @@ export default function CoachResults() {
   );
 }
 
-function ProgressionChart({ data, weeklyData }) {
+const ProgressionChart = memo(function ProgressionChart({ data, weeklyData }) {
   const width = 720; const height = 280; const padding = { top: 20, right: 20, bottom: 40, left: 50 };
   const chartW = width - padding.left - padding.right; const chartH = height - padding.top - padding.bottom;
   const weeks = data.map((d) => d.week);
@@ -888,7 +920,7 @@ function ProgressionChart({ data, weeklyData }) {
       </svg>
     </div>
   );
-}
+});
 
 const styles = {
   page: { padding: '4px', backgroundColor: COLORS.cardBg, minHeight: 'calc(100vh - 120px)' },
