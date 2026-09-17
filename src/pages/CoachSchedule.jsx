@@ -241,7 +241,7 @@ export default function CoachSchedule() {
     return Object.values(groups).filter(g => g.proposedLoad > 0);
   }, [scheduleLogs]);
 
-  const squadComparison = useMemo(() => {
+   const squadComparison = useMemo(() => {
     if (squadSelection.length === 0) return null;
     const rows = rosterWithLoads.filter(a => squadSelection.includes(a.name));
     let maxDaily = 0;
@@ -249,7 +249,25 @@ export default function CoachSchedule() {
       Object.keys(d).forEach(k => { if (k !== 'date' && k !== 'avgRpe') maxDaily = Math.max(maxDaily, d[k]); });
     }));
     const dateLabels = rows.length ? rows[0].chartData.map(d => d.date) : [];
-    return { rows, maxDaily, dateLabels };
+
+    // Team Composition: sum each type's load across all selected athletes per day
+    const teamTotals = dateLabels.map((d, idx) => {
+      const dayTotal = { date: d, rpeSum: 0, loadSum: 0 };
+      rows.forEach(a => {
+        const athleteDay = a.chartData[idx];
+        Object.keys(athleteDay).forEach(k => {
+          if (k === 'date' || k === 'avgRpe') return;
+          dayTotal[k] = (dayTotal[k] || 0) + athleteDay[k];
+          dayTotal.loadSum += athleteDay[k];
+          dayTotal.rpeSum += athleteDay[k] * (athleteDay.avgRpe || 0);
+        });
+      });
+      dayTotal.avgRpe = dayTotal.loadSum > 0 ? Math.round((dayTotal.rpeSum / dayTotal.loadSum) * 10) / 10 : null;
+      return dayTotal;
+    });
+    const teamTypes = Object.keys(teamTotals.reduce((acc, t) => ({ ...acc, ...t }), {})).filter(k => k !== 'date' && k !== 'avgRpe' && k !== 'loadSum' && k !== 'rpeSum');
+
+    return { rows, maxDaily, dateLabels, teamTotals, teamTypes };
   }, [squadSelection, rosterWithLoads]);
 
   const getAcwrStatus = (acwr) => {
@@ -338,8 +356,9 @@ export default function CoachSchedule() {
 
       <div className="cs-tabs">
         <button className={`cs-tab ${activeTab === 'acwr' ? 'active' : ''}`} onClick={() => setActiveTab('acwr')}><BarChart2 size={18}/> Load Engine (ACWR)</button>
-        <button className={`cs-tab ${activeTab === 'audit' ? 'active' : ''}`} onClick={() => setActiveTab('audit')}><Users size={18}/> Session Audit</button>
         <button className={`cs-tab ${activeTab === 'squad' ? 'active' : ''}`} onClick={() => setActiveTab('squad')}><Layers size={18}/> Squad Comparison</button>
+        <button className={`cs-tab ${activeTab === 'composition' ? 'active' : ''}`} onClick={() => setActiveTab('composition')}><BarChart2 size={18}/> Team Composition</button>
+        <button className={`cs-tab ${activeTab === 'audit' ? 'active' : ''}`} onClick={() => setActiveTab('audit')}><Users size={18}/> Session Audit</button>
       </div>
 
       {/* --- TAB 1: ACWR LOAD ENGINE --- */}
@@ -531,6 +550,62 @@ export default function CoachSchedule() {
                 {Object.entries(TYPE_COLORS).map(([type, color]) => (
                   <span key={type} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#475569', fontWeight: 600 }}>
                     <span style={{ width: '10px', height: '10px', borderRadius: '2px', background: color, display: 'inline-block' }}></span>
+                    {type}
+                  </span>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* --- TAB 4: TEAM COMPOSITION --- */}
+      {activeTab === 'composition' && (
+        <div className="cs-card">
+          <h2 style={{ fontSize: '18px', color: '#0f172a', margin: '0 0 8px 0', fontWeight: '800' }}>Team Composition</h2>
+          <p style={{ fontSize: '13px', color: '#64748b', margin: '0 0 16px 0' }}>
+            Aggregated load by session type across all selected athletes. Shows what the squad's week is made of.
+          </p>
+
+          {squadSelection.length === 0 ? (
+            <p style={{ color: '#64748b' }}>No athletes selected yet. Go to the Load Engine tab and tick checkboxes beside athlete names, then return here.</p>
+          ) : squadComparison.teamTotals.length === 0 ? (
+            <p style={{ color: '#64748b' }}>Selected athletes have no training data in the last 14 days.</p>
+          ) : (
+            <>
+              <div style={{ height: '240px', width: '100%', marginBottom: '16px' }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={squadComparison.teamTotals}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#cbd5e1" />
+                    <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 11 }} />
+                    <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 11 }} />
+                    <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
+                    {squadComparison.teamTypes.map(t => (
+                      <Bar key={t} dataKey={t} stackId="load" fill={TYPE_COLORS[t] || '#64748b'} />
+                    ))}
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+
+              <div style={{ height: '60px', width: '100%', marginBottom: '16px' }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={squadComparison.teamTotals}>
+                    <XAxis dataKey="date" axisLine={false} tickLine={false} tick={false} />
+                    <YAxis domain={[0, 10]} hide />
+                    <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
+                    <Bar dataKey="avgRpe" radius={[3, 3, 0, 0]}>
+                      {squadComparison.teamTotals.map((d, i) => (
+                        <Cell key={i} fill={getIntensityColor(d.avgRpe)} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+
+              <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', paddingTop: '12px', borderTop: '1px solid #e2e8f0' }}>
+                {squadComparison.teamTypes.map(type => (
+                  <span key={type} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#475569', fontWeight: 600 }}>
+                    <span style={{ width: '10px', height: '10px', borderRadius: '2px', background: TYPE_COLORS[type] || '#64748b', display: 'inline-block' }}></span>
                     {type}
                   </span>
                 ))}
