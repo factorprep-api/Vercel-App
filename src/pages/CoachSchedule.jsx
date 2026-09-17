@@ -4,8 +4,9 @@ import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
 import { fetchAthletes, fetchSchedule, saveScheduleSession } from '../api';
 import { ArrowLeft, Calendar, BarChart2, Plus, AlertCircle, CheckCircle, Clock, X, AlertTriangle, Users, Layers } from 'lucide-react';
-import { BarChart, Bar, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { BarChart, Bar, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer } from 'recharts';
 
+const SQUAD_COLORS = ['#008ed3', '#0ea5e9', '#6366f1', '#8b5cf6', '#ec4899', '#ef4444', '#f97316', '#f59e0b', '#84cc16', '#10b981', '#14b8a6', '#64748b', '#a8a29e'];
 // ===== SESSION TYPE COLORS (aligned with AthleteSchedule) =====
 const TYPE_COLORS = {
   'Field Session': '#10b981',
@@ -36,6 +37,27 @@ export default function CoachSchedule() {
   const [roster, setRoster] = useState([]);
   const [scheduleLogs, setScheduleLogs] = useState([]);
   const [expandedAthlete, setExpandedAthlete] = useState(null);
+  const [hoveredAthlete, setHoveredAthlete] = useState(null);
+  const [drilledAthlete, setDrilledAthlete] = useState(null);
+  const [squadAxis, setSquadAxis] = useState('rel');
+
+  const drilledAthleteData = drilledAthlete ? rosterWithLoads.find(a => a.name === drilledAthlete) : null;
+
+  const squadLineData = useMemo(() => {
+    if (!squadComparison) return [];
+    return squadComparison.dateLabels.map((date, idx) => {
+      const row = { date };
+      squadComparison.rows.forEach(a => {
+        let total = 0;
+        const d = a.chartData[idx];
+        Object.keys(d).forEach(k => { if (k !== 'date' && k !== 'avgRpe') total += d[k]; });
+        row[a.name] = squadAxis === 'rel'
+          ? (a.chronicLoad > 0 ? Math.round((total / (a.chronicLoad / 28)) * 100) : null)
+          : Math.round(total);
+      });
+      return row;
+    });
+  }, [squadComparison, squadAxis]);
   const [searchQuery, setSearchQuery] = useState('');
   const [squadSelection, setSquadSelection] = useState([]);
 
