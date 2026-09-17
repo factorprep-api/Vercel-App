@@ -296,7 +296,7 @@ export default function CoachResults() {
         teamHistoryMap[d].grip += l.grip; teamHistoryMap[d].feeling += l.feeling; teamHistoryMap[d].soreness += l.soreness; teamHistoryMap[d].sleep += l.sleep; teamHistoryMap[d].nutrition += l.nutrition; teamHistoryMap[d].count += 1;
       });
       const teamHistory = Object.values(teamHistoryMap).map(day => ({
-        date: day.date, rawDate: day.rawDate, grip: day.grip / day.count, feeling: day.feeling / day.count, soreness: day.soreness / day.count, sleep: day.sleep / day.count, nutrition: day.nutrition / day.count,
+        date: day.rawDate.toLocaleDateString('en-US', {month: 'short', day: 'numeric'}), rawDate: day.rawDate, grip: day.grip / day.count, feeling: day.feeling / day.count, soreness: day.soreness / day.count, sleep: day.sleep / day.count, nutrition: day.nutrition / day.count,
       })).sort((a,b) => a.rawDate - b.rawDate);
 
       setTeamWellnessHistory(teamHistory);
@@ -438,6 +438,24 @@ export default function CoachResults() {
   const wellnessChartData = useMemo(() => {
     const baseData = selectedChartUser === 'team' ? teamWellnessHistory : (wellnessRoster.find(a => a.id.toString() === selectedChartUser)?.history || []);
     if (!baseData.length) return baseData;
+    if (selectedChartUser !== 'team') {
+      const today = new Date();
+      const cutoff = new Date(today);
+      if (wellnessTimeRange === 'week') cutoff.setDate(today.getDate() - 7);
+      else if (wellnessTimeRange === 'month') cutoff.setDate(today.getDate() - 30);
+      else if (wellnessTimeRange === 'season') cutoff.setDate(today.getDate() - 90);
+      const grouped = {};
+      baseData.filter(d => d.rawDate >= cutoff).forEach(d => {
+        const key = d.rawDate.toISOString().split('T')[0];
+        if (!grouped[key]) grouped[key] = { ...d, count: 1 };
+        else { grouped[key].grip += d.grip; grouped[key].feeling += d.feeling; grouped[key].soreness += d.soreness; grouped[key].sleep += d.sleep; grouped[key].nutrition += d.nutrition; grouped[key].count += 1; }
+      });
+      return Object.values(grouped).map(day => ({
+        date: day.rawDate.toLocaleDateString('en-US', {month: 'short', day: 'numeric'}), rawDate: day.rawDate,
+        grip: day.grip / day.count, feeling: day.feeling / day.count,
+        soreness: day.soreness / day.count, sleep: day.sleep / day.count, nutrition: day.nutrition / day.count,
+      })).sort((a, b) => a.rawDate - b.rawDate);
+    }
     const today = new Date();
     const cutoff = new Date(today);
     if (wellnessTimeRange === 'week') cutoff.setDate(today.getDate() - 7);
