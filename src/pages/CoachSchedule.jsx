@@ -160,7 +160,8 @@ export default function CoachSchedule() {
       const dailyLoads = [];
       for (let i = 27; i >= 0; i--) {
         const dd = new Date(today); dd.setDate(today.getDate() - i);
-        dailyLoads.push(dailyMap[dd.getTime()] || 0);
+        const dayKey = new Date(dd.getFullYear(), dd.getMonth(), dd.getDate()).getTime();
+        dailyLoads.push(dailyMap[dayKey] || 0);
       }
 
       const acuteLoad = dailyLoads.slice(-7).reduce((a, b) => a + b, 0);
