@@ -131,6 +131,7 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
       const wellData = wellRes.data || [];
       if (wellData.length > 1) {
         const header = wellData[0] || [];
+        console.log('[Wellness] Header row:', header);
         const col = {};
         header.forEach((h, i) => {
           const key = String(h || '').trim().toLowerCase();
@@ -142,6 +143,7 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
           else if (key === 'sleep') col.sleep = i;
           else if (key === 'nutrition') col.nutrition = i;
         });
+        console.log('[Wellness] Mapped column indices:', col);
         // Fallback to expected indices if header missing/unrecognized
         const idx = {
           date: col.date ?? 0,
@@ -152,9 +154,10 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
           sleep: col.sleep ?? 5,
           nutrition: col.nutrition ?? 6,
         };
+        console.log('[Wellness] Using indices:', idx);
 
         const parsedWellness = [];
-        wellData.slice(1).forEach(r => {
+        wellData.slice(1).forEach((r, i) => {
           if (!r || !r[idx.date]) return;
           let d = new Date(r[idx.date]);
           if (isNaN(d.getTime())) return;
@@ -163,9 +166,11 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
           const sorenessVal = r[idx.soreness];
           const sleepVal = r[idx.sleep];
           const nutritionVal = r[idx.nutrition];
+          const emailVal = String(r[idx.email] || '').trim().toLowerCase();
+          if (i < 3) console.log('[Wellness] Sample row', i, ':', { raw: r, parsed: { date: d, email: emailVal, grip: gripVal, feeling: feelingVal, soreness: sorenessVal, sleep: sleepVal, nutrition: nutritionVal } });
           parsedWellness.push({
             rawDate: d,
-            email: String(r[idx.email] || '').trim().toLowerCase(),
+            email: emailVal,
             grip: gripVal !== '' && gripVal != null ? Number(gripVal) : null,
             feeling: feelingVal !== '' && feelingVal != null ? Number(feelingVal) : null,
             soreness: sorenessVal !== '' && sorenessVal != null ? Number(sorenessVal) : null,
@@ -173,7 +178,10 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
             nutrition: nutritionVal !== '' && nutritionVal != null ? Number(nutritionVal) : null,
           });
         });
+        console.log('[Wellness] Parsed', parsedWellness.length, 'entries');
         setWellnessLogs(parsedWellness.sort((a, b) => a.rawDate - b.rawDate));
+      } else {
+        console.log('[Wellness] No data or only header, wellData.length:', wellData.length);
       }
      } catch (e) {
        console.error(e);
@@ -198,6 +206,12 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
       if (!map[w.email]) map[w.email] = [];
       map[w.email].push(w);
     });
+    // Debug: log roster emails vs wellness emails
+    const rosterEmails = roster.map(a => a.email).filter(Boolean);
+    const wellnessEmails = Object.keys(map);
+    console.log('[Wellness] Roster emails:', rosterEmails);
+    console.log('[Wellness] Wellness emails:', wellnessEmails);
+    console.log('[Wellness] Intersection:', rosterEmails.filter(e => wellnessEmails.includes(e)));
     return map;
   }, [wellnessLogs]);
 
