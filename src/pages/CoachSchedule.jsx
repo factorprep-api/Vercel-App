@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
-import { fetchAthletes, fetchSchedule, saveScheduleSession } from '../api';
+import { fetchAthletes, fetchSchedule, fetchWellnessLogs, saveScheduleSession } from '../api';
 import { ArrowLeft, Calendar, BarChart2, Plus, AlertCircle, CheckCircle, Clock, X, AlertTriangle, Users, Layers } from 'lucide-react';
 import { BarChart, Bar, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer } from 'recharts';
 
@@ -36,6 +36,7 @@ export default function CoachSchedule() {
   
   const [roster, setRoster] = useState([]);
   const [scheduleLogs, setScheduleLogs] = useState([]);
+  const [wellnessLogs, setWellnessLogs] = useState([]);
   const [expandedAthlete, setExpandedAthlete] = useState(null);
   const [hoveredAthlete, setHoveredAthlete] = useState(null);
   const [drilledAthlete, setDrilledAthlete] = useState(null);
@@ -64,7 +65,7 @@ export default function CoachSchedule() {
 
    async function loadData() {
     try {
-      const [athRes, schedData] = await Promise.all([ fetchAthletes(), fetchSchedule() ]);
+      const [athRes, schedData, wellRes] = await Promise.all([ fetchAthletes(), fetchSchedule(), fetchWellnessLogs() ]);
       
       const athletes = athRes.athletes || [];
       const validRoster = [];
@@ -73,7 +74,7 @@ export default function CoachSchedule() {
         if (!athletes[i]) continue;
         const name = String(athletes[i][0] || '').trim();
         const pods = String(athletes[i][11] || '').toLowerCase();
-        if (name && pods.includes('schedule')) validRoster.push({ name });
+        if (name && pods.includes('schedule')) validRoster.push({ name, email: String(athletes[i][9] || '').trim().toLowerCase() });
       }
       setRoster(validRoster.sort((a, b) => a.name.localeCompare(b.name)));
 
@@ -123,13 +124,62 @@ export default function CoachSchedule() {
             status: sessionStatus
           });
         });
-        setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
+setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
+       }
+       
+// Parse wellness data — defensive: verify header row to map columns
+      const wellData = wellRes.data || [];
+      if (wellData.length > 1) {
+        const header = wellData[0] || [];
+        const col = {};
+        header.forEach((h, i) => {
+          const key = String(h || '').trim().toLowerCase();
+          if (key === 'date') col.date = i;
+          else if (key === 'email') col.email = i;
+          else if (key === 'grip') col.grip = i;
+          else if (key === 'feeling') col.feeling = i;
+          else if (key === 'soreness') col.soreness = i;
+          else if (key === 'sleep') col.sleep = i;
+          else if (key === 'nutrition') col.nutrition = i;
+        });
+        // Fallback to expected indices if header missing/unrecognized
+        const idx = {
+          date: col.date ?? 0,
+          email: col.email ?? 1,
+          grip: col.grip ?? 2,
+          feeling: col.feeling ?? 3,
+          soreness: col.soreness ?? 4,
+          sleep: col.sleep ?? 5,
+          nutrition: col.nutrition ?? 6,
+        };
+
+        const parsedWellness = [];
+        wellData.slice(1).forEach(r => {
+          if (!r || !r[idx.date]) return;
+          let d = new Date(r[idx.date]);
+          if (isNaN(d.getTime())) return;
+          const gripVal = r[idx.grip];
+          const feelingVal = r[idx.feeling];
+          const sorenessVal = r[idx.soreness];
+          const sleepVal = r[idx.sleep];
+          const nutritionVal = r[idx.nutrition];
+          parsedWellness.push({
+            rawDate: d,
+            email: String(r[idx.email] || '').trim().toLowerCase(),
+            grip: gripVal !== '' && gripVal != null ? Number(gripVal) : null,
+            feeling: feelingVal !== '' && feelingVal != null ? Number(feelingVal) : null,
+            soreness: sorenessVal !== '' && sorenessVal != null ? Number(sorenessVal) : null,
+            sleep: sleepVal !== '' && sleepVal != null ? Number(sleepVal) : null,
+            nutrition: nutritionVal !== '' && nutritionVal != null ? Number(nutritionVal) : null,
+          });
+        });
+        setWellnessLogs(parsedWellness.sort((a, b) => a.rawDate - b.rawDate));
       }
-    } catch (e) {
-      console.error(e);
-    }
-    setLoading(false);
-  }
+     } catch (e) {
+       console.error(e);
+     }
+     setLoading(false);
+   }
 
   // --- ACWR MATH ---
   const logsByAthlete = useMemo(() => {
@@ -141,10 +191,28 @@ export default function CoachSchedule() {
     return map;
   }, [scheduleLogs]);
 
+  // --- WELLNESS INDEX (email -> entries, ascending by date; mirrors logsByAthlete) ---
+  const wellnessByEmail = useMemo(() => {
+    const map = {};
+    wellnessLogs.forEach(w => {
+      if (!map[w.email]) map[w.email] = [];
+      map[w.email].push(w);
+    });
+    return map;
+  }, [wellnessLogs]);
+
   const rosterWithLoads = useMemo(() => {
     const today = new Date();
     const sevenDaysAgo = new Date(today); sevenDaysAgo.setDate(today.getDate() - 7);
     const twentyEightDaysAgo = new Date(today); twentyEightDaysAgo.setDate(today.getDate() - 28);
+
+    // Wellness windows keyed by calendar day so time-of-day never shifts a log's day
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+    const wellMin7 = startOfToday - 6 * DAY_MS;    // last 7 days incl. today
+    const wellMin3 = startOfToday - 2 * DAY_MS;    // last 3 days incl. today
+    const wellMin14 = startOfToday - 13 * DAY_MS;  // last 14 days incl. today
+    const wellMin28 = startOfToday - 27 * DAY_MS;  // last 28 days incl. today
 
     return roster.map(ath => {
       const athLogs = logsByAthlete[ath.name] || [];
@@ -222,6 +290,61 @@ export default function CoachSchedule() {
         acwrHistory.push({ day: 13 - i, acwr: chronicWin > 0 ? Math.round((acuteWin / chronicWin) * 100) / 100 : null });
       }
 
+      // --- WELLNESS (Wellness_Logs joined by email; missing components skipped, never zero) ---
+      const wellEntries = wellnessByEmail[ath.email] || [];
+      const wellDayComp = {}; // dayKey -> pooled { sum, count } for the 14-day series
+      let well7Sum = 0, well7Count = 0;
+      let grip28Sum = 0, grip28Count = 0;
+      let latestGrip = null;
+      let latestWellEntry = null;
+
+      wellEntries.forEach(w => {
+        const dk = new Date(w.rawDate.getFullYear(), w.rawDate.getMonth(), w.rawDate.getDate()).getTime();
+        const invSoreness = w.soreness != null ? 11 - w.soreness : null; // soreness: higher = worse, invert before averaging
+        let daySum = 0, dayCount = 0;
+        if (w.feeling != null) { daySum += w.feeling; dayCount++; }
+        if (invSoreness != null) { daySum += invSoreness; dayCount++; }
+        if (w.sleep != null) { daySum += w.sleep; dayCount++; }
+        if (w.nutrition != null) { daySum += w.nutrition; dayCount++; }
+
+        if (dk >= wellMin14) {
+          if (!wellDayComp[dk]) wellDayComp[dk] = { sum: 0, count: 0 };
+          wellDayComp[dk].sum += daySum;
+          wellDayComp[dk].count += dayCount;
+        }
+        if (dk >= wellMin7) {
+          well7Sum += daySum;
+          well7Count += dayCount;
+          if (dayCount > 0) latestWellEntry = w; // entries ascending by date -> last qualifying wins
+        }
+        if (w.grip != null) {
+          if (dk >= wellMin28) { grip28Sum += w.grip; grip28Count++; }
+          if (dk >= wellMin3) latestGrip = w.grip; // raw force — never averaged into the composite
+        }
+      });
+
+      let wellnessComposite = null;
+      if (well7Count > 0) wellnessComposite = Math.round((well7Sum / well7Count) * 10) / 10;
+
+      let gripPct = null;
+      if (latestGrip != null && grip28Count > 0) {
+        const gripAvg = grip28Sum / grip28Count;
+        if (gripAvg > 0) gripPct = Math.round((latestGrip / gripAvg) * 1000) / 10;
+      }
+
+      const wellnessHistory = [];
+      for (let i = 13; i >= 0; i--) {
+        const c = wellDayComp[startOfToday - i * DAY_MS];
+        wellnessHistory.push({ day: 13 - i, wellness: c && c.count > 0 ? Math.round((c.sum / c.count) * 10) / 10 : null });
+      }
+      const hasWellness = wellnessHistory.some(h => h.wellness != null);
+
+      let wellnessTip = null;
+      if (latestWellEntry) {
+        const fmt = (v) => (v != null ? v : '—');
+        wellnessTip = `Feel ${fmt(latestWellEntry.feeling)} · Sleep ${fmt(latestWellEntry.sleep)} · Sore ${fmt(latestWellEntry.soreness)}/10 · Nutri ${fmt(latestWellEntry.nutrition)}`;
+      }
+
       const flags = [];
       if (acwr > 1.5) flags.push({ label: 'Spike', detail: 'ACWR in danger zone — rapid load increase', color: '#dc2626' });
       else if (acwr > 1.3) flags.push({ label: 'Caution', detail: 'ACWR elevated — monitor closely', color: '#f59e0b' });
@@ -229,9 +352,9 @@ export default function CoachSchedule() {
       if (acwr > 0 && acwr < 0.8) flags.push({ label: 'Undertraining', detail: 'ACWR below 0.8 — detraining risk', color: '#0ea5e9' });
       if (sessions7d === 0 && chronicLoad > 0) flags.push({ label: 'Inactive', detail: 'No sessions logged in the last 7 days', color: '#dc2626' });
 
-      return { ...ath, acuteLoad, chronicLoad, acwr, chartData, chartTypes, monotony, strain, sessions7d, acwrHistory, flags };
+      return { ...ath, acuteLoad, chronicLoad, acwr, chartData, chartTypes, monotony, strain, sessions7d, acwrHistory, flags, wellnessComposite, wellnessTip, gripPct, wellnessHistory, hasWellness };
     });
-  }, [roster, logsByAthlete]);
+  }, [roster, logsByAthlete, wellnessByEmail]);
 
   // --- SESSION AUDIT GROUPING ---
   const groupedAuditSessions = useMemo(() => {
@@ -309,6 +432,14 @@ export default function CoachSchedule() {
     if (acwr <= 1.3) return { text: 'Sweet Spot', color: '#16a34a', bg: '#dcfce3' };
     if (acwr <= 1.5) return { text: 'Caution', color: '#f59e0b', bg: '#fef3c7' };
     return { text: 'Danger Zone', color: '#dc2626', bg: '#fef2f2' };
+  };
+
+  // Wellness composite badge color: green >= 7, amber 5-6.9, red < 5, gray when no data
+  const getWellnessColor = (v) => {
+    if (v == null) return '#94a3b8';
+    if (v >= 7) return '#16a34a';
+    if (v >= 5) return '#f59e0b';
+    return '#dc2626';
   };
 
   const handleToggleAthlete = (athName) => {
@@ -411,12 +542,13 @@ export default function CoachSchedule() {
                     <th>ACWR Status</th>
                     <th>Monotony</th>
                     <th>Strain</th>
+                    <th>Wellness</th>
                     <th>Flags</th>
                     <th>Analytics</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredRoster.length === 0 ? <tr><td colSpan="9" style={{ color: '#64748b', textAlign: 'center' }}>No athletes found with Schedule Pod active.</td></tr> : 
+                  {filteredRoster.length === 0 ? <tr><td colSpan="10" style={{ color: '#64748b', textAlign: 'center' }}>No athletes found with Schedule Pod active.</td></tr> : 
                     filteredRoster.map((ath, idx) => {
                     const status = getAcwrStatus(ath.acwr);
                     const isExpanded = expandedAthlete === ath.name;
@@ -450,6 +582,15 @@ export default function CoachSchedule() {
                             {ath.strain > 0 ? ath.strain.toLocaleString() : '-'}
                           </td>
                           <td>
+                            {ath.wellnessComposite == null ? (
+                              <span style={{ color: '#94a3b8', fontWeight: 700 }}>—</span>
+                            ) : (
+                              <span className="cs-badge" title={ath.wellnessTip || ''} style={{ backgroundColor: getWellnessColor(ath.wellnessComposite) + '15', color: getWellnessColor(ath.wellnessComposite), minWidth: '44px' }}>
+                                {ath.wellnessComposite.toFixed(1)}
+                              </span>
+                            )}
+                          </td>
+                          <td>
                             {ath.flags.length === 0 ? (
                               <span style={{ color: '#16a34a', fontWeight: 700, fontSize: '13px', whiteSpace: 'nowrap' }}>✓ Clear</span>
                             ) : (
@@ -470,7 +611,7 @@ export default function CoachSchedule() {
                         </tr>
                         {isExpanded && (
                           <tr>
-                            <td colSpan="9" style={{ padding: 0, borderBottom: '2px solid #e2e8f0' }}>
+                            <td colSpan="10" style={{ padding: 0, borderBottom: '2px solid #e2e8f0' }}>
                               <div style={{ background: '#f8fafc', padding: '20px', borderTop: '1px solid #e2e8f0' }}>
                                 <h4 style={{ margin: '0 0 16px 0', color: '#0f172a', fontSize: '14px' }}>14-Day Load by Session Type</h4>
                                 <div style={{ height: '200px', width: '100%' }}>
@@ -512,6 +653,26 @@ export default function CoachSchedule() {
                                     </LineChart>
                                   </ResponsiveContainer>
                                 </div>
+                                {ath.hasWellness && (
+                                  <>
+                                    <h4 style={{ margin: '16px 0 8px 0', color: '#0f172a', fontSize: '14px' }}>Daily Wellness (14 Day)</h4>
+                                    <div style={{ height: '80px', width: '100%' }}>
+                                      <ResponsiveContainer width="100%" height="100%">
+                                        <LineChart data={ath.wellnessHistory}>
+                                          <XAxis dataKey="day" hide />
+                                          <YAxis domain={[1, 10]} hide />
+                                          <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
+                                          <Line type="monotone" dataKey="wellness" stroke="#64748b" strokeWidth={2} dot={{ r: 2 }} connectNulls />
+                                        </LineChart>
+                                      </ResponsiveContainer>
+                                    </div>
+                                    {ath.gripPct != null && (
+                                      <p style={{ margin: '8px 0 0 0', fontSize: '13px', fontWeight: 700, color: ath.gripPct < 90 ? '#dc2626' : ath.gripPct < 95 ? '#f59e0b' : '#16a34a' }}>
+                                        Grip: {Math.round(ath.gripPct)}% of 28d avg ({Math.round(ath.gripPct) - 100 >= 0 ? '+' : '−'}{Math.abs(Math.round(ath.gripPct) - 100)}%)
+                                      </p>
+                                    )}
+                                  </>
+                                )}
                               </div>
                             </td>
                           </tr>
@@ -813,23 +974,40 @@ export default function CoachSchedule() {
                   Icon = AlertCircle; statusColor = '#dc2626'; statusLabel = 'Incident / Stopped'; rowBg = '#fef2f2';
                 }
 
+                const proposedLoad = selectedAuditSession.proposedLoad;
+                const ratio = proposedLoad > 0 ? ath.actualLoad / proposedLoad : 0;
+                const deltaAU = ath.actualLoad - proposedLoad;
+                const deltaPct = proposedLoad > 0 ? (deltaAU / proposedLoad) * 100 : 0;
+                let deltaColor = '#64748b';
+                if (deltaPct < -20) deltaColor = '#dc2626';
+                else if (deltaPct > 20) deltaColor = '#2563eb';
+
                 return (
-                  <div key={idx} style={{ padding: '16px', borderBottom: '1px solid #e2e8f0', background: rowBg, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div key={idx} style={{ padding: '16px', paddingLeft: '20px', borderBottom: '1px solid #e2e8f0', borderLeft: `4px solid ${statusColor}`, background: rowBg, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div>
                       <div style={{ fontWeight: '700', color: '#0f172a', fontSize: '15px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                         {ath.athlete}
                         {Icon && <span className="audit-status" style={{ color: statusColor, background: `${statusColor}15`, padding: '2px 6px', fontSize: '11px' }}><Icon size={12}/> {statusLabel}</span>}
                       </div>
                       {ath.notes && <div style={{ fontSize: '13px', color: '#475569', marginTop: '6px', fontStyle: 'italic' }}>"{ath.notes}"</div>}
+                      {proposedLoad > 0 && ath.status !== 'Proposed' && (
+                        <div style={{ width: '100%', height: '6px', background: '#e2e8f0', borderRadius: '3px', marginTop: '8px', overflow: 'hidden' }}>
+                          <div style={{ width: `${Math.min(100, ratio * 100)}%`, height: '100%', borderRadius: '3px', background: ratio >= 0.8 && ratio <= 1.2 ? '#16a34a' : ratio < 0.8 ? '#f59e0b' : '#dc2626' }} />
+                        </div>
+                      )}
                     </div>
                     
                     <div style={{ textAlign: 'right' }}>
                       {ath.status === 'Proposed' ? (
-                        <span style={{ fontSize: '13px', color: '#94a3b8', fontWeight: '600' }}>No Data</span>
+                        <>
+                          <span style={{ fontSize: '13px', color: '#94a3b8', fontWeight: '600' }}>No Data</span>
+                          <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '4px' }}>—</div>
+                        </>
                       ) : (
                         <>
                           <div style={{ fontSize: '16px', fontWeight: '800', color: statusColor }}>{ath.actualLoad} AU</div>
                           <div style={{ fontSize: '12px', color: '#64748b' }}>{ath.actualMins}m @ RPE {ath.actualRpe}</div>
+                          <div style={{ fontSize: '12px', color: deltaColor, marginTop: '4px', fontWeight: '600' }}>Δ {deltaAU >= 0 ? '+' : ''}{deltaAU} AU ({deltaPct >= 0 ? '+' : ''}{deltaPct.toFixed(0)}%)</div>
                         </>
                       )}
                     </div>
