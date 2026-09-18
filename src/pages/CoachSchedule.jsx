@@ -64,8 +64,10 @@ export default function CoachSchedule() {
   }, [userEmail]);
 
    async function loadData() {
+    console.log('[Wellness] loadData() called, coachEmail:', coachEmail);
     try {
       const [athRes, schedData, wellRes] = await Promise.all([ fetchAthletes(), fetchSchedule(), fetchWellnessLogs() ]);
+      console.log('[Wellness] wellRes:', wellRes);
       
       const athletes = athRes.athletes || [];
       const validRoster = [];
