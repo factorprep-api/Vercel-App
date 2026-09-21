@@ -72,13 +72,14 @@ export const fetchWellnessLogs = async (athleteName, email) => {
   try {
     const { data, error } = await supabase
       .from('wellness_logs')
-      .select('date, grip_kg, feeling, soreness, sleep, nutrition, athletes(name)')
+      .select('date, grip_kg, feeling, soreness, sleep, nutrition, athletes(name, email)')
       .is('deleted_at', null)
       .order('date', { ascending: true });
     if (error) return { data: [] };
     const rows = (data || []).map(w => [
       w.date ? `${w.date}T00:00:00` : '',   // local-midnight so date displays correctly everywhere
-      '',                                    // email column — consumers match on name (index 2)
+      
+      w.athletes ? w.athletes.email : '',    // email — CoachSchedule joins wellness by email
       w.athletes ? w.athletes.name : '',
       w.grip_kg ?? '',
       w.feeling ?? '',
