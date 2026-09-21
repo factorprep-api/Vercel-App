@@ -34,23 +34,59 @@ export const fetchLibrary = async () => {
 // ==========================================
 // NEW POD PIPES (Wellness, Medical, Schedule)
 // ==========================================
+// Legacy Wellness_Logs sheet layout: Date, Email, Athlete, Grip, Feeling,
+// Soreness, Sleep, Nutrition (consumers index positionally and slice(1))
+const WELLNESS_SHEET_HEADER = ['Date','Email','Athlete','Grip','Feeling','Soreness','Sleep','Nutrition'];
+
 export const saveWellnessLog = async (payload) => {
   try {
-    let url = `${GOOGLE_SCRIPT_API_URL}?action=saveWellness&data=${encodeURIComponent(JSON.stringify(payload))}&t=${Date.now()}`;
-    let resp = await fetch(url);
-    if (!resp.ok) { return { status: 'Error', message: 'HTTP ' + resp.status }; } 
-    return await resp.json();
+    let athleteId = null;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { data: mine } = await supabase.from('athletes').select('id').eq('user_id', user.id).maybeSingle();
+      if (mine) athleteId = mine.id;
+    }
+    if (!athleteId && payload.athlete) {
+      const { data: byName } = await supabase.from('athletes').select('id').ilike('name', payload.athlete).limit(1);
+      if (byName && byName.length > 0) athleteId = byName[0].id;
+    }
+    if (!athleteId) return { status: 'Error', message: 'Athlete not found' };
+
+    const num = (v) => (v !== undefined && v !== null && v !== '') ? Number(v) : null;
+    const insert = {
+      athlete_id: athleteId,
+      date: new Date().toISOString().split('T')[0],
+      grip_kg: num(payload.grip),
+      feeling: num(payload.feeling),
+      soreness: num(payload.soreness),
+      sleep: num(payload.sleep),
+      nutrition: num(payload.nutrition)
+    };
+    const { error } = await supabase.from('wellness_logs').insert(insert);
+    if (error) return { status: 'Error', message: error.message };
+    return { status: 'Success' };
   } catch (err) { return { status: 'Error', message: err.message }; }
 };
 
 export const fetchWellnessLogs = async (athleteName, email) => {
   try {
-    let url = `${GOOGLE_SCRIPT_API_URL}?action=getWellness&t=${Date.now()}`;
-    if (athleteName) url += `&athlete=${encodeURIComponent(athleteName)}`;
-    if (email) url += `&email=${encodeURIComponent(email)}`;
-    let resp = await fetch(url);
-    if (!resp.ok) { return { data: [] }; } 
-    return await resp.json();
+    const { data, error } = await supabase
+      .from('wellness_logs')
+      .select('date, grip_kg, feeling, soreness, sleep, nutrition, athletes(name)')
+      .is('deleted_at', null)
+      .order('date', { ascending: true });
+    if (error) return { data: [] };
+    const rows = (data || []).map(w => [
+      w.date ? `${w.date}T00:00:00` : '',   // local-midnight so date displays correctly everywhere
+      '',                                    // email column — consumers match on name (index 2)
+      w.athletes ? w.athletes.name : '',
+      w.grip_kg ?? '',
+      w.feeling ?? '',
+      w.soreness ?? '',
+      w.sleep ?? '',
+      w.nutrition ?? ''
+    ]);
+    return { data: [WELLNESS_SHEET_HEADER, ...rows] };
   } catch (err) { return { data: [] }; }
 };
 
