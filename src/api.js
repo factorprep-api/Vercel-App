@@ -1,4 +1,5 @@
 export const GOOGLE_SCRIPT_API_URL = "https://script.google.com/macros/s/AKfycbzIBfOpFxgmTYWlFDuKPVSx30tXJRlyWhhvZVBqkAO_nKeF1GfGTFVvTolLr-CBpoHl8A/exec";
+import { supabase } from './supabase';
 
 // ==========================================
 // LIGHTWEIGHT PIPES
@@ -75,24 +76,68 @@ export const fetchSchedule = async (athleteName, email) => {
   } catch (err) { return { data: [] }; }
 };
 
-export const saveMedicalLog = async (payload) => {
-  try {
-    let url = `${GOOGLE_SCRIPT_API_URL}?action=saveMedical&data=${encodeURIComponent(JSON.stringify(payload))}&t=${Date.now()}`;
-    let resp = await fetch(url);
-    if (!resp.ok) { return { status: 'Error', message: 'HTTP ' + resp.status }; } 
-    return await resp.json();
-  } catch (err) { return { status: 'Error', message: err.message }; }
-};
+// Maps medical_entries rows back into the legacy sheet row shape
+// (positional arrays, header first) so existing pages keep working.
+const MED_SHEET_HEADER = ['Date Logged','Email','Athlete','Body Part','Pain Level','Mechanism','Training Status','Notes','Is Resolved','Date Resolved','Injury Grade'];
 
 export const fetchMedicalLogs = async (athleteName, email) => {
   try {
-    let url = `${GOOGLE_SCRIPT_API_URL}?action=getMedical&t=${Date.now()}`;
-    if (athleteName) url += `&athlete=${encodeURIComponent(athleteName)}`;
-    if (email) url += `&email=${encodeURIComponent(email)}`;
-    let resp = await fetch(url);
-    if (!resp.ok) { return { data: [] }; } 
-    return await resp.json();
+    const { data, error } = await supabase
+      .from('medical_entries')
+      .select('date_logged, body_part, pain_level, mechanism, training_status, notes, is_resolved, date_resolved, injury_grade, athletes(name)')
+      .is('deleted_at', null)
+      .order('date_logged', { ascending: true });
+    if (error) return { data: [] };
+    const rows = (data || []).map(m => [
+      m.date_logged,
+      '',                                     // email column — see note below
+      m.athletes ? m.athletes.name : '',
+      m.body_part || '',
+      m.pain_level ?? '',
+      m.mechanism || '',
+      m.training_status || '',
+      m.notes || '',
+      m.is_resolved ? 'Yes' : 'No',
+      m.date_resolved || '',
+      m.injury_grade ?? ''
+    ]);
+    return { data: [MED_SHEET_HEADER, ...rows] };
   } catch (err) { return { data: [] }; }
+};
+
+export const saveMedicalLog = async (payload) => {
+  try {
+    // Resolve the athlete: own account first, then lookup by name
+    let athleteId = null;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { data: mine } = await supabase.from('athletes').select('id').eq('user_id', user.id).maybeSingle();
+      if (mine) athleteId = mine.id;
+    }
+    if (!athleteId && payload.athlete) {
+      const { data: byName } = await supabase.from('athletes').select('id').ilike('name', payload.athlete).limit(1);
+      if (byName && byName.length > 0) athleteId = byName[0].id;
+    }
+    if (!athleteId) return { status: 'Error', message: 'Athlete not found' };
+
+    const isResolved = payload.isResolved === 'Yes';
+    const insert = {
+      athlete_id: athleteId,
+      date_logged: new Date().toISOString().split('T')[0],
+      body_part: payload.bodyPart || '',
+      pain_level: parseInt(payload.pain) || 0,
+      mechanism: payload.mechanism || '',
+      training_status: payload.trainingStatus || '',
+      notes: payload.notes || '',
+      is_resolved: isResolved,
+      injury_grade: (payload.injuryGrade !== undefined && payload.injuryGrade !== '') ? parseInt(payload.injuryGrade) : null
+    };
+    if (isResolved) insert.date_resolved = new Date().toISOString().split('T')[0];
+
+    const { error } = await supabase.from('medical_entries').insert(insert);
+    if (error) return { status: 'Error', message: error.message };
+    return { status: 'Success' };
+  } catch (err) { return { status: 'Error', message: err.message }; }
 };
 
 // ==========================================
@@ -237,12 +282,12 @@ export const updateExerciseInLibrary = addExerciseToLibrary;
 
 export const fetchHelpVideos = async () => {
   try {
-    let url = `${GOOGLE_SCRIPT_API_URL}?action=getHelpVideos&t=${Date.now()}`;
-    let resp = await fetch(url);
-    if (!resp.ok) { return {}; } 
-    let json = await resp.json();
-    return json.data || json.helpVideos || json;
-  } catch (err) { return {}; }
+    const { data, error } = await supabase
+      .from('help_videos')
+      .select('page_name, video_url');
+    if (error) return [];
+    return data || [];
+  } catch (err) { return []; }
 };
 
 export const updateProgram = async (oldName, programRows) => {
