@@ -476,19 +476,28 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
     if (!form.date) return alert("Please select a date.");
     setSaving(true);
     try {
-      await Promise.all(selectedAthletes.map(athName => {
+      const results = await Promise.all(selectedAthletes.map(athName => {
         const payload = {
-          email: coachEmail, athlete: athName, type: form.type, 
-          proposedMins: parseInt(form.duration), proposedRpe: parseInt(form.rpe), 
-          actualMins: 0, actualRpe: 0, 
+          email: coachEmail, athlete: athName, type: form.type,
+          date: form.date,
+          proposedMins: parseInt(form.duration), proposedRpe: parseInt(form.rpe),
+          actualMins: 0, actualRpe: 0,
           location: form.location, notes: form.notes
         };
         return saveScheduleSession(payload);
       }));
-      setShowModal(false);
-      setSelectedAthletes([]);
-      setForm({ ...form, notes: '', location: '' }); 
-      loadData(); 
+
+      const failed = results.filter(r => r.status !== 'Success');
+      if (failed.length > 0) {
+        alert(`Save failed for ${failed.length} of ${results.length} athletes: ${failed[0].message || 'unknown error'}`);
+      } else {
+        setShowModal(false);
+        setSelectedAthletes([]);
+        const t = new Date();
+        const todayYMD = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
+        setForm({ date: todayYMD, type: form.type, duration: form.duration, rpe: form.rpe, location: '', notes: '' });
+        loadData();
+      }
     } catch(e) { alert("Failed to save."); }
     setSaving(false);
   }
@@ -529,7 +538,15 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
           <button onClick={() => navigate(-1)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#008ed3' }}><ArrowLeft size={28} /></button>
           <h1 style={{ fontSize: '24px', fontWeight: '700', color: '#0f172a', margin: 0 }}>Team Schedule</h1>
         </div>
-        <button onClick={() => setShowModal(true)} style={{ background: '#16a34a', color: 'white', border: 'none', padding: '10px 16px', borderRadius: '8px', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+               <button
+          onClick={() => {
+            const t = new Date();
+            const todayYMD = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
+            setForm(f => ({ ...f, date: todayYMD }));
+            setShowModal(true);
+          }}
+          style={{ background: '#16a34a', color: 'white', border: 'none', padding: '10px 16px', borderRadius: '8px', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
+        >
           <Plus size={18}/> Propose Session
         </button>
       </div>
@@ -925,6 +942,7 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
                     <option value="Field Session">Field Session</option>
                     <option value="Competition">Competition</option>
                     <option value="Conditioning">Conditioning</option>
+                    <option value="Gym Workout">Gym Workout</option>
                     <option value="Rehabilitation">Rehabilitation</option>
                     <option value="Recovery">Recovery</option>
                     <option value="Speed / Agility">Speed / Agility</option>
@@ -951,7 +969,12 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
             <label style={{ fontSize: '12px', fontWeight: '700', color: '#64748b' }}>Notes / Requirements</label>
             <textarea className="modal-input" placeholder="e.g. Bring cleats and running shoes." value={form.notes} onChange={e=>setForm({...form, notes: e.target.value})} style={{ minHeight: '60px', resize: 'vertical' }} />
 
-            <button onClick={handlePropose} disabled={saving || selectedAthletes.length === 0} style={{ width: '100%', background: '#16a34a', color: 'white', border: 'none', padding: '16px', borderRadius: '8px', fontSize: '16px', fontWeight: '800', cursor: (saving || selectedAthletes.length === 0) ? 'not-allowed' : 'pointer', marginTop: '8px', opacity: selectedAthletes.length === 0 ? 0.5 : 1 }}>
+                       <button
+              onClick={handlePropose}
+              disabled={saving || selectedAthletes.length === 0}
+              style={{ width: '100%', background: '#16a34a', color: 'white', border: 'none', padding: '16px', borderRadius: '8px', fontSize: '16px', fontWeight: '800', cursor: (saving || selectedAthletes.length === 0) ? 'not-allowed' : 'pointer', marginTop: '8px', opacity: selectedAthletes.length === 0 ? 0.5 : 1 }}
+              title={selectedAthletes.length === 0 ? 'Select at least one athlete' : undefined}
+            >
               {saving ? 'SAVING...' : `PROPOSE SESSION (${form.duration * form.rpe} AU)`}
             </button>
           </div>

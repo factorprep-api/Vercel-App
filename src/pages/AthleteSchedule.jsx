@@ -98,12 +98,10 @@ export default function AthleteSchedule() {
   }, [userEmail]);
 
   async function loadData() {
-    if (!userEmail) return; // Secondary safety guard
+    if (!userEmail) return;
     setLoadingHistory(true);
     setError(null);
     try {
-      // Resolve the athlete first (2 attempts total) so the pod reads and the
-      // schedule/medical fetches can request only this athlete's rows.
       let athRes = { status: 'Error' };
       for (let attempt = 0; attempt < 2; attempt++) {
         const tryRes = await getAthleteByEmail(userEmail).catch(() => ({ status: 'Error' }));
@@ -112,7 +110,6 @@ export default function AthleteSchedule() {
 
       const nameToMatch = athRes.status === 'Success' ? (athRes.athleteName || athRes.name || athleteName || userEmail.split('@')[0]) : (athleteName || userEmail.split('@')[0]);
 
-      // Pods come straight from the athlete's own row (Column L) — no roster fetch needed.
       if (athRes.status === 'Success' && Array.isArray(athRes.rowData)) {
         setActivePods(String(athRes.rowData[11] || '').toLowerCase().split(',').map(s => s.trim()).filter(Boolean));
       }
@@ -173,6 +170,7 @@ export default function AthleteSchedule() {
               }
 
               myLogs.push({
+                id: r[12],                    // ← DB UUID for linking completions
                 rawDate: d,
                 dateStr: d.toLocaleDateString('en-US', {weekday: 'short', month: 'short', day: 'numeric'}),
                 type: r[3],
@@ -238,7 +236,7 @@ export default function AthleteSchedule() {
     return completedSessions.filter(s => s.rawDate >= monday).reduce((sum, s) => sum + s.actualLoad, 0);
   }, [completedSessions]);
 
-  async function handleSaveManual() {
+    async function handleSaveManual() {
     if (saving) return; 
     setSaving(true); 
     setError(null);
@@ -292,7 +290,9 @@ export default function AthleteSchedule() {
 
     const combinedNotes = auditNotePrefix ? `${auditNotePrefix}${notes || ''}`.trim() : notes;
 
-    const payload = {
+      const payload = {
+      sessionId: selectedProposed.id || null,
+      auditMode: auditMode,
       email: userEmail, athlete: nameToSave, type: selectedProposed.type,
       proposedMins: selectedProposed.proposedMins, proposedRpe: selectedProposed.proposedRpe,
       actualMins: finalMins, actualRpe: finalRpe,

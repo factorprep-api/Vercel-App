@@ -67,7 +67,7 @@ export default function ProgramBuilder() {
   }, [draft]);
 
   async function loadData() {
-    const cached = localStorage.getItem('fp_builder_data_v2');
+    const cached = localStorage.getItem('fp_builder_data_v3');
     if (cached) {
       try {
         const parsed = JSON.parse(cached);
@@ -93,7 +93,7 @@ export default function ProgramBuilder() {
         setError(null);
         success = true;
         
-        localStorage.setItem('fp_builder_data_v2', JSON.stringify({
+        localStorage.setItem('fp_builder_data_v3', JSON.stringify({
           programs: progRes.programs,
           library: libRes.library,
           cachedAt: new Date().toISOString()
@@ -116,7 +116,7 @@ export default function ProgramBuilder() {
       if (!progRes.error && !libRes.error) {
         setPrograms(progRes.programs || []);
         setLibrary(libRes.library || []);
-        localStorage.setItem('fp_builder_data_v2', JSON.stringify({
+        localStorage.setItem('fp_builder_data_v3', JSON.stringify({
           programs: progRes.programs, library: libRes.library, cachedAt: new Date().toISOString()
         }));
       }
@@ -215,7 +215,7 @@ export default function ProgramBuilder() {
 
       if (res.status === 'Success') {
         localStorage.removeItem('fp_program_data');
-        localStorage.removeItem('fp_builder_data_v2');
+        localStorage.removeItem('fp_builder_data_v3');
 
         showToast(loadProgramName && loadProgramName !== form.name ? 'Saved as new program!' : 'Program saved!');
         setDraft([]);

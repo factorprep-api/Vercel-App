@@ -1,0 +1,22 @@
+◇ injected env (2) from .env
+/home/minty/factorprep/node_modules/@supabase/realtime-js/dist/main/lib/websocket-factory.js:103
+        throw new Error(errorMessage);
+              ^
+
+Error: Node.js 20 detected without native WebSocket support.
+
+Suggested solution: For Node.js < 22, install "ws" package and provide it via the transport option:
+import ws from "ws"
+new RealtimeClient(url, { transport: ws })
+    at WebSocketFactory.getWebSocketConstructor [90m(/home/minty/factorprep/[39mnode_modules/[4m@supabase/realtime-js[24m/dist/main/lib/websocket-factory.js:103:15[90m)[39m
+    at RealtimeClient._initializeOptions [90m(/home/minty/factorprep/[39mnode_modules/[4m@supabase/realtime-js[24m/dist/main/RealtimeClient.js:642:164[90m)[39m
+    at new RealtimeClient [90m(/home/minty/factorprep/[39mnode_modules/[4m@supabase/realtime-js[24m/dist/main/RealtimeClient.js:185:43[90m)[39m
+    at SupabaseClient._initRealtimeClient [90m(file:///home/minty/factorprep/[39mnode_modules/[4m@supabase/supabase-js[24m/dist/index.mjs:839:10[90m)[39m
+    at new SupabaseClient [90m(file:///home/minty/factorprep/[39mnode_modules/[4m@supabase/supabase-js[24m/dist/index.mjs:674:24[90m)[39m
+    at createClient [90m(file:///home/minty/factorprep/[39mnode_modules/[4m@supabase/supabase-js[24m/dist/index.mjs:872:9[90m)[39m
+    at [90mfile:///home/minty/factorprep/[39mcheck-crusty.js:6:18
+[90m    at ModuleJob.run (node:internal/modules/esm/module_job:325:25)[39m
+[90m    at async ModuleLoader.import (node:internal/modules/esm/loader:606:24)[39m
+[90m    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:117:5)[39m
+
+Node.js v20.20.2
