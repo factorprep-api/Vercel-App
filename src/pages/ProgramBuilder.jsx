@@ -45,7 +45,7 @@ export default function ProgramBuilder() {
   const [saving, setSaving] = useState(false);
   const [draft, setDraft] = useState([]);
   
-  const [form, setForm] = useState({ name: '', category: '', notes: '', phase: 'Work Block', exercise: '', sets: '', reps: '', intensity: '', tempo: '', rest: '', privacyLevel: 'PRIVATE' });
+  const [form, setForm] = useState({ name: '', category: 'Gym Workout', notes: '', phase: 'Work Block', exercise: '', sets: '', reps: '', intensity: '', tempo: '', rest: '', privacyLevel: 'PRIVATE' });
   const [advanced, setAdvanced] = useState(DEFAULT_ADVANCED);
   const [showAdvanced, setShowAdvanced] = useState(false);
   
@@ -67,7 +67,7 @@ export default function ProgramBuilder() {
   }, [draft]);
 
   async function loadData() {
-    const cached = localStorage.getItem('fp_builder_data_v2');
+    const cached = localStorage.getItem('fp_builder_data_v3');
     if (cached) {
       try {
         const parsed = JSON.parse(cached);
@@ -93,7 +93,7 @@ export default function ProgramBuilder() {
         setError(null);
         success = true;
         
-        localStorage.setItem('fp_builder_data_v2', JSON.stringify({
+        localStorage.setItem('fp_builder_data_v3', JSON.stringify({
           programs: progRes.programs,
           library: libRes.library,
           cachedAt: new Date().toISOString()
@@ -116,7 +116,7 @@ export default function ProgramBuilder() {
       if (!progRes.error && !libRes.error) {
         setPrograms(progRes.programs || []);
         setLibrary(libRes.library || []);
-        localStorage.setItem('fp_builder_data_v2', JSON.stringify({
+        localStorage.setItem('fp_builder_data_v3', JSON.stringify({
           programs: progRes.programs, library: libRes.library, cachedAt: new Date().toISOString()
         }));
       }
@@ -215,11 +215,11 @@ export default function ProgramBuilder() {
 
       if (res.status === 'Success') {
         localStorage.removeItem('fp_program_data');
-        localStorage.removeItem('fp_builder_data_v2');
+        localStorage.removeItem('fp_builder_data_v3');
 
         showToast(loadProgramName && loadProgramName !== form.name ? 'Saved as new program!' : 'Program saved!');
         setDraft([]);
-        setForm(f => ({ ...f, name: '', notes: '', privacyLevel: 'PRIVATE' }));
+        setForm(f => ({ ...f, name: '', notes: '', privacyLevel: 'PRIVATE', category: 'Gym Workout' }));
         setLoadProgramName('');
         setMediaUrl('');
         setAdvanced(DEFAULT_ADVANCED);
@@ -368,9 +368,14 @@ export default function ProgramBuilder() {
               <label className="pb-label">Program Name (Required):</label>
               <input className="pb-input" value={form.name} onChange={e => setForm({...form, name: e.target.value})} placeholder="e.g. Push Workout A" />
             </div>
-            <div style={{ flex: 1 }}>
-              <label className="pb-label">Category (Optional):</label>
-              <input className="pb-input" value={form.category} onChange={e => setForm({...form, category: e.target.value})} placeholder="e.g. Hypertrophy" />
+
+           <div style={{ flex: 1 }}>
+              <label className="pb-label">Category:</label>
+              <select className="pb-input" value={form.category} onChange={e => setForm({...form, category: e.target.value})}>
+                {['Gym Workout', 'Field Session', 'Competition', 'Conditioning', 'Rehabilitation', 'Recovery', 'Speed / Agility', 'Prehabilitation', 'Other'].map(t => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </select>
             </div>
           </div>
           
@@ -606,5 +611,5 @@ export default function ProgramBuilder() {
         </div>
       )}
     </div>
-  );
+  );(crying) 
 }

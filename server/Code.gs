@@ -670,7 +670,18 @@ function doGet(e) {
 
   if (action === "getWellness") {
     var data = getSafeSheetData(sheetApp, "Wellness_Logs");
-    return jsonResponse({ data: data });
+    var athleteFilter = String(e.parameter.athlete || "").trim().toLowerCase();
+    var emailFilter = String(e.parameter.email || "").trim().toLowerCase();
+    if (!athleteFilter && !emailFilter) {
+      return jsonResponse({ data: data });
+    }
+    var filtered = data.filter(function(row, idx) {
+      if (idx === 0) return true;
+      var rowEmail = String(row[1] || "").trim().toLowerCase();
+      var rowName = String(row[2] || "").trim().toLowerCase();
+      return (emailFilter && rowEmail === emailFilter) || (athleteFilter && rowName === athleteFilter);
+    });
+    return jsonResponse({ data: filtered });
   }
 
   if (action === "saveSchedule") {
@@ -704,9 +715,20 @@ function doGet(e) {
     return jsonResponse({ status: "Success" });
   }
 
-  if (action === "getSchedule") {
+   if (action === "getSchedule") {
     var data = getSafeSheetData(sheetApp, "Schedule_Master");
-    return jsonResponse({ data: data });
+    var athleteFilter = String(e.parameter.athlete || "").trim().toLowerCase();
+    var emailFilter = String(e.parameter.email || "").trim().toLowerCase();
+    if (!athleteFilter && !emailFilter) {
+      return jsonResponse({ data: data });
+    }
+    var filtered = data.filter(function(row, idx) {
+      if (idx === 0) return true;
+      var rowEmail = String(row[1] || "").trim().toLowerCase();
+      var rowName = String(row[2] || "").trim().toLowerCase();
+      return (emailFilter && rowEmail === emailFilter) || (athleteFilter && rowName === athleteFilter);
+    });
+    return jsonResponse({ data: filtered });
   }
 
   if (action === "saveMedical") {
@@ -729,9 +751,20 @@ function doGet(e) {
     return jsonResponse({ status: "Success" });
   }
 
-  if (action === "getMedical") {
+   if (action === "getMedical") {
     var data = getSafeSheetData(sheetApp, "Medical_Vault");
-    return jsonResponse({ data: data });
+    var athleteFilter = String(e.parameter.athlete || "").trim().toLowerCase();
+    var emailFilter = String(e.parameter.email || "").trim().toLowerCase();
+    if (!athleteFilter && !emailFilter) {
+      return jsonResponse({ data: data });
+    }
+    var filtered = data.filter(function(row, idx) {
+      if (idx === 0) return true;
+      var rowEmail = String(row[1] || "").trim().toLowerCase();
+      var rowName = String(row[2] || "").trim().toLowerCase();
+      return (emailFilter && rowEmail === emailFilter) || (athleteFilter && rowName === athleteFilter);
+    });
+    return jsonResponse({ data: filtered });
   }
 
   // ==========================================

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Play, Video, Image as ImageIcon, Save, CheckCircle, MessageSquare, UserPlus, Globe, Timer, Pause, Plus, Minus, X, ArrowLeft } from 'lucide-react';
 import { getYouTubeId } from '../utils/helpers';
 import { useAuth } from '../hooks/useAuth';
-import { fetchAllData, getAthleteByEmail, saveSession, getMediaType, getLatestMaxes, fetchLogbookByAthlete, saveScheduleSession } from '../api';
+import { getAthleteByEmail, saveSession, getMediaType, getLatestMaxes, fetchLogbookByAthlete, saveScheduleSession, fetchPrograms, fetchLibrary } from '../api';
 import HelpButton from '../components/HelpButton';
 import './program-viewer.css';
 
@@ -119,21 +119,6 @@ function calculateTargetLoad(libraryData, athleteMaxes, lastWeights, exerciseNam
   return { text: targetText, val: targetVal, source: source, metric: metricType };
 }
 
-function findAthleteRowByEmail(athletesData, email) {
-  if (!athletesData.length || !email) return null;
-  const headers = athletesData[0] || [];
-  let emailCol = -1;
-  for (let i = 0; i < headers.length; i++) {
-    const h = String(headers[i] || '').trim().toLowerCase();
-    if (h === 'email' || h === 'e-mail') { emailCol = i; break; }
-  }
-  if (emailCol === -1) return null;
-  for (let i = 1; i < athletesData.length; i++) {
-    if (String((athletesData[i] || [])[emailCol] || '').trim().toLowerCase() === email.toLowerCase()) return i;
-  }
-  return null;
-}
-
 export default function ProgramViewer() {
   const [loading, setLoading] = useState(true);
   const [targetCalcs, setTargetCalcs] = useState({});
@@ -228,63 +213,60 @@ export default function ProgramViewer() {
     if (userEmail) loadData(true);
   }, [userEmail]);
 
-  async function loadData(useCache = false) {
+   async function loadData(useCache = false) {
     try {
       if (!userEmail) { setError('Not authenticated'); setLoading(false); return; }
-      const cached = localStorage.getItem('fp_program_data');
+      const cached = localStorage.getItem('fp_program_data_v2');
       if (useCache && cached) {
         try {
           const parsed = JSON.parse(cached);
-          setAthletesData(Array.isArray(parsed.athletes) ? parsed.athletes : []);
+          if (Array.isArray(parsed.headers) && Array.isArray(parsed.rowData)) {
+            setAthletesData([parsed.headers, parsed.rowData]);
+            setAthleteRowIndex(1);
+            if (parsed.name) setAthleteName(parsed.name);
+          }
           setProgramData(Array.isArray(parsed.programs) ? parsed.programs : []);
           setLibraryData(Array.isArray(parsed.library) ? parsed.library : []);
           setLoading(false);
-          const athleteCached = localStorage.getItem('fp_athlete_data');
-          if (athleteCached) {
-            try {
-              const pAthlete = JSON.parse(athleteCached);
-              if (pAthlete.name) setAthleteName(pAthlete.name);
-              if (pAthlete.rowIndex !== undefined) setAthleteRowIndex(pAthlete.rowIndex);
-            } catch {}
-          }
           refreshData();
           return;
         } catch {}
       }
-      let attempts = 0;
-      let success = false;
-      let allData = null;
-      while (attempts < 3 && !success) {
-        try {
-          allData = await fetchAllData();
-          if (allData.error) throw new Error(allData.error);
-          success = true;
-        } catch (err) {
-          attempts++;
-          if (attempts >= 3) { setError('Database connection is weak right now. Please refresh.'); setLoading(false); return; }
-          await new Promise(resolve => setTimeout(resolve, 2000));
+      const programsFetch = fetchPrograms().catch(() => ({ programs: [] }));
+      const libraryFetch = fetchLibrary().catch(() => ({ library: [] }));
+      let athleteResult = { status: 'Error' };
+      let athleteOk = false;
+      for (let athleteAttempt = 0; athleteAttempt < 2 && !athleteOk; athleteAttempt++) {
+        athleteResult = await getAthleteByEmail(userEmail).catch(() => ({ status: 'Error' }));
+        if (athleteResult && athleteResult.status === 'Success') {
+          athleteOk = true;
+        } else if (athleteAttempt < 1) {
+          await new Promise(resolve => setTimeout(resolve, 1500));
         }
       }
-      setAthletesData(Array.isArray(allData.athletes) ? allData.athletes : []);
-      setProgramData(Array.isArray(allData.programs) ? allData.programs : []);
-      setLibraryData(Array.isArray(allData.library) ? allData.library : []);
-      localStorage.setItem('fp_program_data', JSON.stringify({ athletes: allData.athletes, programs: allData.programs, library: allData.library, cachedAt: new Date().toISOString() }));
-      setLoading(false);
-      const athleteResult = await getAthleteByEmail(userEmail);
-      let rowIndex = null;
-      if (athleteResult.status === 'Success' && athleteResult.rowIndex) {
-        rowIndex = parseInt(athleteResult.rowIndex);
-      } else {
-        rowIndex = findAthleteRowByEmail(allData.athletes, userEmail);
+      if (!athleteOk) {
+        setError('Database connection is weak right now. Please refresh.');
+        setLoading(false);
+        return;
       }
-      setAthleteRowIndex(rowIndex);
-      let name = '';
-      if (rowIndex !== null && allData.athletes[rowIndex]) {
-        name = String(allData.athletes[rowIndex][0] || '').trim();
-      } else {
-        name = athleteResult.athleteName || athleteResult.name || userEmail.split('@')[0];
-      }
+      const [progRes, libRes] = await Promise.all([programsFetch, libraryFetch]);
+      const progRows = Array.isArray(progRes.programs) ? progRes.programs : [];
+      const libRows = Array.isArray(libRes.library) ? libRes.library : [];
+      const name = String(athleteResult.athleteName || athleteResult.name || userEmail.split('@')[0]).trim();
+      setAthletesData([athleteResult.headers, athleteResult.rowData]);
+      setAthleteRowIndex(1);
       setAthleteName(name);
+      setProgramData(progRows);
+      setLibraryData(libRows);
+      localStorage.setItem('fp_program_data_v2', JSON.stringify({
+        headers: athleteResult.headers,
+        rowData: athleteResult.rowData,
+        name: name,
+        programs: progRows,
+        library: libRows,
+        cachedAt: new Date().toISOString()
+      }));
+      setLoading(false);
     } catch (err) {
       setError('Failed to load data.');
       setLoading(false);
@@ -293,16 +275,31 @@ export default function ProgramViewer() {
 
   async function refreshData() {
     try {
-      const allData = await fetchAllData();
-      if (!allData.error && Array.isArray(allData.athletes) && Array.isArray(allData.programs) && Array.isArray(allData.library)) {
-        setAthletesData(allData.athletes);
-        setProgramData(allData.programs);
-        setLibraryData(allData.library);
-        localStorage.setItem('fp_program_data', JSON.stringify({ athletes: allData.athletes, programs: allData.programs, library: allData.library, cachedAt: new Date().toISOString() }));
+      const athleteResult = await getAthleteByEmail(userEmail).catch(() => ({ status: 'Error' }));
+      const [progRes, libRes] = await Promise.all([
+        fetchPrograms().catch(() => ({ programs: [] })),
+        fetchLibrary().catch(() => ({ library: [] }))
+      ]);
+      if (athleteResult && athleteResult.status === 'Success' && Array.isArray(athleteResult.headers) && Array.isArray(athleteResult.rowData)) {
+        const progRows = Array.isArray(progRes.programs) ? progRes.programs : [];
+        const libRows = Array.isArray(libRes.library) ? libRes.library : [];
+        const name = String(athleteResult.athleteName || athleteResult.name || userEmail.split('@')[0]).trim();
+        setAthletesData([athleteResult.headers, athleteResult.rowData]);
+        setAthleteRowIndex(1);
+        setAthleteName(name);
+        setProgramData(progRows);
+        setLibraryData(libRows);
+        localStorage.setItem('fp_program_data_v2', JSON.stringify({
+          headers: athleteResult.headers,
+          rowData: athleteResult.rowData,
+          name: name,
+          programs: progRows,
+          library: libRows,
+          cachedAt: new Date().toISOString()
+        }));
       }
     } catch {}
   }
-
   const assignedPrograms = useMemo(() => {
     if (athleteRowIndex === null || !athletesData.length) return [];
     const headers = athletesData[0] || [];
@@ -347,6 +344,15 @@ export default function ProgramViewer() {
     if (!rows.length) return '';
     const url = String(rows[0][12] || '').trim();
     return url && url.toLowerCase() !== 'undefined' ? url : '';
+  }, [selectedProgram, programData]);
+
+  const programCategory = useMemo(() => {
+    if (!selectedProgram || !programData.length) return 'Gym Workout';
+    const firstRow = programData.slice(1).find(r => String(r[0] || '').trim() === selectedProgram);
+    if (!firstRow) return 'Gym Workout';
+    const cat = String(firstRow[1] || '').trim();
+    const VALID_SESSION_TYPES = ['Gym Workout', 'Field Session', 'Competition', 'Conditioning', 'Rehabilitation', 'Recovery', 'Speed / Agility', 'Prehabilitation', 'Other'];
+    return VALID_SESSION_TYPES.includes(cat) ? cat : 'Gym Workout';
   }, [selectedProgram, programData]);
 
   const workoutGroups = useMemo(() => {
@@ -535,12 +541,13 @@ export default function ProgramViewer() {
     if (!Array.isArray(setsToLog) || setsToLog.length === 0) { setSaving(false); return; }
     setSaving(true);
     const loggedProgStr = selectedProgram;
+    const sessionCategory = programCategory || 'Gym Workout';
     const payload = { athlete: athleteName, prog: loggedProgStr, sets: setsToLog };
     try {
       const res = await saveSession(payload);
       if (res.status === 'Success') {
         if (dur !== null && rpeVal !== null) {
-          const schedPayload = { email: userEmail, athlete: athleteName, type: 'Gym Workout', proposedMins: 0, proposedRpe: 0, actualMins: parseInt(dur), actualRpe: parseInt(rpeVal), location: 'App Logged', notes: `Program: ${loggedProgStr}`, status: 'Actual' };
+          const schedPayload = { email: userEmail, athlete: athleteName, type: sessionCategory, proposedMins: 0, proposedRpe: 0, actualMins: parseInt(dur), actualRpe: parseInt(rpeVal), location: 'App Logged', notes: `Program: ${loggedProgStr}`, status: 'Actual' };
           await saveScheduleSession(schedPayload);
         }
         setSaveSuccess(true);

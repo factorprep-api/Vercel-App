@@ -4,7 +4,7 @@ import { ArrowLeft, Save, Calendar, Clock, Activity, CheckCircle, BarChart2, Ale
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
-import { saveScheduleSession, fetchSchedule, fetchAllData, getAthleteByEmail, fetchMedicalLogs } from '../api';
+import { saveScheduleSession, fetchSchedule, getAthleteByEmail, fetchMedicalLogs } from '../api';
 
 // ===== TRAINING WEEK HELPERS (Weeks start Monday) =====
 function getWeekMonday(date) {
@@ -98,24 +98,26 @@ export default function AthleteSchedule() {
   }, [userEmail]);
 
   async function loadData() {
-    if (!userEmail) return; // Secondary safety guard
+    if (!userEmail) return;
     setLoadingHistory(true);
     setError(null);
     try {
-      const [athRes, allDataRes, res, medRes] = await Promise.all([
-        getAthleteByEmail(userEmail).catch(() => ({ status: 'Error' })),
-        fetchAllData().catch(() => ({ athletes: [] })),
-        fetchSchedule().catch(() => ({ data: [] })),
-        fetchMedicalLogs().catch(() => ({ data: [] }))
-      ]);
+      let athRes = { status: 'Error' };
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const tryRes = await getAthleteByEmail(userEmail).catch(() => ({ status: 'Error' }));
+        if (tryRes.status === 'Success') { athRes = tryRes; break; }
+      }
 
       const nameToMatch = athRes.status === 'Success' ? (athRes.athleteName || athRes.name || athleteName || userEmail.split('@')[0]) : (athleteName || userEmail.split('@')[0]);
 
-      const athletes = allDataRes.athletes || [];
-      let userRow = athletes.find(r => String(r[0] || '').trim().toLowerCase() === nameToMatch.toLowerCase() || String(r[9] || '').trim().toLowerCase() === userEmail.toLowerCase());
-      if (userRow) {
-        setActivePods(String(userRow[11] || '').toLowerCase().split(',').map(s => s.trim()).filter(Boolean));
+      if (athRes.status === 'Success' && Array.isArray(athRes.rowData)) {
+        setActivePods(String(athRes.rowData[11] || '').toLowerCase().split(',').map(s => s.trim()).filter(Boolean));
       }
+
+      const [res, medRes] = await Promise.all([
+        fetchSchedule(nameToMatch, userEmail).catch(() => ({ data: [] })),
+        fetchMedicalLogs(nameToMatch, userEmail).catch(() => ({ data: [] }))
+      ]);
 
       const medData = medRes.data || [];
       const myInjuries = [];
@@ -168,6 +170,7 @@ export default function AthleteSchedule() {
               }
 
               myLogs.push({
+                id: r[12],                    // ← DB UUID for linking completions
                 rawDate: d,
                 dateStr: d.toLocaleDateString('en-US', {weekday: 'short', month: 'short', day: 'numeric'}),
                 type: r[3],
@@ -233,7 +236,7 @@ export default function AthleteSchedule() {
     return completedSessions.filter(s => s.rawDate >= monday).reduce((sum, s) => sum + s.actualLoad, 0);
   }, [completedSessions]);
 
-  async function handleSaveManual() {
+    async function handleSaveManual() {
     if (saving) return; 
     setSaving(true); 
     setError(null);
@@ -287,7 +290,9 @@ export default function AthleteSchedule() {
 
     const combinedNotes = auditNotePrefix ? `${auditNotePrefix}${notes || ''}`.trim() : notes;
 
-    const payload = {
+      const payload = {
+      sessionId: selectedProposed.id || null,
+      auditMode: auditMode,
       email: userEmail, athlete: nameToSave, type: selectedProposed.type,
       proposedMins: selectedProposed.proposedMins, proposedRpe: selectedProposed.proposedRpe,
       actualMins: finalMins, actualRpe: finalRpe,

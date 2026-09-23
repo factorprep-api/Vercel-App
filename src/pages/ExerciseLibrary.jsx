@@ -98,7 +98,7 @@ export default function ExerciseLibrary({ viewMode: propViewMode = 'athlete' }) 
     let isMounted = true; 
 
     (async () => {
-      const cached = localStorage.getItem('fp_exercise_library');
+      const cached = localStorage.getItem('fp_exercise_library_v3');
       if (cached && isMounted) {
         try {
           setFullLibrary(JSON.parse(cached));
@@ -122,7 +122,7 @@ export default function ExerciseLibrary({ viewMode: propViewMode = 'athlete' }) 
         fetchExerciseLibrary().then(lib => {
           if (isMounted) {
             setFullLibrary(lib);
-            localStorage.setItem('fp_exercise_library', JSON.stringify(lib));
+            localStorage.setItem('fp_exercise_library_v2', JSON.stringify(lib));
             setLoading(false);
           }
         }).catch(() => {
@@ -162,7 +162,7 @@ export default function ExerciseLibrary({ viewMode: propViewMode = 'athlete' }) 
     try {
       const lib = await fetchExerciseLibrary();
       setFullLibrary(lib);
-      localStorage.setItem('fp_exercise_library', JSON.stringify(lib));
+      localStorage.setItem('fp_exercise_library_v2', JSON.stringify(lib));
     } catch {
       // ignore reload errors
     }

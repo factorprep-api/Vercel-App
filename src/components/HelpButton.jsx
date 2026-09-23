@@ -1,9 +1,7 @@
 import { useState } from 'react';
 import { HelpCircle, Loader2 } from 'lucide-react';
+import { fetchHelpVideos } from '../api';
 import './help-button.css';
-
-// We hardcode the exact URL here so it completely bypasses api.js and its caching!
-const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzIBfOpFxgmTYWlFDuKPVSx30tXJRlyWhhvZVBqkAO_nKeF1GfGTFVvTolLr-CBpoHl8A/exec";
 
 export default function HelpButton({ pageName = 'Default', position = 'bottom-right' }) {
   const [loading, setLoading] = useState(false);
@@ -11,29 +9,22 @@ export default function HelpButton({ pageName = 'Default', position = 'bottom-ri
   const handleClick = async () => {
     setLoading(true);
     try {
-      // 1. Fetch directly from Google with a Date.now() timestamp to FORCE it to ignore the cache
-      const url = `${GOOGLE_SCRIPT_URL}?action=getHelpVideos&t=${Date.now()}`;
-      const response = await fetch(url);
-      const res = await response.json();
-      const videos = res.helpVideos || [];
-      
+      const videos = await fetchHelpVideos();
+
       let foundUrl = '';
-      
-      // 2. Safety Net: Forgive the "Program View" vs "Program Viewer" typo in the sheet!
+
+      // Safety Net: Forgive the "Program View" vs "Program Viewer" typo
       const searchName1 = String(pageName).trim().toLowerCase();
       const searchName2 = searchName1 === 'program view' ? 'program viewer' : searchName1;
-      
-      // 3. Find the exact matching page name in Column A
+
       const match = videos.find(row => {
-        if (!row || !row[0]) return false;
-        const sheetName = String(row[0]).trim().toLowerCase();
+        if (!row || !row.page_name) return false;
+        const sheetName = String(row.page_name).trim().toLowerCase();
         return sheetName === searchName1 || sheetName === searchName2;
       });
-      
-      // 4. Grab the Bunny link from Column B
-      if (match) foundUrl = String(match[1]).trim();
 
-      // 5. Open the video
+      if (match) foundUrl = String(match.video_url || '').trim();
+
       if (foundUrl && foundUrl.startsWith('http')) {
         window.open(foundUrl, '_blank');
       } else {
