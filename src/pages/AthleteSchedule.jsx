@@ -111,7 +111,8 @@ export default function AthleteSchedule() {
       const nameToMatch = athRes.status === 'Success' ? (athRes.athleteName || athRes.name || athleteName || userEmail.split('@')[0]) : (athleteName || userEmail.split('@')[0]);
 
       if (athRes.status === 'Success' && Array.isArray(athRes.rowData)) {
-        setActivePods(String(athRes.rowData[11] || '').toLowerCase().split(',').map(s => s.trim()).filter(Boolean));
+        const pods = String(athRes.rowData[11] || '').toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
+        setActivePods(pods.length > 0 ? pods : ['wellness', 'medical', 'schedule']);
       }
 
       const [res, medRes] = await Promise.all([

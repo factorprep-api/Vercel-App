@@ -23,7 +23,7 @@ function resolveCachedPods(email) {
     const raw = localStorage.getItem(`fp_athlete_pods_${lower}`);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
+      if (Array.isArray(parsed) && parsed.length > 0) {
         memoryCache.podsByEmail[lower] = parsed;
         return parsed;
       }
@@ -35,7 +35,7 @@ function resolveCachedPods(email) {
     const rawAth = localStorage.getItem('fp_athlete_data');
     if (rawAth) {
       const parsed = JSON.parse(rawAth);
-      if (parsed.pods && Array.isArray(parsed.pods)) {
+      if (parsed.pods && Array.isArray(parsed.pods) && parsed.pods.length > 0) {
         memoryCache.podsByEmail[lower] = parsed.pods;
         return parsed.pods;
       }
@@ -54,8 +54,10 @@ function resolveCachedPods(email) {
         const rowEmail = String(row[9] || '').trim().toLowerCase();
         if (rowEmail === lower) {
           const pods = String(row[11] || '').toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
-          memoryCache.podsByEmail[lower] = pods;
-          return pods;
+          if (pods.length > 0) {
+            memoryCache.podsByEmail[lower] = pods;
+            return pods;
+          }
         }
       }
     }
@@ -150,8 +152,9 @@ export default function AthleteHub() {
         let podsArray = [];
         if (userRow) {
           podsArray = String(userRow[11] || '').toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
-        } else {
-          // If athlete row not found, keep all default pods active
+        }
+        if (!podsArray || podsArray.length === 0) {
+          // If athlete row not found or empty pods, default to all standard pods active
           podsArray = ['wellness', 'medical', 'schedule'];
         }
 

@@ -138,7 +138,10 @@ export default function MyProgress() {
     try {
       const lower = (userEmail || '').toLowerCase();
       const raw = localStorage.getItem(`fp_athlete_pods_${lower}`);
-      if (raw) return JSON.parse(raw);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
     } catch {}
     return ['wellness', 'medical', 'schedule'];
   });

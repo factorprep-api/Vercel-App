@@ -2,8 +2,8 @@ import React, { useState, useEffect, useMemo, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
-import { fetchAthletes, fetchSchedule, fetchWellnessLogs, saveScheduleSession } from '../api';
-import { ArrowLeft, Calendar, BarChart2, Plus, AlertCircle, CheckCircle, Clock, X, AlertTriangle, Users, Layers } from 'lucide-react';
+import { fetchAthletes, fetchSchedule, fetchWellnessLogs, saveScheduleSession, deleteScheduleSession } from '../api';
+import { ArrowLeft, Calendar, BarChart2, Plus, AlertCircle, CheckCircle, Clock, X, AlertTriangle, Users, Layers, CalendarDays, List, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { BarChart, Bar, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer } from 'recharts';
 
 const SQUAD_COLORS = ['#008ed3', '#0ea5e9', '#6366f1', '#8b5cf6', '#ec4899', '#ef4444', '#f97316', '#f59e0b', '#84cc16', '#10b981', '#14b8a6', '#64748b', '#a8a29e'];
@@ -78,9 +78,50 @@ export default function CoachSchedule() {
   const [form, setForm] = useState({ date: '', type: 'Field Session', duration: 60, rpe: 7, location: '', notes: '' });
   const [toast, setToast] = useState(null);
 
+  // Audit View State
+  const [auditViewMode, setAuditViewMode] = useState('calendar'); // 'calendar' or 'agenda'
+  const [auditFilter, setAuditFilter] = useState('all'); // 'all', 'pending', 'completed'
+  const [auditMonth, setAuditMonth] = useState(new Date());
+  const [deleting, setDeleting] = useState(false);
+
   function showToast(message, isError = false) {
     setToast({ message, isError });
     setTimeout(() => setToast(null), 3000);
+  }
+
+  async function handleDeleteProposedSession(session) {
+    if (!session) return;
+    const completedCount = session.athletes.filter(a => a.status !== 'Proposed').length;
+    if (completedCount > 0) {
+      showToast("Cannot delete a session that has completed athlete logs.", true);
+      return;
+    }
+
+    if (!confirm(`Delete proposed session "${session.type}" on ${session.dateStr} for ${session.athletes.length} athlete(s)?`)) return;
+
+    setDeleting(true);
+    try {
+      const idsToDelete = session.athletes.map(a => a.id).filter(Boolean);
+      if (idsToDelete.length === 0) {
+        showToast("No session IDs found to delete.", true);
+        setDeleting(false);
+        return;
+      }
+
+      const results = await Promise.all(idsToDelete.map(id => deleteScheduleSession(id)));
+      const failed = results.filter(r => r.status !== 'Success');
+
+      if (failed.length > 0) {
+        showToast(`Failed to delete session: ${failed[0].message || 'Unknown error'}`, true);
+      } else {
+        setSelectedAuditSession(null);
+        showToast(`Proposed session deleted successfully.`);
+        await loadData();
+      }
+    } catch (err) {
+      showToast("Network error deleting session.", true);
+    }
+    setDeleting(false);
   }
 
   // Audit Modal
@@ -152,7 +193,8 @@ export default function CoachSchedule() {
             actualLoad: aLoad,
             location: r[10] || '',
             notes: rowNotes,
-            status: sessionStatus
+            status: sessionStatus,
+            id: r[12] || null
           });
         });
 setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
@@ -405,10 +447,13 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
   const groupedAuditSessions = useMemo(() => {
     const groups = {};
     scheduleLogs.forEach(log => {
-      // Create a unique key for the session event
-      const key = `${log.dateStr}|${log.type}|${log.proposedLoad}`;
+      const ymd = `${log.rawDate.getFullYear()}-${String(log.rawDate.getMonth() + 1).padStart(2, '0')}-${String(log.rawDate.getDate()).padStart(2, '0')}`;
+      const key = `${ymd}|${log.type}|${log.proposedLoad || 0}`;
       if (!groups[key]) {
         groups[key] = {
+          key: key,
+          ymd: ymd,
+          rawDate: log.rawDate,
           dateStr: log.dateStr,
           type: log.type,
           proposedMins: log.proposedMins,
@@ -420,9 +465,56 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
       }
       groups[key].athletes.push(log);
     });
-    // Filter out manual logs that didn't have a proposed load
-    return Object.values(groups).filter(g => g.proposedLoad > 0);
+    return Object.values(groups).sort((a, b) => b.rawDate - a.rawDate);
   }, [scheduleLogs]);
+
+  const filteredAuditSessions = useMemo(() => {
+    return groupedAuditSessions.filter(s => {
+      const completed = s.athletes.filter(a => a.status !== 'Proposed').length;
+      const isComplete = completed === s.athletes.length && s.athletes.length > 0;
+      const isPending = completed < s.athletes.length;
+
+      if (auditFilter === 'pending') return isPending;
+      if (auditFilter === 'completed') return isComplete;
+      return true;
+    });
+  }, [groupedAuditSessions, auditFilter]);
+
+  const calendarGridData = useMemo(() => {
+    const year = auditMonth.getFullYear();
+    const month = auditMonth.getMonth();
+
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    const daysInMonth = lastDay.getDate();
+
+    let startDayOfWeek = firstDay.getDay() - 1;
+    if (startDayOfWeek < 0) startDayOfWeek = 6;
+
+    const days = [];
+    for (let i = 0; i < startDayOfWeek; i++) {
+      days.push({ type: 'empty', key: `empty-${i}` });
+    }
+
+    const todayYMD = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}`;
+
+    for (let day = 1; day <= daysInMonth; day++) {
+      const dayDate = new Date(year, month, day);
+      const ymd = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      const daySessions = filteredAuditSessions.filter(s => s.ymd === ymd);
+
+      days.push({
+        type: 'day',
+        dayNumber: day,
+        date: dayDate,
+        ymd: ymd,
+        isToday: ymd === todayYMD,
+        sessions: daySessions
+      });
+    }
+
+    return days;
+  }, [auditMonth, filteredAuditSessions]);
 
    const squadComparison = useMemo(() => {
     if (squadSelection.length === 0) return null;
@@ -1018,28 +1110,156 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
 
       {/* --- TAB 2: SESSION AUDIT --- */}
       {activeTab === 'audit' && (
-        <div>
-          <h2 style={{ fontSize: '18px', color: '#0f172a', marginBottom: '16px' }}>Proposed Session History</h2>
-          {loading ? <p style={{ color: '#64748b' }}>Loading sessions...</p> : groupedAuditSessions.length === 0 ? <p style={{ color: '#64748b' }}>No proposed sessions found.</p> : (
-            groupedAuditSessions.map((session, i) => {
-              const totalAssigned = session.athletes.length;
-              const completed = session.athletes.filter(a => a.status !== 'Proposed').length;
-              
-              return (
-                <div key={i} className="audit-card" onClick={() => setSelectedAuditSession(session)}>
-                  <div>
-                    <h3 style={{ margin: '0 0 4px 0', fontSize: '16px', color: '#0f172a' }}>{session.type}</h3>
-                    <p style={{ margin: 0, fontSize: '13px', color: '#64748b' }}>{session.dateStr} • Goal: {session.proposedLoad} AU</p>
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: '14px', fontWeight: '700', color: completed === totalAssigned ? '#16a34a' : '#f59e0b' }}>
-                      {completed} / {totalAssigned} Logged
+        <div className="cs-card">
+          {/* Header Controls */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '16px' }}>
+            <h2 style={{ fontSize: '18px', color: '#0f172a', margin: 0, fontWeight: '800' }}>Session Schedule & Audit</h2>
+            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
+              {/* Filter Buttons */}
+              <div style={{ display: 'flex', background: '#e2e8f0', padding: '4px', borderRadius: '8px' }}>
+                <button onClick={() => setAuditFilter('all')} style={{ padding: '6px 12px', border: 'none', borderRadius: '6px', background: auditFilter === 'all' ? '#fff' : 'transparent', color: auditFilter === 'all' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer', boxShadow: auditFilter === 'all' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>All</button>
+                <button onClick={() => setAuditFilter('pending')} style={{ padding: '6px 12px', border: 'none', borderRadius: '6px', background: auditFilter === 'pending' ? '#fff' : 'transparent', color: auditFilter === 'pending' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer', boxShadow: auditFilter === 'pending' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>Pending</button>
+                <button onClick={() => setAuditFilter('completed')} style={{ padding: '6px 12px', border: 'none', borderRadius: '6px', background: auditFilter === 'completed' ? '#fff' : 'transparent', color: auditFilter === 'completed' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer', boxShadow: auditFilter === 'completed' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>Completed</button>
+              </div>
+              {/* View Mode Toggle */}
+              <div style={{ display: 'flex', background: '#e2e8f0', padding: '4px', borderRadius: '8px' }}>
+                <button onClick={() => setAuditViewMode('calendar')} style={{ padding: '6px 12px', border: 'none', borderRadius: '6px', background: auditViewMode === 'calendar' ? '#fff' : 'transparent', color: auditViewMode === 'calendar' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', boxShadow: auditViewMode === 'calendar' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>
+                  <CalendarDays size={14} /> Calendar View
+                </button>
+                <button onClick={() => setAuditViewMode('agenda')} style={{ padding: '6px 12px', border: 'none', borderRadius: '6px', background: auditViewMode === 'agenda' ? '#fff' : 'transparent', color: auditViewMode === 'agenda' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', boxShadow: auditViewMode === 'agenda' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>
+                  <List size={14} /> Agenda View
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {loading ? <p style={{ color: '#64748b' }}>Loading schedule...</p> : (
+            <>
+              {/* --- CALENDAR VIEW --- */}
+              {auditViewMode === 'calendar' && (
+                <div>
+                  {/* Month Navigation */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', background: '#f8fafc', padding: '10px 16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <button onClick={() => setAuditMonth(new Date(auditMonth.getFullYear(), auditMonth.getMonth() - 1, 1))} style={{ background: '#fff', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                        <ChevronLeft size={18} color="#475569" />
+                      </button>
+                      <button onClick={() => setAuditMonth(new Date(auditMonth.getFullYear(), auditMonth.getMonth() + 1, 1))} style={{ background: '#fff', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                        <ChevronRight size={18} color="#475569" />
+                      </button>
+                      <h3 style={{ margin: '0 0 0 8px', fontSize: '16px', color: '#0f172a', fontWeight: '800' }}>
+                        {auditMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                      </h3>
                     </div>
-                    <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '2px' }}>Click to view audit</div>
+                    <button onClick={() => setAuditMonth(new Date())} style={{ background: '#008ed3', color: '#fff', border: 'none', borderRadius: '6px', padding: '6px 14px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}>
+                      Today
+                    </button>
+                  </div>
+
+                  {/* Calendar Grid */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '8px', marginBottom: '8px' }}>
+                    {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(dayName => (
+                      <div key={dayName} style={{ textAlign: 'center', fontWeight: '800', fontSize: '12px', color: '#64748b', padding: '8px 0', background: '#f1f5f9', borderRadius: '6px', textTransform: 'uppercase' }}>
+                        {dayName}
+                      </div>
+                    ))}
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '8px' }}>
+                    {calendarGridData.map((cell) => {
+                      if (cell.type === 'empty') {
+                        return <div key={cell.key} style={{ minHeight: '100px', background: '#f8fafc', borderRadius: '8px', border: '1px border-dashed #e2e8f0', opacity: 0.5 }} />;
+                      }
+
+                      return (
+                        <div key={cell.ymd} style={{ minHeight: '110px', background: cell.isToday ? '#f0f9ff' : '#ffffff', border: cell.isToday ? '2px solid #008ed3' : '1px solid #e2e8f0', borderRadius: '8px', padding: '8px', display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', gap: '6px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontSize: '12px', fontWeight: cell.isToday ? '900' : '700', color: cell.isToday ? '#008ed3' : '#475569', backgroundColor: cell.isToday ? '#e0f2fe' : 'transparent', width: '22px', height: '22px', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                              {cell.dayNumber}
+                            </span>
+                          </div>
+
+                          {cell.sessions.map((session, sIdx) => {
+                            const completedCount = session.athletes.filter(a => a.status !== 'Proposed').length;
+                            const isDone = completedCount === session.athletes.length;
+                            const typeColor = TYPE_COLORS[session.type] || '#008ed3';
+
+                            return (
+                              <div
+                                key={sIdx}
+                                onClick={() => setSelectedAuditSession(session)}
+                                style={{
+                                  backgroundColor: typeColor + '18',
+                                  borderLeft: `4px solid ${typeColor}`,
+                                  borderRadius: '4px',
+                                  padding: '4px 6px',
+                                  cursor: 'pointer',
+                                  fontSize: '11px',
+                                  transition: '0.15s ease'
+                                }}
+                                title={`${session.type} - ${completedCount}/${session.athletes.length} Logged. Click to inspect.`}
+                              >
+                                <div style={{ fontWeight: '800', color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                  {session.type}
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '2px', fontSize: '10px' }}>
+                                  <span style={{ color: '#64748b' }}>{session.proposedLoad} AU</span>
+                                  <span style={{ fontWeight: '800', color: isDone ? '#16a34a' : '#f59e0b' }}>
+                                    {completedCount}/{session.athletes.length}
+                                  </span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
-              );
-            })
+              )}
+
+              {/* --- AGENDA VIEW --- */}
+              {auditViewMode === 'agenda' && (
+                <div style={{ display: 'grid', gap: '12px' }}>
+                  {filteredAuditSessions.length === 0 ? (
+                    <p style={{ color: '#64748b', textAlign: 'center', padding: '20px' }}>No sessions match your filter.</p>
+                  ) : (
+                    filteredAuditSessions.map((session, i) => {
+                      const totalAssigned = session.athletes.length;
+                      const completed = session.athletes.filter(a => a.status !== 'Proposed').length;
+                      const typeColor = TYPE_COLORS[session.type] || '#008ed3';
+
+                      return (
+                        <div
+                          key={i}
+                          className="audit-card"
+                          onClick={() => setSelectedAuditSession(session)}
+                          style={{ borderLeft: `6px solid ${typeColor}` }}
+                        >
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                              <h3 style={{ margin: 0, fontSize: '16px', color: '#0f172a' }}>{session.type}</h3>
+                              <span style={{ fontSize: '11px', fontWeight: '800', backgroundColor: typeColor + '20', color: typeColor, padding: '2px 8px', borderRadius: '4px' }}>
+                                {session.proposedLoad} AU Target
+                              </span>
+                            </div>
+                            <p style={{ margin: 0, fontSize: '13px', color: '#64748b' }}>
+                              {session.dateStr} {session.location && `• ${session.location}`}
+                            </p>
+                          </div>
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontSize: '14px', fontWeight: '800', color: completed === totalAssigned ? '#16a34a' : '#f59e0b' }}>
+                              {completed} / {totalAssigned} Logged
+                            </div>
+                            <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '2px' }}>Click to view audit</div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
@@ -1192,6 +1412,45 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
                 );
               })}
             </div>
+
+            {/* Modal Footer with Delete Button for pending proposed sessions */}
+            {(() => {
+              const completedCount = selectedAuditSession.athletes.filter(a => a.status !== 'Proposed').length;
+              if (completedCount === 0) {
+                return (
+                  <div style={{ padding: '16px', background: '#f8fafc', borderTop: '1px solid #e2e8f0', borderRadius: '0 0 16px 16px' }}>
+                    <button
+                      onClick={() => handleDeleteProposedSession(selectedAuditSession)}
+                      disabled={deleting}
+                      style={{
+                        width: '100%',
+                        padding: '14px',
+                        background: '#dc2626',
+                        color: '#ffffff',
+                        border: 'none',
+                        borderRadius: '8px',
+                        fontWeight: '800',
+                        fontSize: '14px',
+                        cursor: deleting ? 'not-allowed' : 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '8px',
+                        boxShadow: '0 2px 6px rgba(220,38,38,0.2)'
+                      }}
+                    >
+                      <Trash2 size={16} /> {deleting ? 'DELETING...' : 'DELETE PROPOSED SESSION'}
+                    </button>
+                  </div>
+                );
+              } else {
+                return (
+                  <div style={{ padding: '12px 16px', background: '#f1f5f9', color: '#64748b', fontSize: '12px', fontWeight: '700', textAlign: 'center', borderTop: '1px solid #e2e8f0', borderRadius: '0 0 16px 16px' }}>
+                    🔒 Completed or partially logged session — record retained for audit integrity.
+                  </div>
+                );
+              }
+            })()}
           </div>
         </div>
       )}

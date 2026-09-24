@@ -34,7 +34,10 @@ export const fetchAthletes = async () => {
       }
       
       if (a.athlete_team_memberships && a.athlete_team_memberships.length > 0) {
-        row[11] = (a.athlete_team_memberships[0].active_pods || []).join(', ');
+        const pods = a.athlete_team_memberships[0].active_pods;
+        row[11] = (pods && pods.length > 0) ? pods.join(', ') : 'wellness, medical, schedule';
+      } else {
+        row[11] = 'wellness, medical, schedule';
       }
       if (a.assignments && a.assignments.length > 0) {
         row[12] = a.assignments.filter(asg => asg.status === 'active' && asg.programs).map(asg => asg.programs.name).join(', ');
@@ -246,6 +249,33 @@ async function resolveAthleteRow(athleteName) {
   }
   return null;
 }
+
+export const deleteScheduleSession = async (sessionId) => {
+  try {
+    if (!sessionId) return { status: 'Error', message: 'Missing session ID.' };
+
+    // Failsafe check: verify no session_logs exist for this proposal
+    const { data: logs } = await supabase
+      .from('session_logs')
+      .select('id')
+      .eq('session_id', sessionId)
+      .is('deleted_at', null);
+
+    if (logs && logs.length > 0) {
+      return { status: 'Error', message: 'Cannot delete a session that has completed athlete logs.' };
+    }
+
+    const { error } = await supabase
+      .from('schedule_sessions')
+      .delete()
+      .eq('id', sessionId);
+
+    if (error) return { status: 'Error', message: error.message };
+    return { status: 'Success' };
+  } catch (err) {
+    return { status: 'Error', message: err.message };
+  }
+};
 
 export const saveScheduleSession = async (payload) => {
   try {
@@ -951,7 +981,7 @@ export function parseProgramsFromRaw(rawPrograms, coachEmail) {
 // ==========================================
 const api = {
   fetchAthletes, fetchPrograms, fetchLibrary, saveWellnessLog, 
-  fetchWellnessLogs, saveScheduleSession, fetchSchedule, saveMedicalLog, 
+  fetchWellnessLogs, saveScheduleSession, deleteScheduleSession, fetchSchedule, saveMedicalLog, 
   fetchMedicalLogs, fetchLogbookByAthlete, getLogbookByAthlete, getLatestMaxes, 
   getLastLoggedWeight, createAthlete, getAthleteByEmail, saveSession, 
   fetchExerciseLibrary, deleteProgram, updateAssignment, saveFullProgram, 
