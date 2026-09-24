@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
@@ -20,11 +20,27 @@ const TYPE_COLORS = {
   'Other': '#64748b'
 };
 
-// Intensity strip shading — green (low) → amber (moderate) → red (high)
+const INTENSITY_ZONES = [
+  { label: 'Max (9–10)', color: '#dc2626' },
+  { label: 'High (7–8)', color: '#f59e0b' },
+  { label: 'Moderate (4–6)', color: '#22c55e' },
+  { label: 'Low (1–3)', color: '#facc15' },
+];
+
+function rpeZoneIndex(rpe) {
+  if (rpe == null) return null;
+  if (rpe <= 0) return null;
+  if (rpe >= 9) return 0;
+  if (rpe >= 7) return 1;
+  if (rpe >= 4) return 2;
+  return 3;
+}
+
 const getIntensityColor = (rpe) => {
-  if (rpe === null || rpe === undefined) return '#e2e8f0';
-  if (rpe <= 5) return '#22c55e';
-  if (rpe <= 7) return '#f59e0b';
+  if (rpe === null || rpe === undefined || rpe <= 0) return '#e2e8f0';
+  if (rpe <= 3) return '#facc15';
+  if (rpe <= 6) return '#22c55e';
+  if (rpe <= 8) return '#f59e0b';
   return '#dc2626';
 };
 export default function CoachSchedule() {
@@ -44,6 +60,13 @@ export default function CoachSchedule() {
   const [squadAxis, setSquadAxis] = useState('rel');
   const [searchQuery, setSearchQuery] = useState('');
   const [squadSelection, setSquadSelection] = useState([]);
+  const [timeWindow, setTimeWindow] = useState('week');
+  const [selectedCell, setSelectedCell] = useState(null);
+
+  // Clear selected cell when time window changes
+  useEffect(() => {
+    setSelectedCell(null);
+  }, [timeWindow]);
 
   const toggleSquadAthlete = (name) => {
     setSquadSelection(prev => prev.includes(name) ? prev.filter(n => n !== name) : [...prev, name]);
@@ -423,6 +446,66 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
 
     return { rows, maxDaily, dateLabels, teamTotals, teamTypes };
   }, [squadSelection, rosterWithLoads]);
+
+  const squadZoneRaw = useMemo(() => {
+    if (squadSelection.length === 0) return null;
+
+    const today = new Date();
+    const dayMs = 24 * 60 * 60 * 1000;
+
+    let windowSizeDays = 7;
+    if (timeWindow === 'week') windowSizeDays = 7;
+    else if (timeWindow === 'month') windowSizeDays = 30;
+    else if (timeWindow === 'season') windowSizeDays = 90;
+
+    const startDate = new Date(today);
+    startDate.setDate(today.getDate() - (windowSizeDays - 1));
+
+    const bucketDays = timeWindow === 'week' ? 1 : 7;
+    const bucketCount = Math.ceil(windowSizeDays / bucketDays);
+
+    const bucketLabels = [];
+    const bucketStartTimes = [];
+    const bucketEndTimes = [];
+    for (let i = 0; i < bucketCount; i++) {
+      const d = new Date(startDate);
+      d.setDate(startDate.getDate() + i * bucketDays);
+      const st = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+      const et = st + (bucketDays * dayMs) - 1;
+      bucketStartTimes.push(st);
+      bucketEndTimes.push(et);
+      bucketLabels.push(d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+    }
+
+    const cells = bucketStartTimes.map(() => ({}));
+
+    squadSelection.forEach(name => {
+      const logs = logsByAthlete[name] || [];
+      logs.forEach(l => {
+        if (l.status === 'Proposed') return;
+        if (l.actualMins <= 0) return;
+        if (l.actualRpe <= 0) return;
+        const zoneIdx = rpeZoneIndex(l.actualRpe);
+        if (zoneIdx === null) return;
+
+        const logDayTime = new Date(l.rawDate.getFullYear(), l.rawDate.getMonth(), l.rawDate.getDate()).getTime();
+
+        for (let bi = 0; bi < bucketStartTimes.length; bi++) {
+          if (logDayTime >= bucketStartTimes[bi] && logDayTime <= bucketEndTimes[bi]) {
+            const type = l.type || 'Other';
+            const day = cells[bi];
+            if (!day[type]) day[type] = { mins: [0, 0, 0, 0], load: [0, 0, 0, 0] };
+            const load = l.actualMins * l.actualRpe;
+            day[type].mins[zoneIdx] += l.actualMins;
+            day[type].load[zoneIdx] += load;
+            break;
+          }
+        }
+      });
+    });
+
+    return { cells, bucketLabels, bucketDays, timeWindow, bucketStartTimes, bucketEndTimes };
+  }, [squadSelection, logsByAthlete, timeWindow]);
 
   const drilledAthleteData = drilledAthlete ? rosterWithLoads.find(a => a.name === drilledAthlete) : null;
 
@@ -817,6 +900,35 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
                   </div>
                 </div>
               )}
+
+              {squadZoneRaw && (
+                <div style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid #e2e8f0' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <h4 style={{ margin: 0, fontSize: '14px', color: '#0f172a' }}>Zone Heatmap — Time in Intensity Zones</h4>
+                    <div style={{ display: 'flex', background: '#e2e8f0', padding: '4px', borderRadius: '8px' }}>
+                      <button onClick={() => setTimeWindow('week')} style={{ padding: '6px 10px', border: 'none', borderRadius: '6px', background: timeWindow === 'week' ? '#fff' : 'transparent', color: timeWindow === 'week' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '11px', cursor: 'pointer' }}>Week (7d)</button>
+                      <button onClick={() => setTimeWindow('month')} style={{ padding: '6px 10px', border: 'none', borderRadius: '6px', background: timeWindow === 'month' ? '#fff' : 'transparent', color: timeWindow === 'month' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '11px', cursor: 'pointer' }}>Month (30d)</button>
+                      <button onClick={() => setTimeWindow('season')} style={{ padding: '6px 10px', border: 'none', borderRadius: '6px', background: timeWindow === 'season' ? '#fff' : 'transparent', color: timeWindow === 'season' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '11px', cursor: 'pointer' }}>Season (90d)</button>
+                    </div>
+                  </div>
+                  <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: '#64748b' }}>
+                    Tap cells to view squad breakdown. Tap again to clear.
+                  </p>
+                  <SquadZoneHeatmap
+                    data={squadZoneRaw}
+                    squadMembers={squadSelection}
+                    setSelectedCell={setSelectedCell}
+                    selectedCell={selectedCell}
+                  />
+                  <ZoneDetailPanel
+                    selectedCell={selectedCell}
+                    data={squadZoneRaw}
+                    logsByAthlete={logsByAthlete}
+                    squadSelection={squadSelection}
+                    setSelectedCell={setSelectedCell}
+                  />
+                </div>
+              )}
             </>
           )}
         </div>
@@ -1061,3 +1173,199 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
     </div>
   );
 }
+
+const SquadZoneHeatmap = memo(function SquadZoneHeatmap({ data, squadMembers, setSelectedCell, selectedCell }) {
+  const [typeFilter, setTypeFilter] = useState('All');
+  const [mode, setMode] = useState('share');
+
+  const types = useMemo(() => {
+    const set = new Set();
+    data.cells.forEach(day => Object.keys(day).forEach(t => set.add(t)));
+    return Array.from(set).sort();
+  }, [data]);
+
+  const bucketData = useMemo(() => data.cells.map(bucket => {
+    const zones = { mins: [0, 0, 0, 0], load: [0, 0, 0, 0] };
+    let bucketTotalMins = 0;
+    Object.entries(bucket).forEach(([type, zObj]) => {
+      if (typeFilter !== 'All' && type !== typeFilter) return;
+      zObj.mins.forEach((m, zi) => { zones.mins[zi] += m; bucketTotalMins += m; });
+      zObj.load.forEach((l, zi) => { zones.load[zi] += l; });
+    });
+    return { zones, bucketTotalMins, hasData: bucketTotalMins > 0 };
+  }), [data, typeFilter]);
+
+  const windowMaxMins = useMemo(
+    () => Math.max(1, ...bucketData.map(d => Math.max(...d.zones.mins))),
+    [bucketData]
+  );
+
+  const hatchStyle = { background: 'repeating-linear-gradient(45deg, #f1f5f9 0 4px, #e2e8f0 4px 8px)' };
+
+  const handleCellTap = (bucketIdx, zoneIdx) => {
+    if (selectedCell?.bucketIdx === bucketIdx && selectedCell?.zoneIdx === zoneIdx) {
+      setSelectedCell(null);
+    } else {
+      setSelectedCell({ bucketIdx, zoneIdx });
+    }
+  };
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '12px' }}>
+        <div style={{ display: 'flex', background: '#e2e8f0', padding: '4px', borderRadius: '8px' }}>
+          <button onClick={() => setMode('share')} style={{ padding: '6px 14px', border: 'none', borderRadius: '6px', background: mode === 'share' ? '#fff' : 'transparent', color: mode === 'share' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer' }}>Share of Bucket</button>
+          <button onClick={() => setMode('absolute')} style={{ padding: '6px 14px', border: 'none', borderRadius: '6px', background: mode === 'absolute' ? '#fff' : 'transparent', color: mode === 'absolute' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer' }}>Absolute Minutes</button>
+        </div>
+        <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#fff', fontSize: '12px', fontWeight: 700, color: '#0f172a', cursor: 'pointer' }}>
+          <option value="All">All Session Types</option>
+          {types.map(t => <option key={t} value={t}>{t}</option>)}
+        </select>
+      </div>
+
+      <div style={{ overflowX: 'auto' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '110px repeat(' + data.bucketLabels.length + ', 1fr)', gap: '3px', minWidth: '640px' }}>
+          <div />
+          {data.bucketLabels.map((lbl, i) => (
+            <div key={i} style={{ fontSize: '10px', color: '#64748b', textAlign: 'center', fontWeight: 600, paddingBottom: '2px' }}>
+              {lbl}
+              {data.bucketDays > 1 && <div style={{ fontSize: '9px', color: '#94a3b8' }}>({data.bucketDays}d)</div>}
+            </div>
+          ))}
+
+          {INTENSITY_ZONES.map((zone, zi) => (
+            <React.Fragment key={zone.label}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', fontWeight: 700, color: '#475569' }}>
+                <span style={{ width: '10px', height: '10px', borderRadius: '2px', background: zone.color, display: 'inline-block', flexShrink: 0 }} />
+                {zone.label}
+              </div>
+              {bucketData.map((bucket, bi) => {
+                const mins = bucket.zones.mins[zi];
+                const load = bucket.zones.load[zi];
+                const hasZoneData = mins > 0;
+                const frac = hasZoneData
+                  ? (mode === 'share' ? mins / bucket.bucketTotalMins : mins / windowMaxMins)
+                  : 0;
+                const opacity = hasZoneData ? 0.18 + 0.82 * frac : 1;
+                const isSelected = selectedCell?.bucketIdx === bi && selectedCell?.zoneIdx === zi;
+
+                return (
+                  <button
+                    key={bi}
+                    onClick={() => handleCellTap(bi, zi)}
+                    disabled={!hasZoneData}
+                    style={{
+                      height: '34px',
+                      borderRadius: '4px',
+                      ...(hasZoneData ? { backgroundColor: zone.color, opacity } : bucket.hasData ? { backgroundColor: '#f1f5f9' } : hatchStyle),
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: '10px', fontWeight: 700,
+                      color: hasZoneData && opacity < 0.55 ? '#0f172a' : '#fff',
+                      border: isSelected ? `2px solid #008ed3` : 'none',
+                      outline: 'none',
+                      cursor: hasZoneData ? 'pointer' : 'default'
+                    }}
+                  >
+                    {hasZoneData ? `${mins}m / ${Math.round(load)}` : ''}
+                  </button>
+                );
+              })}
+            </React.Fragment>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', paddingTop: '10px', marginTop: '4px', borderTop: '1px solid #e2e8f0' }}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#64748b', fontWeight: 600 }}>
+          <span style={{ width: '10px', height: '10px', borderRadius: '2px', ...hatchStyle, display: 'inline-block' }} /> No sessions logged
+        </span>
+        <span style={{ fontSize: '11px', color: '#94a3b8' }}>
+          {mode === 'share' ? 'Cell = minutes as % of bucket total' : 'Cell = minutes vs. max value'}
+        </span>
+      </div>
+    </div>
+  );
+});
+
+const ZoneDetailPanel = memo(function ZoneDetailPanel({ selectedCell, data, logsByAthlete, squadSelection, setSelectedCell }) {
+  const { bucketIdx, zoneIdx } = selectedCell || {};
+  const zoneLabel = INTENSITY_ZONES[zoneIdx]?.label;
+  const bucketStart = data.bucketStartTimes?.[bucketIdx];
+  const bucketEnd = data.bucketEndTimes?.[bucketIdx];
+
+  const athleteBreakdown = useMemo(() => {
+    if (!selectedCell || bucketIdx === undefined || zoneIdx === undefined) return {};
+    const breakdown = {};
+    squadSelection.forEach(athName => {
+      const logs = logsByAthlete[athName] || [];
+      let totalMins = 0;
+      let totalLoad = 0;
+      const byType = {};
+
+      logs.forEach(l => {
+        if (l.status === 'Proposed') return;
+        if (l.actualMins <= 0) return;
+        if (l.actualRpe <= 0) return;
+        if (rpeZoneIndex(l.actualRpe) !== zoneIdx) return;
+
+        const logDayTime = new Date(l.rawDate.getFullYear(), l.rawDate.getMonth(), l.rawDate.getDate()).getTime();
+        if (logDayTime < bucketStart || logDayTime > bucketEnd) return;
+
+        totalMins += l.actualMins;
+        totalLoad += l.actualMins * l.actualRpe;
+
+        const type = l.type || 'Other';
+        if (!byType[type]) byType[type] = { mins: 0, load: 0 };
+        byType[type].mins += l.actualMins;
+        byType[type].load += l.actualMins * l.actualRpe;
+      });
+
+      if (totalMins > 0) breakdown[athName] = { mins: totalMins, load: totalLoad, byType };
+    });
+    return breakdown;
+  }, [selectedCell, logsByAthlete, squadSelection, data, zoneIdx, bucketIdx, bucketStart, bucketEnd]);
+
+  if (!selectedCell || bucketIdx === undefined || zoneIdx === undefined) return null;
+
+  if (Object.keys(athleteBreakdown).length === 0) {
+    return (
+      <div style={{ marginTop: '16px', padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+        <p style={{ margin: 0, color: '#64748b', fontWeight: 600 }}>No logged data for this selection.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ marginTop: '16px', padding: '16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+        <h4 style={{ margin: 0, fontSize: '14px', color: '#0f172a', fontWeight: 700 }}>
+          {zoneLabel} — {data.bucketDays}-day bucket {bucketIdx + 1}
+        </h4>
+        <button onClick={() => setSelectedCell(null)} style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', padding: '4px' }}>
+          <X size={18} />
+        </button>
+      </div>
+
+      <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
+        <div style={{ display: 'grid', gap: '8px' }}>
+          {Object.entries(athleteBreakdown).map(([name, athData]) => (
+            <div key={name} style={{ padding: '12px', background: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <span style={{ fontWeight: 700, color: '#0f172a', fontSize: '14px' }}>{name}</span>
+                <span style={{ fontSize: '13px', color: '#475569' }}>{athData.mins}m / {Math.round(athData.load)} load</span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '6px', marginTop: '6px' }}>
+                {Object.entries(athData.byType).map(([type, typeData]) => (
+                  <div key={type} style={{ padding: '8px', background: '#f8fafc', borderRadius: '4px', fontSize: '12px' }}>
+                    <div style={{ fontWeight: 600, color: '#475569', marginBottom: '2px' }}>{type}</div>
+                    <div style={{ color: '#64748b' }}>{typeData.mins}m / {Math.round(typeData.load)} load</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+});

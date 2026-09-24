@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { supabase } from '../supabase';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
@@ -139,6 +140,42 @@ export default function MyProgress() {
     } catch {}
     return ['wellness', 'medical', 'schedule'];
   });
+
+  // Corrected fix — looks up athlete_id from auth user
+useEffect(() => {
+  const fetchFreshPods = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      // Get athlete record first
+      const { data: athlete } = await supabase
+        .from('athletes')
+        .select('id')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (!athlete) return;
+
+      // Then get active pods
+      const { data, error } = await supabase
+        .from('athlete_team_memberships')
+        .select('active_pods')
+        .eq('athlete_id', athlete.id)
+        .eq('is_active', true)
+        .maybeSingle();
+
+      if (error || !data || !data.active_pods) return;
+
+      setActivePods(data.active_pods);
+            localStorage.setItem(`fp_athlete_pods_${user.email.toLowerCase()}`, JSON.stringify(data.active_pods));
+    } catch (err) {
+      console.error('Failed to refresh active_pods:', err);
+    }
+  };
+
+  fetchFreshPods();
+}, []);
 
   const hasWellnessPod = activePods.includes('wellness');
 

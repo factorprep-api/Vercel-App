@@ -144,7 +144,7 @@ create table public.medical_entries (
 -- ---------- PROGRAMS & EXERCISES ----------
 create table public.exercises (
   id uuid primary key default gen_random_uuid(),
-  name text not null,
+  exercise_name text not null,
   video_url text,
   muscle_category text,
   metric_type text check (metric_type is null
@@ -427,3 +427,17 @@ alter table public.exercises                enable row level security;
 alter table public.program_exercises        enable row level security;
 alter table public.help_videos              enable row level security;
 alter table public.audit_logs               enable row level security;
+
+-- ---------- VIEWS ----------
+-- athlete_profiles: Securely exposes athlete information alongside their auth email
+create or replace view public.athlete_profiles as
+select 
+  a.id,
+  a.name,
+  a.role,
+  a.primary_club_id,
+  u.email
+from public.athletes a
+join auth.users u on a.user_id = u.id;
+
+grant select on public.athlete_profiles to anon, authenticated;
