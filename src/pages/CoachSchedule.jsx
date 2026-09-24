@@ -469,16 +469,29 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
   }, [scheduleLogs]);
 
   const filteredAuditSessions = useMemo(() => {
-    return groupedAuditSessions.filter(s => {
-      const completed = s.athletes.filter(a => a.status !== 'Proposed').length;
-      const isComplete = completed === s.athletes.length && s.athletes.length > 0;
-      const isPending = completed < s.athletes.length;
+    return groupedAuditSessions
+      .map(s => {
+        if (squadSelection.length > 0) {
+          const matchedAthletes = s.athletes.filter(a => squadSelection.includes(a.athlete));
+          if (matchedAthletes.length === 0) return null;
+          return {
+            ...s,
+            athletes: matchedAthletes
+          };
+        }
+        return s;
+      })
+      .filter(Boolean)
+      .filter(s => {
+        const completed = s.athletes.filter(a => a.status !== 'Proposed').length;
+        const isComplete = completed === s.athletes.length && s.athletes.length > 0;
+        const isPending = completed < s.athletes.length;
 
-      if (auditFilter === 'pending') return isPending;
-      if (auditFilter === 'completed') return isComplete;
-      return true;
-    });
-  }, [groupedAuditSessions, auditFilter]);
+        if (auditFilter === 'pending') return isPending;
+        if (auditFilter === 'completed') return isComplete;
+        return true;
+      });
+  }, [groupedAuditSessions, squadSelection, auditFilter]);
 
   const calendarGridData = useMemo(() => {
     const year = auditMonth.getFullYear();
@@ -1132,6 +1145,18 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
               </div>
             </div>
           </div>
+
+          {/* Active Selection Banner */}
+          {squadSelection.length > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#eff6ff', border: '1px solid #bfdbfe', padding: '10px 16px', borderRadius: '8px', marginBottom: '16px' }}>
+              <span style={{ fontSize: '13px', fontWeight: '700', color: '#1e40af' }}>
+                🎯 Showing schedule for selected athlete{squadSelection.length > 1 ? 's' : ''}: <strong>{squadSelection.join(', ')}</strong>
+              </span>
+              <button onClick={() => setSquadSelection([])} style={{ background: '#dbeafe', color: '#1e40af', border: 'none', padding: '4px 10px', borderRadius: '6px', fontSize: '12px', fontWeight: '800', cursor: 'pointer' }}>
+                Show Entire Squad
+              </button>
+            </div>
+          )}
 
           {loading ? <p style={{ color: '#64748b' }}>Loading schedule...</p> : (
             <>
