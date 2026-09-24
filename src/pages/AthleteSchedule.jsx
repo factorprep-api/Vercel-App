@@ -111,7 +111,8 @@ export default function AthleteSchedule() {
       const nameToMatch = athRes.status === 'Success' ? (athRes.athleteName || athRes.name || athleteName || userEmail.split('@')[0]) : (athleteName || userEmail.split('@')[0]);
 
       if (athRes.status === 'Success' && Array.isArray(athRes.rowData)) {
-        setActivePods(String(athRes.rowData[11] || '').toLowerCase().split(',').map(s => s.trim()).filter(Boolean));
+        const pods = String(athRes.rowData[11] || '').toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
+        setActivePods(pods.length > 0 ? pods : ['wellness', 'medical', 'schedule']);
       }
 
       const [res, medRes] = await Promise.all([
@@ -423,21 +424,31 @@ export default function AthleteSchedule() {
               <p style={{ margin: 0, color: '#64748b', fontWeight: '500' }}>No sessions assigned by your coach right now.</p>
             </div>
           ) : (
-            proposedSessions.map((s, i) => (
-              <div key={i} className="ghost-card" onClick={() => { setSelectedProposed(s); setAuditMode(null); setActualMins(s.proposedMins); setActualRpe(s.proposedRpe); setNotes(''); }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                  <div style={{ fontWeight: '800', color: '#0f172a', fontSize: '16px' }}>{s.type}</div>
-                  <div style={{ fontSize: '13px', color: '#64748b', fontWeight: '600' }}>{s.dateStr}</div>
+            proposedSessions.map((s, i) => {
+              const typeColor = getTypeColor(s.type);
+              return (
+                <div key={i} className="ghost-card" style={{ borderLeft: `6px solid ${typeColor}` }} onClick={() => { setSelectedProposed(s); setAuditMode(null); setActualMins(s.proposedMins); setActualRpe(s.proposedRpe); setNotes(''); }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                    <div>
+                      <div style={{ fontWeight: '800', color: '#0f172a', fontSize: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        {s.type}
+                        <span style={{ fontSize: '11px', fontWeight: '800', backgroundColor: typeColor + '20', color: typeColor, padding: '2px 8px', borderRadius: '4px' }}>
+                          {s.proposedLoad} AU Target
+                        </span>
+                      </div>
+                      {s.location && <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>📍 {s.location}</div>}
+                    </div>
+                    <div style={{ fontSize: '13px', color: '#64748b', fontWeight: '700' }}>{s.dateStr}</div>
+                  </div>
+                  <div style={{ fontSize: '13px', color: '#475569', marginBottom: '8px' }}>
+                    <strong>Target:</strong> {s.proposedMins} mins @ RPE {s.proposedRpe}
+                  </div>
+                  <div style={{ marginTop: '12px', color: '#008ed3', fontWeight: '800', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <CheckCircle size={16} /> Tap to Log Result
+                  </div>
                 </div>
-                <div style={{ fontSize: '14px', color: '#475569', marginBottom: '8px' }}>
-                  <strong>Target:</strong> {s.proposedMins} mins @ RPE {s.proposedRpe} <span style={{ color: '#94a3b8' }}>({s.proposedLoad} AU)</span>
-                </div>
-                {s.location && <div style={{ fontSize: '12px', color: '#64748b' }}>📍 {s.location}</div>}
-                <div style={{ marginTop: '12px', color: '#008ed3', fontWeight: '700', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <CheckCircle size={16} /> Tap to Log Result
-                </div>
-              </div>
-            ))
+              );
+            })
           )}
 
           <div style={{ display: 'flex', alignItems: 'center', margin: '32px 0 24px' }}>
