@@ -1242,30 +1242,31 @@ const SquadZoneHeatmap = memo(function SquadZoneHeatmap({ data, squadMembers, se
               {bucketData.map((bucket, bi) => {
                 const mins = bucket.zones.mins[zi];
                 const load = bucket.zones.load[zi];
-                const frac = bucket.hasData && mins > 0
+                const hasZoneData = mins > 0;
+                const frac = hasZoneData
                   ? (mode === 'share' ? mins / bucket.bucketTotalMins : mins / windowMaxMins)
                   : 0;
-                const opacity = bucket.hasData && mins > 0 ? 0.18 + 0.82 * frac : 1;
+                const opacity = hasZoneData ? 0.18 + 0.82 * frac : 1;
                 const isSelected = selectedCell?.bucketIdx === bi && selectedCell?.zoneIdx === zi;
 
                 return (
                   <button
                     key={bi}
                     onClick={() => handleCellTap(bi, zi)}
-                    disabled={!bucket.hasData}
+                    disabled={!hasZoneData}
                     style={{
                       height: '34px',
                       borderRadius: '4px',
-                      ...(bucket.hasData ? { backgroundColor: zone.color, opacity } : hatchStyle),
+                      ...(hasZoneData ? { backgroundColor: zone.color, opacity } : bucket.hasData ? { backgroundColor: '#f1f5f9' } : hatchStyle),
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                       fontSize: '10px', fontWeight: 700,
-                      color: bucket.hasData && opacity < 0.55 ? '#0f172a' : '#fff',
+                      color: hasZoneData && opacity < 0.55 ? '#0f172a' : '#fff',
                       border: isSelected ? `2px solid #008ed3` : 'none',
                       outline: 'none',
-                      cursor: bucket.hasData ? 'pointer' : 'default'
+                      cursor: hasZoneData ? 'pointer' : 'default'
                     }}
                   >
-                    {bucket.hasData && mins > 0 ? `${mins}m / ${Math.round(load)}` : ''}
+                    {hasZoneData ? `${mins}m / ${Math.round(load)}` : ''}
                   </button>
                 );
               })}
