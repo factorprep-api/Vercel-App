@@ -516,20 +516,36 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
   const drilledAthleteData = drilledAthlete ? rosterWithLoads.find(a => a.name === drilledAthlete) : null;
 
   const squadLineData = useMemo(() => {
-    if (!squadComparison) return [];
-    return squadComparison.dateLabels.map((date, idx) => {
-      const row = { date };
+    if (!squadZoneRaw || !squadComparison) return [];
+    
+    return squadZoneRaw.bucketLabels.map((dateLabel, bi) => {
+      const row = { date: dateLabel };
+      const st = squadZoneRaw.bucketStartTimes[bi];
+      const et = squadZoneRaw.bucketEndTimes[bi];
+      const bucketDays = squadZoneRaw.bucketDays;
+
       squadComparison.rows.forEach(a => {
-        let total = 0;
-        const d = a.chartData[idx];
-        Object.keys(d).forEach(k => { if (k !== 'date' && k !== 'avgRpe') total += d[k]; });
+        const logs = logsByAthlete[a.name] || [];
+        let totalLoad = 0;
+
+        logs.forEach(l => {
+          if (l.status === 'Proposed') return;
+          if (l.actualMins <= 0 || l.actualRpe <= 0) return;
+          const logDayTime = new Date(l.rawDate.getFullYear(), l.rawDate.getMonth(), l.rawDate.getDate()).getTime();
+          if (logDayTime >= st && logDayTime <= et) {
+            totalLoad += l.actualMins * l.actualRpe;
+          }
+        });
+
+        const typicalBucketLoad = (a.chronicLoad / 28) * bucketDays;
+
         row[a.name] = squadAxis === 'rel'
-          ? (a.chronicLoad > 0 ? Math.round((total / (a.chronicLoad / 28)) * 100) : null)
-          : Math.round(total);
+          ? (typicalBucketLoad > 0 ? Math.round((totalLoad / typicalBucketLoad) * 100) : null)
+          : Math.round(totalLoad);
       });
       return row;
     });
-  }, [squadComparison, squadAxis]);
+  }, [squadZoneRaw, squadComparison, squadAxis, logsByAthlete]);
 
   const getAcwrStatus = (acwr) => {
     if (acwr === 0) return { text: 'No Data', color: '#64748b', bg: '#f1f5f9' };
@@ -816,14 +832,21 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
         <div className="cs-card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '8px' }}>
             <h2 style={{ fontSize: '18px', color: '#0f172a', margin: 0, fontWeight: '800' }}>Squad Comparison</h2>
-            <div style={{ display: 'flex', background: '#e2e8f0', padding: '4px', borderRadius: '8px' }}>
-              <button onClick={() => setSquadAxis('rel')} style={{ padding: '6px 14px', border: 'none', borderRadius: '6px', background: squadAxis === 'rel' ? '#fff' : 'transparent', color: squadAxis === 'rel' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer', boxShadow: squadAxis === 'rel' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>% of Normal</button>
-              <button onClick={() => setSquadAxis('au')} style={{ padding: '6px 14px', border: 'none', borderRadius: '6px', background: squadAxis === 'au' ? '#fff' : 'transparent', color: squadAxis === 'au' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer', boxShadow: squadAxis === 'au' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>Absolute AU</button>
+            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+              <div style={{ display: 'flex', background: '#e2e8f0', padding: '4px', borderRadius: '8px' }}>
+                <button onClick={() => setTimeWindow('week')} style={{ padding: '6px 12px', border: 'none', borderRadius: '6px', background: timeWindow === 'week' ? '#fff' : 'transparent', color: timeWindow === 'week' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer', boxShadow: timeWindow === 'week' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>Week (7d)</button>
+                <button onClick={() => setTimeWindow('month')} style={{ padding: '6px 12px', border: 'none', borderRadius: '6px', background: timeWindow === 'month' ? '#fff' : 'transparent', color: timeWindow === 'month' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer', boxShadow: timeWindow === 'month' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>Month (30d)</button>
+                <button onClick={() => setTimeWindow('season')} style={{ padding: '6px 12px', border: 'none', borderRadius: '6px', background: timeWindow === 'season' ? '#fff' : 'transparent', color: timeWindow === 'season' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer', boxShadow: timeWindow === 'season' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>Season (90d)</button>
+              </div>
+              <div style={{ display: 'flex', background: '#e2e8f0', padding: '4px', borderRadius: '8px' }}>
+                <button onClick={() => setSquadAxis('rel')} style={{ padding: '6px 12px', border: 'none', borderRadius: '6px', background: squadAxis === 'rel' ? '#fff' : 'transparent', color: squadAxis === 'rel' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer', boxShadow: squadAxis === 'rel' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>% of Normal</button>
+                <button onClick={() => setSquadAxis('au')} style={{ padding: '6px 12px', border: 'none', borderRadius: '6px', background: squadAxis === 'au' ? '#fff' : 'transparent', color: squadAxis === 'au' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer', boxShadow: squadAxis === 'au' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>Absolute AU</button>
+              </div>
             </div>
           </div>
           <p style={{ fontSize: '13px', color: '#64748b', margin: '0 0 16px 0' }}>
-            Daily load per athlete. Hover a line or name chip to spotlight it; click a chip to open the detail view below.
-            {squadAxis === 'rel' ? ' Values are % of each athlete\u2019s typical daily load \u2014 dashed red line marks 150%, the spike threshold.' : ' Values are raw training load in AU.'}
+            Load trend & time in intensity zones per athlete. Hover a line or name chip to spotlight it; click a chip to open detail view.
+            {squadAxis === 'rel' ? ' Values are % of typical load \u2014 dashed red line marks 150%, the spike threshold.' : ' Values are raw training load in AU.'}
           </p>
 
           {squadSelection.length === 0 ? (
@@ -911,13 +934,8 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
 
               {squadZoneRaw && (
                 <div style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid #e2e8f0' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
                     <h4 style={{ margin: 0, fontSize: '14px', color: '#0f172a' }}>Zone Heatmap — Time in Intensity Zones</h4>
-                    <div style={{ display: 'flex', background: '#e2e8f0', padding: '4px', borderRadius: '8px' }}>
-                      <button onClick={() => setTimeWindow('week')} style={{ padding: '6px 10px', border: 'none', borderRadius: '6px', background: timeWindow === 'week' ? '#fff' : 'transparent', color: timeWindow === 'week' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '11px', cursor: 'pointer' }}>Week (7d)</button>
-                      <button onClick={() => setTimeWindow('month')} style={{ padding: '6px 10px', border: 'none', borderRadius: '6px', background: timeWindow === 'month' ? '#fff' : 'transparent', color: timeWindow === 'month' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '11px', cursor: 'pointer' }}>Month (30d)</button>
-                      <button onClick={() => setTimeWindow('season')} style={{ padding: '6px 10px', border: 'none', borderRadius: '6px', background: timeWindow === 'season' ? '#fff' : 'transparent', color: timeWindow === 'season' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '11px', cursor: 'pointer' }}>Season (90d)</button>
-                    </div>
                   </div>
                   <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: '#64748b' }}>
                     Tap cells to view squad breakdown. Tap again to clear.
