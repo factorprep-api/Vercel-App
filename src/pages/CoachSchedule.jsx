@@ -76,6 +76,12 @@ export default function CoachSchedule() {
   const [saving, setSaving] = useState(false);
   const [selectedAthletes, setSelectedAthletes] = useState([]);
   const [form, setForm] = useState({ date: '', type: 'Field Session', duration: 60, rpe: 7, location: '', notes: '' });
+  const [toast, setToast] = useState(null);
+
+  function showToast(message, isError = false) {
+    setToast({ message, isError });
+    setTimeout(() => setToast(null), 3000);
+  }
 
   // Audit Modal
   const [selectedAuditSession, setSelectedAuditSession] = useState(null);
@@ -572,16 +578,18 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
 
       const failed = results.filter(r => r.status !== 'Success');
       if (failed.length > 0) {
-        alert(`Save failed for ${failed.length} of ${results.length} athletes: ${failed[0].message || 'unknown error'}`);
+        showToast(`Save failed for ${failed.length} of ${results.length} athletes: ${failed[0].message || 'unknown error'}`, true);
       } else {
         setShowModal(false);
+        const count = selectedAthletes.length;
         setSelectedAthletes([]);
         const t = new Date();
         const todayYMD = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
         setForm({ date: todayYMD, type: form.type, duration: form.duration, rpe: form.rpe, location: '', notes: '' });
+        showToast(`Session proposed for ${count} athlete${count > 1 ? 's' : ''}!`);
         loadData();
       }
-    } catch(e) { alert("Failed to save."); }
+    } catch(e) { showToast("Failed to save session.", true); }
     setSaving(false);
   }
 
@@ -1170,6 +1178,28 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
         </div>
       )}
       <HelpButton pageName="Coach Schedule" position="bottom-right" />
+      {toast && (
+        <div style={{
+          position: 'fixed',
+          bottom: '24px',
+          right: '24px',
+          backgroundColor: toast.isError ? '#dc2626' : '#16a34a',
+          color: '#ffffff',
+          padding: '12px 20px',
+          borderRadius: '8px',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          fontSize: '14px',
+          fontWeight: '700',
+          zIndex: 10000,
+          animation: 'fadeIn 0.3s ease-out'
+        }}>
+          {toast.isError ? <AlertCircle size={18} /> : <CheckCircle size={18} />}
+          {toast.message}
+        </div>
+      )}
     </div>
   );
 }

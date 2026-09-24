@@ -89,7 +89,7 @@ export default function AthleteMedical() {
   if (saveSuccess) {
     return (
       <div className="am-container" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: '#f8fafc' }}>
-        <CheckCircle size={64} color="#dc2626" style={{ marginBottom: '16px' }} />
+        <CheckCircle size={64} color="#10b981" style={{ marginBottom: '16px' }} />
         <h2 style={{ color: '#0f172a', margin: 0 }}>Medical Log Saved.</h2>
         <p style={{ color: '#64748b' }}>Your clinical file has been updated.</p>
       </div>

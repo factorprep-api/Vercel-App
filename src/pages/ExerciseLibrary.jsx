@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Play, Search, X, Pencil, Trash2, Plus, ArrowLeft } from 'lucide-react';
+import { Play, Search, X, Pencil, Trash2, Plus, ArrowLeft, CheckCircle, AlertCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { getYouTubeId, normalizeVideoUrl } from '../utils/helpers';
 import { useAuth } from '../hooks/useAuth';
@@ -400,6 +400,7 @@ export default function ExerciseLibrary({ viewMode: propViewMode = 'athlete' }) 
             showToast('Exercise added! It will appear with a • Coach badge.');
             await reloadLibrary();
           }}
+          onError={(msg) => showToast(msg, true)}
         />
       )}
 
@@ -489,7 +490,7 @@ export default function ExerciseLibrary({ viewMode: propViewMode = 'athlete' }) 
 
       {toast && (
         <div className={`exlib-toast ${toast.isError ? 'error' : ''}`}>
-          {toast.isError ? <X size={16} /> : <Pencil size={16} />}
+          {toast.isError ? <AlertCircle size={16} /> : <CheckCircle size={16} />}
           {toast.message}
         </div>
       )}
@@ -498,7 +499,7 @@ export default function ExerciseLibrary({ viewMode: propViewMode = 'athlete' }) 
 }
 
 // FIX: Completely rebuilt the modal props and logic
-function AddExerciseModal({ userEmail, athleteName, existingCategories, onClose, onSuccess }) {
+function AddExerciseModal({ userEmail, athleteName, existingCategories, onClose, onSuccess, onError }) {
   // Dynamically default to the Coach's name, just like the Drill Designer
   const coachCategoryName = athleteName ? `${athleteName} Exercises` : 'Coach Exercises';
 
@@ -516,8 +517,8 @@ function AddExerciseModal({ userEmail, athleteName, existingCategories, onClose,
   }, [existingCategories, coachCategoryName]);
 
   async function handleSave() {
-    if (!name.trim()) { alert('Exercise name is required.'); return; }
-    if (!userEmail) { alert('Not authenticated. Please sign in again.'); return; }
+    if (!name.trim()) { (onError || alert)('Exercise name is required.'); return; }
+    if (!userEmail) { (onError || alert)('Not authenticated. Please sign in again.'); return; }
     setSaving(true);
     try {
       const res = await addExerciseToLibrary({
@@ -530,10 +531,10 @@ function AddExerciseModal({ userEmail, athleteName, existingCategories, onClose,
       if (res.status === 'Success') {
         await onSuccess();
       } else {
-        alert('Add failed: ' + (res.message || 'Unknown error'));
+        (onError || alert)('Add failed: ' + (res.message || 'Unknown error'));
       }
     } catch (err) {
-      alert('Network error. Please try again.');
+      (onError || alert)('Network error. Please try again.');
     }
     setSaving(false);
   }
