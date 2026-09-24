@@ -26,7 +26,9 @@ import {
   Video,
   Image as ImageIcon,
   Pencil,
-  X
+  X,
+  CheckCircle,
+  AlertCircle
 } from 'lucide-react';
 import {
   LineChart,
@@ -202,6 +204,12 @@ useEffect(() => {
   const [editValueInput, setEditValueInput] = useState('');
   const [editSaving, setEditSaving] = useState(false);
   const [editMessage, setEditMessage] = useState(null);
+  const [toast, setToast] = useState(null);
+
+  function showToast(message, isError = false) {
+    setToast({ message, isError });
+    setTimeout(() => setToast(null), 3000);
+  }
 
   // Sync tab if user does not have wellness pod
   useEffect(() => {
@@ -702,6 +710,7 @@ useEffect(() => {
         }
       } catch {}
       closeEditModal();
+      showToast('Set updated successfully!');
     } else {
       setEditMessage('Update failed: ' + (result.message || 'Unknown error'));
     }
@@ -1418,6 +1427,28 @@ useEffect(() => {
       )}
 
       <HelpButton pageName="My Progress" position="bottom-right" />
+      {toast && (
+        <div style={{
+          position: 'fixed',
+          bottom: '24px',
+          right: '24px',
+          backgroundColor: toast.isError ? '#dc2626' : '#16a34a',
+          color: '#ffffff',
+          padding: '12px 20px',
+          borderRadius: '8px',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          fontSize: '14px',
+          fontWeight: '700',
+          zIndex: 10000,
+          animation: 'fadeIn 0.3s ease-out'
+        }}>
+          {toast.isError ? <AlertCircle size={18} /> : <CheckCircle size={18} />}
+          {toast.message}
+        </div>
+      )}
     </div>
   );
 }

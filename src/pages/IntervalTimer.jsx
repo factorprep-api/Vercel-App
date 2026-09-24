@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Play, Pause, Square, Plus, Trash2, Save, Activity, Coffee, Volume2, VolumeX, ArrowLeft, ArrowUp, ArrowDown, X, Copy, Repeat, PlusCircle } from 'lucide-react';
+import { Play, Pause, Square, Plus, Trash2, Save, Activity, Coffee, Volume2, VolumeX, ArrowLeft, ArrowUp, ArrowDown, X, Copy, Repeat, PlusCircle, CheckCircle, AlertCircle } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
 
@@ -34,6 +34,12 @@ export default function IntervalTimer() {
 
   const [inputMin, setInputMin] = useState('');
   const [inputSec, setInputSec] = useState('');
+  const [toast, setToast] = useState(null);
+
+  function showToast(message, isError = false) {
+    setToast({ message, isError });
+    setTimeout(() => setToast(null), 3000);
+  }
 
   const audioRefs = useRef({});
 
@@ -167,8 +173,8 @@ export default function IntervalTimer() {
   // PRESET CONTROLS
   // ==========================================
   const savePreset = () => {
-    if (!presetName.trim()) { alert("Please name your preset."); return; }
-    if (activeSequence.length === 0) { alert("Add some intervals first!"); return; }
+    if (!presetName.trim()) { showToast("Please name your preset.", true); return; }
+    if (activeSequence.length === 0) { showToast("Add some intervals first!", true); return; }
 
     const newPreset = {
       id: Date.now().toString(),
@@ -183,7 +189,7 @@ export default function IntervalTimer() {
     setPresets(updatedPresets);
     localStorage.setItem(storageKey, JSON.stringify(updatedPresets));
     setSelectedAthleteId(newPreset.id);
-    alert("Timer saved!");
+    showToast("Timer preset saved!");
   };
 
   const loadPreset = (id) => {
@@ -379,6 +385,28 @@ export default function IntervalTimer() {
         </div>
       )}
       <HelpButton pageName="Interval Timer" position="bottom-right" />
+      {toast && (
+        <div style={{
+          position: 'fixed',
+          bottom: '24px',
+          right: '24px',
+          backgroundColor: toast.isError ? '#dc2626' : '#16a34a',
+          color: '#ffffff',
+          padding: '12px 20px',
+          borderRadius: '8px',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          fontSize: '14px',
+          fontWeight: '700',
+          zIndex: 10000,
+          animation: 'fadeIn 0.3s ease-out'
+        }}>
+          {toast.isError ? <AlertCircle size={18} /> : <CheckCircle size={18} />}
+          {toast.message}
+        </div>
+      )}
     </div>
   );
 }
