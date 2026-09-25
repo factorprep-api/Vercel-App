@@ -249,18 +249,6 @@ export default function AthleteSchedule() {
     return null;
   }
 
-  const rolling7DayLoad = useMemo(() => {
-    if (completedSessions.length === 0) return 0;
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-    return completedSessions.filter(s => s.rawDate >= sevenDaysAgo).reduce((sum, s) => sum + s.actualLoad, 0);
-  }, [completedSessions]);
-
-  const weekToDateLoad = useMemo(() => {
-    const monday = getWeekMonday(new Date());
-    return completedSessions.filter(s => s.rawDate >= monday).reduce((sum, s) => sum + s.actualLoad, 0);
-  }, [completedSessions]);
-
     async function handleSaveManual() {
     if (saving) return; 
     setSaving(true); 
@@ -287,7 +275,7 @@ export default function AthleteSchedule() {
         setSaveSuccess(true);
         setTimeout(() => { setSaveSuccess(false); setActiveTab('analytics'); }, 1500);
       } else { setError('Failed to log session.'); }
-    } catch (err) { setError('Network error. Please try again.'); }
+    } catch { setError('Network error. Please try again.'); }
     setSaving(false);
   }
 
@@ -330,7 +318,7 @@ export default function AthleteSchedule() {
         setSelectedProposed(null); setAuditMode(null); setSaveSuccess(true);
         setTimeout(() => { setSaveSuccess(false); setActiveTab('analytics'); }, 1500);
       } else { setError('Failed to log session.'); }
-    } catch (err) { setError('Network error. Please try again.'); }
+    } catch { setError('Network error. Please try again.'); }
     setSaving(false);
   }
 
@@ -691,7 +679,7 @@ export default function AthleteSchedule() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <span style={{ display: 'inline-block', width: '18px', height: '4px', borderRadius: '2px', backgroundColor: group.color }}></span>
                       <span style={{ fontSize: '12px', fontWeight: 800, color: group.color, textTransform: 'uppercase' }}>
-                        {isThisWeek ? 'This Week' : `Week of ${group.monday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`}
+                        {isThisWeek ? 'This Week' : `Week of ${group.monday.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}`}
                       </span>
                     </div>
                     <span style={{ fontSize: '11px', fontWeight: 700, color: '#475569', background: '#f1f5f9', padding: '3px 8px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
@@ -715,7 +703,11 @@ export default function AthleteSchedule() {
                               {s.status !== 'Actual' && <StatusIcon size={14} color={statusColor} title={`Status: ${s.status}`} />}
                               {s.type}
                             </div>
-                            <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>{s.dateStr} • {s.actualMins}m @ RPE {s.actualRpe}</div>
+                            <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>{s.dateStr}</div>
+                            {s.proposedMins > 0 && (
+                              <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 700, marginTop: '2px' }}>Planned: {s.proposedMins}m @ RPE {Number(s.proposedRpe).toFixed(1)} ({s.proposedLoad} AU)</div>
+                            )}
+                            <div style={{ fontSize: '12px', color: '#475569', fontWeight: 700, marginTop: '2px' }}>Actual: {s.actualMins}m @ RPE {s.actualRpe} ({s.actualLoad} AU)</div>
                           </div>
                           <div style={{ fontWeight: '900', color: '#008ed3' }}>{s.actualLoad} AU</div>
                         </div>
@@ -753,7 +745,7 @@ export default function AthleteSchedule() {
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <span style={{ display: 'inline-block', width: '18px', height: '4px', borderRadius: '2px', backgroundColor: weekColor }}></span>
                         <span style={{ fontSize: '12px', fontWeight: 800, color: weekColor, textTransform: 'uppercase' }}>
-                          {isThisWeek ? 'This Week' : `Week of ${monday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`}
+                          {isThisWeek ? 'This Week' : `Week of ${monday.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}`}
                         </span>
                       </div>
                       <span style={{ fontSize: '11px', fontWeight: 700, color: '#475569', background: '#f1f5f9', padding: '3px 8px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
