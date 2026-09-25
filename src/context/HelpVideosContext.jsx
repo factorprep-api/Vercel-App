@@ -12,7 +12,7 @@ export function HelpVideosProvider({ children }) {
       try {
         const videos = await fetchHelpVideos();
         setHelpVideos(videos);
-      } catch (err) {
+      } catch {
         // Silently fail — will use defaults
       } finally {
         setLoading(false);

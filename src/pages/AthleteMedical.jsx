@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Save, AlertCircle, CheckCircle, Activity, X, FileText } from 'lucide-react';
+import { ArrowLeft, CheckCircle, Activity, X, FileText } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
 import { saveMedicalLog, fetchMedicalLogs } from '../api';
@@ -53,7 +53,7 @@ export default function AthleteMedical() {
         const myLogs = logs.slice(1).filter(r => String(r[1]).trim().toLowerCase() === userEmail.toLowerCase() || String(r[2]).trim().toLowerCase() === (athleteName||'').toLowerCase());
         setMedicalHistory(myLogs.reverse());
       }
-    } catch (e) { setError("Failed to load history."); }
+    } catch { setError("Failed to load history."); }
     setLoadingHistory(false);
   }
 
@@ -82,7 +82,7 @@ export default function AthleteMedical() {
         setShowModal(false); setSaveSuccess(true);
         setTimeout(() => { setSaveSuccess(false); setActiveTab('history'); }, 2000);
       } else { setError('Failed to log injury.'); }
-    } catch (err) { setError('Network error. Please try again.'); }
+    } catch { setError('Network error. Please try again.'); }
     setSaving(false);
   }
 

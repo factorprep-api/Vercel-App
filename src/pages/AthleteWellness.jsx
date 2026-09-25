@@ -46,7 +46,7 @@ export default function AthleteWellness() {
       } else {
         setError('Failed to save log. ' + (res.message || ''));
       }
-    } catch (err) {
+    } catch {
       setError('Network error. Please try again.');
     }
     setSaving(false);

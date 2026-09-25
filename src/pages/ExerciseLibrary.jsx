@@ -193,7 +193,7 @@ export default function ExerciseLibrary({ viewMode: propViewMode = 'athlete' }) 
       } else {
         showToast('Update failed', true);
       }
-    } catch (err) {
+    } catch {
       showToast('Network error', true);
     }
   }
@@ -209,7 +209,7 @@ export default function ExerciseLibrary({ viewMode: propViewMode = 'athlete' }) 
       } else {
         showToast('Delete failed', true);
       }
-    } catch (err) {
+    } catch {
       showToast('Network error', true);
     }
     setDeleting(null);
@@ -533,7 +533,7 @@ function AddExerciseModal({ userEmail, athleteName, existingCategories, onClose,
       } else {
         (onError || alert)('Add failed: ' + (res.message || 'Unknown error'));
       }
-    } catch (err) {
+    } catch {
       (onError || alert)('Network error. Please try again.');
     }
     setSaving(false);

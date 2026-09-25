@@ -30,7 +30,7 @@ export default function HelpButton({ pageName = 'Default', position = 'bottom-ri
       } else {
         alert(`Help video for "${pageName}" is coming soon!`);
       }
-    } catch (err) {
+    } catch {
       alert(`Network Error: Could not load the video.`);
     }
     setLoading(false);

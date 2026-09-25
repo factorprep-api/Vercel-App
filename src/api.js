@@ -203,7 +203,7 @@ export const saveWellnessLog = async (payload) => {
   } catch (err) { return { status: 'Error', message: err.message }; }
 };
 
-export const fetchWellnessLogs = async (athleteName, email) => {
+export const fetchWellnessLogs = async () => {
   try {
     const { data, error } = await supabase
       .from('wellness_logs')
@@ -223,7 +223,7 @@ export const fetchWellnessLogs = async (athleteName, email) => {
       w.nutrition ?? ''
     ]);
     return { data: [WELLNESS_SHEET_HEADER, ...rows] };
-  } catch (err) { return { data: [] }; }
+  } catch { return { data: [] }; }
 };
 
 // ==========================================
@@ -428,14 +428,14 @@ export const fetchSchedule = async (athleteName, email) => {
       }));
 
     return { data: [SCHED_SHEET_HEADER, ...rows] };
-  } catch (err) { return { data: [] }; }
+  } catch { return { data: [] }; }
 };
 
 // Maps medical_entries rows back into the legacy sheet row shape
 // (positional arrays, header first) so existing pages keep working.
 const MED_SHEET_HEADER = ['Date Logged','Email','Athlete','Body Part','Pain Level','Mechanism','Training Status','Notes','Is Resolved','Date Resolved','Injury Grade'];
 
-export const fetchMedicalLogs = async (athleteName, email) => {
+export const fetchMedicalLogs = async () => {
   try {
     const { data, error } = await supabase
       .from('medical_entries')
@@ -457,7 +457,7 @@ export const fetchMedicalLogs = async (athleteName, email) => {
       m.injury_grade ?? ''
     ]);
     return { data: [MED_SHEET_HEADER, ...rows] };
-  } catch (err) { return { data: [] }; }
+  } catch { return { data: [] }; }
 };
 
 export const saveMedicalLog = async (payload) => {
@@ -524,7 +524,7 @@ export const fetchLogbookByAthlete = async (athleteName) => {
       reps: r.reps ?? 0
     }));
     return { status: "Success", count: rows.length, data: rows };
-  } catch (err) { return { status: "Error", data: [] }; }
+  } catch { return { status: "Error", data: [] }; }
 };
 export const getLogbookByAthlete = fetchLogbookByAthlete;
 
@@ -546,7 +546,7 @@ export const getLatestMaxes = async (athleteName) => {
       if (exercise && val > 0 && !maxes[exercise]) maxes[exercise] = val;
     }
     return { status: "Success", count: Object.keys(maxes).length, maxes: maxes };
-  } catch (err) { return { status: "Error", maxes: {} }; }
+  } catch { return { status: "Error", maxes: {} }; }
 };
 
 export const getLastLoggedWeight = async (athleteName, exerciseName) => {
@@ -575,16 +575,11 @@ export const getLastLoggedWeight = async (athleteName, exerciseName) => {
       weight: Number(r.metric_value) || 0,
       reps: r.reps ?? 0
     };
-  } catch (err) { return { status: "NotFound" }; }
+  } catch { return { status: "NotFound" }; }
 };
 
 // Fixed to accept both object syntax and standard arguments to prevent crashes
-export const createAthlete = async (emailOrObj, nameStr) => {
-  try {
-    // Supabase handles athlete creation via login hooks, so this is just a stub for backwards compatibility
-    return { status: 'Success' };
-  } catch (err) { return { status: 'Error', message: err.message }; }
-};
+export const createAthlete = async () => ({ status: 'Success' });
 
 export const getAthleteByEmail = async (email) => {
   try {
@@ -615,7 +610,7 @@ export const saveSession = async (payload) => {
     if (!byName || byName.length === 0) return { status: 'Error', message: 'Athlete not found' };
     const athleteId = byName[0].id;
 
-    const { data: sessionLog, error: sErr } = await supabase.from('session_logs').insert({
+    const { error: sErr } = await supabase.from('session_logs').insert({
       athlete_id: athleteId,
       session_type: payload.type || 'Gym Workout',
       date: payload.date || new Date().toISOString().split('T')[0],
@@ -659,7 +654,7 @@ export const saveSession = async (payload) => {
   } catch (err) { return { status: 'Error', message: err.message }; }
 };
 
-export async function fetchExerciseLibrary(options = {}) {
+export async function fetchExerciseLibrary() {
   const { library } = await fetchLibrary();
   const lib = [];
   const rawLibrary = library || [];
@@ -749,7 +744,7 @@ export const saveFullProgram = async (programRows) => {
       if (!exId) continue;
 
       let adv = {};
-      try { adv = typeof r[13] === 'string' ? JSON.parse(r[13]) : (r[13] || {}); } catch(e) {}
+      try { adv = typeof r[13] === 'string' ? JSON.parse(r[13]) : (r[13] || {}); } catch { /* ignore */ }
 
       peInserts.push({
         program_id: prog.id,
@@ -777,7 +772,7 @@ export const saveFullProgram = async (programRows) => {
   }
 };
 
-export const assignProgramBulk = async (athleteRows, programAssignment, columnId) => {
+export const assignProgramBulk = async (athleteRows, programAssignment) => {
   try {
     const { data: { user } } = await supabase.auth.getUser();
     
@@ -881,7 +876,7 @@ export const fetchHelpVideos = async () => {
       .select('page_name, video_url');
     if (error) return [];
     return data || [];
-  } catch (err) { return []; }
+  } catch { return []; }
 };
 
 export const updateProgram = async (oldName, programRows) => {
@@ -889,13 +884,13 @@ export const updateProgram = async (oldName, programRows) => {
     const { error: delErr } = await supabase.from('programs').delete().eq('name', oldName);
     if (delErr) return { status: 'Error', message: delErr.message };
     return await saveFullProgram(programRows);
-  } catch (err) { return { status: 'Error', message: err.message }; }
+  } catch { return { status: 'Error', message: 'Failed to update program' }; }
 };
 
 // ==========================================
 // LOGBOOK EDIT & AUDIT PIPES (Step B+C)
 // ==========================================
-export const updateLogbookEntry = async ({ athlete, sessionDate, program, exercise, setNumber, field, newValue, editorEmail, editorRole }) => {
+export const updateLogbookEntry = async ({ athlete, sessionDate, exercise, setNumber, field, newValue }) => {
   try {
     const { data: ath } = await supabase.from('athletes').select('id').eq('name', athlete).single();
     if (!ath) return { status: 'Error', message: 'Athlete not found' };
@@ -925,7 +920,7 @@ export const updateLogbookEntry = async ({ athlete, sessionDate, program, exerci
   } catch (err) { return { status: 'Error', message: err.message }; }
 };
 
-export const fetchAuditLog = async (filters = {}) => {
+export const fetchAuditLog = async () => {
   try {
     let query = supabase.from('audit_logs').select('*').order('created_at', { ascending: false });
     const { data, error } = await query;
