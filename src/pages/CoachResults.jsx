@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
 import { fetchAthletes, fetchLogbookByAthlete, fetchWellnessLogs, fetchMedicalLogs, saveMedicalLog } from '../api';
-import { ArrowLeft, Search, AlertCircle, Heart, Moon, Utensils, HandMetal, Smile, BarChart2, LayoutGrid, Dumbbell, Activity, ShieldAlert, ShieldCheck, X } from 'lucide-react';
+import { ArrowLeft, Search, AlertCircle, Heart, Moon, Utensils, HandMetal, Smile, BarChart2, LayoutGrid, Dumbbell, Activity, ShieldAlert, X } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 const COLORS = {
@@ -93,7 +93,7 @@ function getWeekKey(dateStr) {
 function fmt(n) { return Math.round(n).toLocaleString(); }
 
 export default function CoachResults() {
-  const { userEmail: coachEmail, role, isLoading: authLoading } = useAuth();
+  const { userEmail: coachEmail, isLoading: authLoading } = useAuth();
   const navigate = useNavigate();
 
   const [mainTab, setMainTab] = useState('wellness'); 
@@ -174,14 +174,14 @@ export default function CoachResults() {
 
       const results = await Promise.all( athleteList.map((a) => fetchLogbookByAthlete(a.name).then((res) => (res.data || []).map((e) => ({ ...e, name: a.name, maxes: maxesByName[a.name] }))).catch(() => [])) );
       setAthletes(athleteList); setMaxes(athleteList); setLogbook(results.flat()); setLoading(false);
-    } catch (err) { setLoading(false); }
+    } catch { setLoading(false); }
   }
 
   useEffect(() => {
     if (selectedAthlete === 'all') {
       const cached = localStorage.getItem(CACHE_KEY);
       if (cached) {
-        try { setLogbook(JSON.parse(cached).logbook || []); } catch (e) {}
+        try { setLogbook(JSON.parse(cached).logbook || []); } catch {}
       }
     }
   }, [selectedAthlete]);
@@ -300,7 +300,7 @@ export default function CoachResults() {
       })).sort((a,b) => a.rawDate - b.rawDate);
 
       setTeamWellnessHistory(teamHistory);
-    } catch (err) {}
+    } catch {}
     setWellnessLoading(false);
   }
 
@@ -487,7 +487,7 @@ export default function CoachResults() {
     };
     try {
       await saveMedicalLog(payload); setMedicalModalOpen(false); loadWellnessAndMedical(); 
-    } catch(e) {}
+    } catch {}
     setMedSaving(false);
   };
 
@@ -615,7 +615,7 @@ export default function CoachResults() {
                 </div>
                 <div style={styles.summaryCard}>
                   <span style={styles.summaryLabel}>CORE Lifts Tracked</span>
-                  <span style={styles.summaryValue}>{CORE_KEYS.filter(key => summary.zoneVolumes.some(v => v > 0)).length > 0 ? '✓ Active' : '— No data'}</span>
+                  <span style={styles.summaryValue}>{CORE_KEYS.some(() => summary.zoneVolumes.some(v => v > 0)) ? '✓ Active' : '— No data'}</span>
                   <span style={styles.summarySub}>6 CORE lifts monitored</span>
                 </div>
               </div>

@@ -170,7 +170,7 @@ export default function ProgramViewer() {
         const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/995/995-preview.mp3');
         audio.volume = 1.0;
         audio.play();
-      } catch (e) {}
+      } catch {}
       setTimeLeft(baseTime);
     }
   }, [timerActive, timeLeft, baseTime]);
@@ -195,7 +195,7 @@ export default function ProgramViewer() {
 
   const handleTimerSubmit = (e) => {
     if (e && typeof e.preventDefault === 'function') e.preventDefault();
-    let newSeconds = 0;
+    let newSeconds;
     if (timerInputValue.includes(':')) {
       const parts = timerInputValue.split(':');
       newSeconds = parseInt(parts[0] || 0) * 60 + parseInt(parts[1] || 0);
@@ -267,7 +267,7 @@ export default function ProgramViewer() {
         cachedAt: new Date().toISOString()
       }));
       setLoading(false);
-    } catch (err) {
+    } catch {
       setError('Failed to load data.');
       setLoading(false);
     }
@@ -372,7 +372,7 @@ export default function ProgramViewer() {
       if (!currentGroup || currentGroup.name !== name || currentGroup.phase !== phase) {
         if (currentGroup) groups.push(currentGroup);
         let advanced = null;
-        try { if (row.length > 13 && row[13]) { advanced = JSON.parse(String(row[13])); } } catch(e) {}
+        try { if (row.length > 13 && row[13]) { advanced = JSON.parse(String(row[13])); } } catch {}
         currentGroup = { id: 'ex_' + index, phase, name, details: [], baseLift: '', multiplier: 1.0, videoUrl: '', ytId: null, advanced };
       }
       for (let s = 0; s < numSets; s++) {
@@ -406,7 +406,7 @@ export default function ProgramViewer() {
     let cancelled = false;
     async function fetchAndCalcTargets() {
       let maxesResp = { status: 'Error', maxes: {} };
-      try { maxesResp = await getLatestMaxes(athleteName); } catch (e) { maxesResp = { status: 'Error', maxes: {} }; }
+      try { maxesResp = await getLatestMaxes(athleteName); } catch { maxesResp = { status: 'Error', maxes: {} }; }
       const athleteMaxes = {};
       if (maxesResp.status === 'Success' && maxesResp.maxes) {
         Object.keys(maxesResp.maxes).forEach(key => { athleteMaxes[normalizeString(key)] = { oneRM: maxesResp.maxes[key] }; });
@@ -423,7 +423,7 @@ export default function ProgramViewer() {
             if (found) { lastWeights[normEx] = { weight: found.wt || 0, repsString: String(found.reps || '') }; }
           });
         }
-      } catch (e) {}
+      } catch {}
       if (cancelled) return;
       const calcs = {};
       workoutGroups.forEach(group => {
@@ -505,7 +505,6 @@ export default function ProgramViewer() {
     if (!workoutGroups.length) return;
     const setsToLog = [];
     workoutGroups.forEach(group => {
-      const metrics = group.advanced?.metrics || { weight: true };
       const targets = group.advanced?.targets || {};
       group.details.forEach((set, idx) => {
         const key = group.id + '_' + idx;
@@ -556,7 +555,7 @@ export default function ProgramViewer() {
       } else {
         alert('Save failed: ' + (res.message || 'Unknown error'));
       }
-    } catch (err) {
+    } catch {
       alert('Network error. Please try again.');
     }
     setSaving(false);

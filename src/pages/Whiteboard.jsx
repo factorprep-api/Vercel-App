@@ -114,7 +114,7 @@ function Whiteboard() {
   const [playerNumber, setPlayerNumber] = useState('');
   const [currentTemplate, setCurrentTemplate] = useState(FIELD_TEMPLATES[0].id);
   
-  const [renderTrigger, forceRender] = useState({});
+  const [, forceRender] = useState({});
   const rerender = useCallback(() => forceRender({}), []);
 
   const [showSaveModal, setShowSaveModal] = useState(false);
@@ -136,7 +136,7 @@ function Whiteboard() {
         const cats = new Set();
         lib.forEach(ex => { if (ex.muscle) cats.add(ex.muscle); });
         setExistingCategories([...cats]);
-      } catch (e) {}
+      } catch {}
     }
   }, []);
 

@@ -1,12 +1,12 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { Plus, Save, ArrowUp, ArrowDown, Trash2, Hammer, CheckCircle, X, Library as LibIcon, Settings, ArrowLeft } from 'lucide-react';
+import { Plus, Save, ArrowUp, ArrowDown, CheckCircle, X, Settings, ArrowLeft } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { fetchPrograms, fetchLibrary, saveFullProgram, updateProgram, getMediaType } from '../api';
 import './program-builder.css';
 import HelpButton from '../components/HelpButton';
 import { useNavigate } from 'react-router-dom';
 
-function MediaPlayer({ url, compact = false }) {
+function MediaPlayer({ url }) {
   if (!url) return null;
   const isImg = url.toLowerCase().includes('.png') || url.toLowerCase().includes('.jpg') || url.toLowerCase().includes('.jpeg');
   const mediaType = getMediaType(url);
@@ -98,7 +98,7 @@ export default function ProgramBuilder() {
           library: libRes.library,
           cachedAt: new Date().toISOString()
         }));
-      } catch (err) {
+      } catch {
         attempts++;
         if (attempts >= 3) {
           setError('Database connection is weak right now. Please refresh the page.');
@@ -229,7 +229,7 @@ export default function ProgramBuilder() {
       } else { 
         showToast('Save failed', true); 
       }
-    } catch (err) { 
+    } catch { 
       showToast('Network error', true); 
     }
     setSaving(false);
@@ -248,7 +248,7 @@ export default function ProgramBuilder() {
       let loadedAdvanced = DEFAULT_ADVANCED;
       try {
         if (row.length > 13 && row[13]) { loadedAdvanced = JSON.parse(String(row[13])); }
-      } catch (e) {}
+      } catch {}
 
       return {
         phase: String(row[2] || 'Work Block').trim(),

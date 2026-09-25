@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Play, Pause, Square, Plus, Trash2, Save, Activity, Coffee, Volume2, VolumeX, ArrowLeft, ArrowUp, ArrowDown, X, Copy, Repeat, PlusCircle, CheckCircle, AlertCircle } from 'lucide-react';
+import { Play, Pause, Trash2, Save, Activity, Coffee, Volume2, VolumeX, ArrowLeft, ArrowUp, ArrowDown, X, Copy, Repeat, PlusCircle, CheckCircle, AlertCircle } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
 
@@ -49,7 +49,7 @@ export default function IntervalTimer() {
   useEffect(() => {
     const saved = localStorage.getItem(storageKey);
     if (saved) {
-      try { setPresets(JSON.parse(saved)); } catch (e) {}
+      try { setPresets(JSON.parse(saved)); } catch {}
     }
     
     audioRefs.current = {
@@ -108,7 +108,7 @@ export default function IntervalTimer() {
           }, 3500); 
         }
       }
-    } catch (e) {}
+    } catch {}
   };
 
   const formatTime = (totalSeconds) => {

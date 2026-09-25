@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '../supabase';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
@@ -18,7 +18,6 @@ import {
   Dumbbell,
   Clock,
   Activity,
-  Award,
   Smile,
   Zap,
   Moon,
@@ -189,7 +188,7 @@ useEffect(() => {
   const [selectedMetric, setSelectedMetric] = useState('Grip');
 
   // Data states
-  const [loading, setLoading] = useState(true);
+  const [, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [athleteName, setAthleteName] = useState(authAthleteName || '');
   const [maxes, setMaxes] = useState([]);
@@ -505,7 +504,7 @@ useEffect(() => {
           if (row.length > 13 && row[13]) {
             advanced = JSON.parse(String(row[13]));
           }
-        } catch(e) {}
+        } catch {}
 
         exGroups[key] = {
           name: exName,

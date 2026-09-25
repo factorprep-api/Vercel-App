@@ -27,7 +27,7 @@ export default function ProgramLibrary() {
   const [privacyFilter, setPrivacyFilter] = useState('all');
   const [bulkAssigning, setBulkAssigning] = useState(false);
 
-  const { userEmail, role, isLoading: authLoading } = useAuth();
+  const { userEmail, isLoading: authLoading } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -70,7 +70,7 @@ export default function ProgramLibrary() {
           athletes: athRes.athletes || [],
           timestamp: Date.now()
         }));
-      } catch (err) {
+      } catch {
         attempts++;
         if (attempts >= 3) {
           setError('Database connection is weak right now. Please refresh the page.');
@@ -207,7 +207,7 @@ export default function ProgramLibrary() {
       } else {
         showToast('Delete failed', true);
       }
-    } catch (err) {
+    } catch {
       showToast('Network error', true);
     }
     setDeleting(null);
@@ -254,7 +254,7 @@ export default function ProgramLibrary() {
       } else {
         showToast('Assignment failed', true);
       }
-    } catch (err) {
+    } catch {
       showToast('Network error', true);
     }
     setBulkAssigning(false);

@@ -12,7 +12,6 @@ export default function Shop() {
   const navigate = useNavigate();
   const [billingCycle, setBillingCycle] = useState('annual');
   const [checkoutPlan, setCheckoutPlan] = useState(null);
-  const [paymentType, setPaymentType] = useState('po');
   const [isSuccess, setIsSuccess] = useState(false);
   const [showCoupons, setShowCoupons] = useState(false);
 

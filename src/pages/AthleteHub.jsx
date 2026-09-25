@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { ClipboardList, TrendingUp, Timer, Activity, AlertCircle, Calendar } from 'lucide-react';
-import { fetchAthletes, getAthleteByEmail, fetchMedicalLogs } from '../api';
+import { fetchAthletes, fetchMedicalLogs } from '../api';
 
 // Module-level in-memory cache for instantaneous route transitions (0ms navigation)
 const memoryCache = {
