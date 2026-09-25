@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
 import { fetchAthletes, fetchSchedule, fetchWellnessLogs, saveScheduleSession, deleteScheduleSession } from '../api';
-import { ArrowLeft, Calendar, BarChart2, Plus, AlertCircle, CheckCircle, Clock, X, AlertTriangle, Users, Layers, CalendarDays, List, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ArrowLeft, BarChart2, Plus, AlertCircle, CheckCircle, X, AlertTriangle, Users, Layers, CalendarDays, List, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { BarChart, Bar, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer } from 'recharts';
 
 const SQUAD_COLORS = ['#008ed3', '#0ea5e9', '#6366f1', '#8b5cf6', '#ec4899', '#ef4444', '#f97316', '#f59e0b', '#84cc16', '#10b981', '#14b8a6', '#64748b', '#a8a29e'];
@@ -43,8 +43,91 @@ const getIntensityColor = (rpe) => {
   if (rpe <= 8) return '#f59e0b';
   return '#dc2626';
 };
+function calcCoachMetrics(items, isActual = true) {
+  let totalMins = 0;
+  let totalRpeWeighted = 0;
+  let rpeCount = 0;
+  let totalLoad = 0;
+
+  (items || []).forEach(s => {
+    if (s.athletes && Array.isArray(s.athletes)) {
+      s.athletes.forEach(ath => {
+        const mins = isActual ? (ath.actualMins || 0) : (ath.proposedMins || 0);
+        const rpe = isActual ? (ath.actualRpe || 0) : (ath.proposedRpe || 0);
+        const load = isActual ? (ath.actualLoad || (mins * rpe)) : (ath.proposedLoad || (mins * rpe));
+
+        totalMins += mins;
+        if (rpe > 0) {
+          totalRpeWeighted += rpe * mins;
+          rpeCount += mins;
+        }
+        totalLoad += load;
+      });
+    } else {
+      const mins = isActual ? (s.actualMins || 0) : (s.proposedMins || 0);
+      const rpe = isActual ? (s.actualRpe || 0) : (s.proposedRpe || 0);
+      const load = isActual ? (s.actualLoad || (mins * rpe)) : (s.proposedLoad || (mins * rpe));
+
+      totalMins += mins;
+      if (rpe > 0) {
+        totalRpeWeighted += rpe * mins;
+        rpeCount += mins;
+      }
+      totalLoad += load;
+    }
+  });
+
+  const hours = Math.floor(totalMins / 60);
+  const mins = totalMins % 60;
+  const durationStr = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+  const avgRpe = rpeCount > 0 ? (totalRpeWeighted / rpeCount) : 0;
+
+  return { totalMins, durationStr, avgRpe, totalLoad };
+}
+
+// Per-session metrics: uses averaged ACTUAL values when any athlete has logged,
+// otherwise the planned targets. Shared by the calendar cards and agenda cards
+// so both views always display the same numbers.
+function getSessionMetrics(session) {
+  const logged = (session.athletes || []).filter(a => a.status !== 'Proposed');
+  if (logged.length === 0) {
+    return {
+      isActual: false,
+      loggedCount: 0,
+      mins: session.proposedMins || 0,
+      rpe: session.proposedRpe || 0,
+      load: session.proposedLoad || 0
+    };
+  }
+  const sumMins = logged.reduce((sum, a) => sum + (a.actualMins || 0), 0);
+  const sumLoad = logged.reduce((sum, a) => sum + (a.actualLoad || (a.actualMins || 0) * (a.actualRpe || 0)), 0);
+  const rpeWeighted = sumMins > 0 ? logged.reduce((sum, a) => sum + (a.actualRpe || 0) * (a.actualMins || 0), 0) / sumMins : 0;
+  return {
+    isActual: true,
+    loggedCount: logged.length,
+    mins: Math.round(sumMins / logged.length),
+    rpe: rpeWeighted,
+    load: Math.round(sumLoad / logged.length)
+  };
+}
+
+function getWeekMonday(d) {
+  const date = new Date(d);
+  const day = date.getDay();
+  const diff = (day === 0 ? -6 : 1) - day;
+  date.setDate(date.getDate() + diff);
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+function getWeekColor(monday) {
+  const WEEK_COLORS = ['#008ed3', '#8b5cf6', '#f59e0b', '#10b981'];
+  const weekIndex = Math.floor(getWeekMonday(monday).getTime() / (7 * 86400000));
+  return WEEK_COLORS[((weekIndex % 4) + 4) % 4];
+}
+
 export default function CoachSchedule() {
-  const { userEmail, role, isLoading: authLoading } = useAuth();
+  const { userEmail, isLoading: authLoading } = useAuth();
   const navigate = useNavigate();
 
   const [loading, setLoading] = useState(true);
@@ -81,8 +164,10 @@ export default function CoachSchedule() {
   // Audit View State
   const [auditViewMode, setAuditViewMode] = useState('calendar'); // 'calendar' or 'agenda'
   const [auditFilter, setAuditFilter] = useState('all'); // 'all', 'pending', 'completed'
+  const [auditScope, setAuditScope] = useState('month'); // 'week', 'month', 'season'
   const [auditMonth, setAuditMonth] = useState(new Date());
   const [deleting, setDeleting] = useState(false);
+  const [squadPickerOpen, setSquadPickerOpen] = useState(false);
 
   function showToast(message, isError = false) {
     setToast({ message, isError });
@@ -118,7 +203,7 @@ export default function CoachSchedule() {
         showToast(`Proposed session deleted successfully.`);
         await loadData();
       }
-    } catch (err) {
+    } catch {
       showToast("Network error deleting session.", true);
     }
     setDeleting(false);
@@ -493,43 +578,168 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
       });
   }, [groupedAuditSessions, squadSelection, auditFilter]);
 
-  const calendarGridData = useMemo(() => {
-    const year = auditMonth.getFullYear();
-    const month = auditMonth.getMonth();
+  const handleAuditNavigate = (direction) => {
+    const next = new Date(auditMonth);
+    if (auditScope === 'week') {
+      next.setDate(next.getDate() + (direction === 'prev' ? -7 : 7));
+    } else if (auditScope === 'season') {
+      next.setDate(next.getDate() + (direction === 'prev' ? -84 : 84));
+    } else {
+      next.setMonth(next.getMonth() + (direction === 'prev' ? -1 : 1));
+    }
+    setAuditMonth(next);
+  };
 
-    const firstDay = new Date(year, month, 1);
-    const lastDay = new Date(year, month + 1, 0);
-    const daysInMonth = lastDay.getDate();
+  const getAuditHeaderDateLabel = () => {
+    if (auditScope === 'week') {
+      const mon = getWeekMonday(auditMonth);
+      return `Week of ${mon.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}`;
+    }
+    if (auditScope === 'season') {
+      const start = getWeekMonday(auditMonth);
+      const end = new Date(start);
+      end.setDate(end.getDate() + 83);
+      return `Season Block (${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })})`;
+    }
+    return auditMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  };
 
-    let startDayOfWeek = firstDay.getDay() - 1;
-    if (startDayOfWeek < 0) startDayOfWeek = 6;
-
-    const days = [];
-    for (let i = 0; i < startDayOfWeek; i++) {
-      days.push({ type: 'empty', key: `empty-${i}` });
+  const auditScopeMetrics = useMemo(() => {
+    let start, end;
+    if (auditScope === 'week') {
+      start = getWeekMonday(auditMonth);
+      end = new Date(start);
+      end.setDate(end.getDate() + 6);
+      end.setHours(23, 59, 59, 999);
+    } else if (auditScope === 'month') {
+      start = new Date(auditMonth.getFullYear(), auditMonth.getMonth(), 1);
+      end = new Date(auditMonth.getFullYear(), auditMonth.getMonth() + 1, 0, 23, 59, 59, 999);
+    } else {
+      start = getWeekMonday(auditMonth);
+      end = new Date(start);
+      end.setDate(end.getDate() + 83);
+      end.setHours(23, 59, 59, 999);
     }
 
+    const filteredLogs = scheduleLogs.filter(l => {
+      if (l.rawDate < start || l.rawDate > end) return false;
+      if (squadSelection.length > 0 && !squadSelection.includes(l.athlete)) return false;
+      return true;
+    });
+
+    const actualLogs = filteredLogs.filter(l => l.status !== 'Proposed');
+    const proposedLogs = filteredLogs;
+
+    const actualM = calcCoachMetrics(actualLogs, true);
+    const proposedM = calcCoachMetrics(proposedLogs, false);
+
+    return { actualM, proposedM, start, end };
+  }, [scheduleLogs, auditScope, auditMonth, squadSelection]);
+
+  const calendarGridData = useMemo(() => {
     const todayYMD = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}`;
+    const days = [];
 
-    for (let day = 1; day <= daysInMonth; day++) {
-      const dayDate = new Date(year, month, day);
-      const ymd = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-      const daySessions = filteredAuditSessions.filter(s => s.ymd === ymd);
+    if (auditScope === 'week') {
+      const mon = getWeekMonday(auditMonth);
+      for (let i = 0; i < 7; i++) {
+        const dayDate = new Date(mon);
+        dayDate.setDate(mon.getDate() + i);
+        const year = dayDate.getFullYear();
+        const month = dayDate.getMonth();
+        const dayNum = dayDate.getDate();
+        const ymd = `${year}-${String(month + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
+        const daySessions = filteredAuditSessions.filter(s => s.ymd === ymd);
 
-      days.push({
-        type: 'day',
-        dayNumber: day,
-        date: dayDate,
-        ymd: ymd,
-        isToday: ymd === todayYMD,
-        sessions: daySessions
-      });
+        days.push({
+          type: 'day',
+          dayNumber: dayNum,
+          date: dayDate,
+          ymd: ymd,
+          isToday: ymd === todayYMD,
+          sessions: daySessions
+        });
+      }
+    } else if (auditScope === 'season') {
+      const mon = getWeekMonday(auditMonth);
+      for (let i = 0; i < 84; i++) {
+        const dayDate = new Date(mon);
+        dayDate.setDate(mon.getDate() + i);
+        const year = dayDate.getFullYear();
+        const month = dayDate.getMonth();
+        const dayNum = dayDate.getDate();
+        const ymd = `${year}-${String(month + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
+        const daySessions = filteredAuditSessions.filter(s => s.ymd === ymd);
+
+        days.push({
+          type: 'day',
+          dayNumber: dayNum,
+          monthLabel: dayNum === 1 || i === 0 ? dayDate.toLocaleDateString('en-US', { month: 'short' }) : '',
+          date: dayDate,
+          ymd: ymd,
+          isToday: ymd === todayYMD,
+          sessions: daySessions
+        });
+      }
+    } else {
+      const year = auditMonth.getFullYear();
+      const month = auditMonth.getMonth();
+
+      const firstDay = new Date(year, month, 1);
+      const lastDay = new Date(year, month + 1, 0);
+      const daysInMonth = lastDay.getDate();
+
+      let startDayOfWeek = firstDay.getDay() - 1;
+      if (startDayOfWeek < 0) startDayOfWeek = 6;
+
+      for (let i = 0; i < startDayOfWeek; i++) {
+        days.push({ type: 'empty', key: `empty-${i}` });
+      }
+
+      for (let day = 1; day <= daysInMonth; day++) {
+        const dayDate = new Date(year, month, day);
+        const ymd = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        const daySessions = filteredAuditSessions.filter(s => s.ymd === ymd);
+
+        days.push({
+          type: 'day',
+          dayNumber: day,
+          date: dayDate,
+          ymd: ymd,
+          isToday: ymd === todayYMD,
+          sessions: daySessions
+        });
+      }
     }
 
     return days;
-  }, [auditMonth, filteredAuditSessions]);
+  }, [auditMonth, auditScope, filteredAuditSessions]);
 
-   const squadComparison = useMemo(() => {
+  const coachAgendaWeekGroups = useMemo(() => {
+    const groups = [];
+    let lastMondayTime = null;
+    const sorted = [...filteredAuditSessions].sort((a, b) => b.rawDate - a.rawDate);
+    sorted.forEach(session => {
+      const monday = getWeekMonday(session.rawDate);
+      const mondayTime = monday.getTime();
+      if (mondayTime !== lastMondayTime) {
+        groups.push({ monday, sessions: [] });
+        lastMondayTime = mondayTime;
+      }
+      groups[groups.length - 1].sessions.push(session);
+    });
+    groups.forEach(g => {
+      const allLogs = g.sessions.flatMap(s => s.athletes || []);
+      const actualLogs = allLogs.filter(l => l.status !== 'Proposed');
+      const proposedLogs = allLogs;
+      g.actualM = calcCoachMetrics(actualLogs, true);
+      g.proposedM = calcCoachMetrics(proposedLogs, false);
+      g.color = getWeekColor(g.monday);
+    });
+    return groups;
+  }, [filteredAuditSessions]);
+
+  const squadComparison = useMemo(() => {
     if (squadSelection.length === 0) return null;
     const rows = rosterWithLoads.filter(a => squadSelection.includes(a.name));
     let maxDaily = 0;
@@ -710,7 +920,7 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
         showToast(`Session proposed for ${count} athlete${count > 1 ? 's' : ''}!`);
         loadData();
       }
-    } catch(e) { showToast("Failed to save session.", true); }
+    } catch { showToast("Failed to save session.", true); }
     setSaving(false);
   }
 
@@ -1124,63 +1334,105 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
       {/* --- TAB 2: SESSION AUDIT --- */}
       {activeTab === 'audit' && (
         <div className="cs-card">
-          {/* Header Controls */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '16px' }}>
-            <h2 style={{ fontSize: '18px', color: '#0f172a', margin: 0, fontWeight: '800' }}>Session Schedule & Audit</h2>
-            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
-              {/* Filter Buttons */}
-              <div style={{ display: 'flex', background: '#e2e8f0', padding: '4px', borderRadius: '8px' }}>
-                <button onClick={() => setAuditFilter('all')} style={{ padding: '6px 12px', border: 'none', borderRadius: '6px', background: auditFilter === 'all' ? '#fff' : 'transparent', color: auditFilter === 'all' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer', boxShadow: auditFilter === 'all' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>All</button>
-                <button onClick={() => setAuditFilter('pending')} style={{ padding: '6px 12px', border: 'none', borderRadius: '6px', background: auditFilter === 'pending' ? '#fff' : 'transparent', color: auditFilter === 'pending' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer', boxShadow: auditFilter === 'pending' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>Pending</button>
-                <button onClick={() => setAuditFilter('completed')} style={{ padding: '6px 12px', border: 'none', borderRadius: '6px', background: auditFilter === 'completed' ? '#fff' : 'transparent', color: auditFilter === 'completed' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer', boxShadow: auditFilter === 'completed' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>Completed</button>
-              </div>
-              {/* View Mode Toggle */}
-              <div style={{ display: 'flex', background: '#e2e8f0', padding: '4px', borderRadius: '8px' }}>
-                <button onClick={() => setAuditViewMode('calendar')} style={{ padding: '6px 12px', border: 'none', borderRadius: '6px', background: auditViewMode === 'calendar' ? '#fff' : 'transparent', color: auditViewMode === 'calendar' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', boxShadow: auditViewMode === 'calendar' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>
-                  <CalendarDays size={14} /> Calendar View
-                </button>
-                <button onClick={() => setAuditViewMode('agenda')} style={{ padding: '6px 12px', border: 'none', borderRadius: '6px', background: auditViewMode === 'agenda' ? '#fff' : 'transparent', color: auditViewMode === 'agenda' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', boxShadow: auditViewMode === 'agenda' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>
-                  <List size={14} /> Agenda View
-                </button>
-              </div>
-            </div>
-          </div>
+          <h2 style={{ fontSize: '18px', color: '#0f172a', margin: '0 0 12px 0', fontWeight: '800' }}>Session Schedule & Audit</h2>
 
-          {/* Active Selection Banner */}
-          {squadSelection.length > 0 && (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#eff6ff', border: '1px solid #bfdbfe', padding: '10px 16px', borderRadius: '8px', marginBottom: '16px' }}>
-              <span style={{ fontSize: '13px', fontWeight: '700', color: '#1e40af' }}>
-                🎯 Showing schedule for selected athlete{squadSelection.length > 1 ? 's' : ''}: <strong>{squadSelection.join(', ')}</strong>
-              </span>
-              <button onClick={() => setSquadSelection([])} style={{ background: '#dbeafe', color: '#1e40af', border: 'none', padding: '4px 10px', borderRadius: '6px', fontSize: '12px', fontWeight: '800', cursor: 'pointer' }}>
-                Show Entire Squad
+          {/* ===== Consolidated Control Bar — Row 1: Date Navigator | Scope | Mode Filter | View Mode ===== */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+            {/* Date Navigator (scope-aware) */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '4px 8px' }}>
+              <button onClick={() => handleAuditNavigate('prev')} style={{ background: '#fff', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center' }} title="Previous">
+                <ChevronLeft size={16} color="#475569" />
+              </button>
+              <button onClick={() => handleAuditNavigate('next')} style={{ background: '#fff', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center' }} title="Next">
+                <ChevronRight size={16} color="#475569" />
+              </button>
+              <span style={{ fontSize: '12px', fontWeight: '800', color: '#0f172a', whiteSpace: 'nowrap' }}>{getAuditHeaderDateLabel()}</span>
+              <button onClick={() => setAuditMonth(new Date())} style={{ background: '#008ed3', color: '#fff', border: 'none', borderRadius: '6px', padding: '4px 10px', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}>Today</button>
+            </div>
+
+            {/* Scope Selector (bound to calendar viewport) */}
+            <div style={{ display: 'flex', background: '#e2e8f0', padding: '3px', borderRadius: '8px' }}>
+              <button onClick={() => setAuditScope('week')} style={{ padding: '4px 10px', border: 'none', borderRadius: '6px', background: auditScope === 'week' ? '#fff' : 'transparent', color: auditScope === 'week' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer', boxShadow: auditScope === 'week' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>Week</button>
+              <button onClick={() => setAuditScope('month')} style={{ padding: '4px 10px', border: 'none', borderRadius: '6px', background: auditScope === 'month' ? '#fff' : 'transparent', color: auditScope === 'month' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer', boxShadow: auditScope === 'month' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>Month</button>
+              <button onClick={() => setAuditScope('season')} style={{ padding: '4px 10px', border: 'none', borderRadius: '6px', background: auditScope === 'season' ? '#fff' : 'transparent', color: auditScope === 'season' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer', boxShadow: auditScope === 'season' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>Season</button>
+            </div>
+
+            {/* Mode Filter */}
+            <div style={{ display: 'flex', background: '#e2e8f0', padding: '3px', borderRadius: '8px' }}>
+              <button onClick={() => setAuditFilter('all')} style={{ padding: '4px 10px', border: 'none', borderRadius: '6px', background: auditFilter === 'all' ? '#fff' : 'transparent', color: auditFilter === 'all' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer', boxShadow: auditFilter === 'all' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>All</button>
+              <button onClick={() => setAuditFilter('pending')} style={{ padding: '4px 10px', border: 'none', borderRadius: '6px', background: auditFilter === 'pending' ? '#fff' : 'transparent', color: auditFilter === 'pending' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer', boxShadow: auditFilter === 'pending' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>Proposed</button>
+              <button onClick={() => setAuditFilter('completed')} style={{ padding: '4px 10px', border: 'none', borderRadius: '6px', background: auditFilter === 'completed' ? '#fff' : 'transparent', color: auditFilter === 'completed' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer', boxShadow: auditFilter === 'completed' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>Actual</button>
+            </div>
+
+            {/* View Mode */}
+            <div style={{ display: 'flex', background: '#e2e8f0', padding: '3px', borderRadius: '8px' }}>
+              <button onClick={() => setAuditViewMode('calendar')} style={{ padding: '4px 10px', border: 'none', borderRadius: '6px', background: auditViewMode === 'calendar' ? '#fff' : 'transparent', color: auditViewMode === 'calendar' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', boxShadow: auditViewMode === 'calendar' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>
+                <CalendarDays size={14} /> Calendar
+              </button>
+              <button onClick={() => setAuditViewMode('agenda')} style={{ padding: '4px 10px', border: 'none', borderRadius: '6px', background: auditViewMode === 'agenda' ? '#fff' : 'transparent', color: auditViewMode === 'agenda' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', boxShadow: auditViewMode === 'agenda' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>
+                <List size={14} /> Agenda
               </button>
             </div>
-          )}
+
+            {/* Selected Athletes chip (expands to show the full squad filter) */}
+            {squadSelection.length > 0 && (
+              <div style={{ position: 'relative' }}>
+                <button
+                  onClick={() => setSquadPickerOpen(o => !o)}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1e40af', borderRadius: '8px', padding: '4px 10px', fontSize: '12px', fontWeight: 800, cursor: 'pointer', maxWidth: '170px' }}
+                  title={squadSelection.length === 1 ? `Filtered to ${squadSelection[0]}` : `Filtered to ${squadSelection.length} athletes — tap to view`}
+                >
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    🎯 {squadSelection.length === 1 ? squadSelection[0] : `${squadSelection.length} athletes`}
+                  </span>
+                  <span style={{ fontSize: '9px', flexShrink: 0 }}>▾</span>
+                </button>
+                {squadPickerOpen && (
+                  <div style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 60, background: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', boxShadow: '0 8px 24px rgba(15,23,42,0.15)', padding: '10px', minWidth: '210px', maxWidth: 'min(300px, calc(100vw - 48px))' }}>
+                    <div style={{ fontSize: '10px', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>
+                      Schedule filtered — {squadSelection.length} selected
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '10px', maxHeight: '150px', overflowY: 'auto' }}>
+                      {squadSelection.map(name => (
+                        <span key={name} style={{ fontSize: '11px', fontWeight: 700, background: '#eff6ff', color: '#1e40af', border: '1px solid #bfdbfe', borderRadius: '6px', padding: '2px 8px' }}>{name}</span>
+                      ))}
+                    </div>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <button onClick={() => { setSquadSelection([]); setSquadPickerOpen(false); }} style={{ flex: 1, background: '#008ed3', color: '#fff', border: 'none', borderRadius: '6px', padding: '6px', fontSize: '11px', fontWeight: 800, cursor: 'pointer' }}>Show Entire Squad</button>
+                      <button onClick={() => setSquadPickerOpen(false)} style={{ background: '#f1f5f9', color: '#64748b', border: 'none', borderRadius: '6px', padding: '6px 10px', fontSize: '11px', fontWeight: 800, cursor: 'pointer' }}>Close</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* ===== Row 2: Scope Metric Summary (text-only labels, no icons) ===== */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-around', flexWrap: 'wrap', gap: '8px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px', marginBottom: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '12px', color: '#64748b', fontWeight: '700' }}>Duration:</span>
+              <span style={{ fontSize: '14px', fontWeight: '800', color: '#0f172a' }}>{auditScopeMetrics.actualM.durationStr}</span>
+              <span style={{ fontSize: '11px', color: '#94a3b8' }}>/ {auditScopeMetrics.proposedM.durationStr}</span>
+            </div>
+            <div style={{ height: '16px', width: '1px', backgroundColor: '#cbd5e1' }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '12px', color: '#64748b', fontWeight: '700' }}>Avg RPE:</span>
+              <span style={{ fontSize: '14px', fontWeight: '800', color: '#0f172a' }}>{auditScopeMetrics.actualM.avgRpe ? auditScopeMetrics.actualM.avgRpe.toFixed(1) : '—'}</span>
+              <span style={{ fontSize: '11px', color: '#94a3b8' }}>/ {auditScopeMetrics.proposedM.avgRpe ? auditScopeMetrics.proposedM.avgRpe.toFixed(1) : '—'}</span>
+            </div>
+            <div style={{ height: '16px', width: '1px', backgroundColor: '#cbd5e1' }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '12px', color: '#64748b', fontWeight: '700' }}>Load:</span>
+              <span style={{ fontSize: '14px', fontWeight: '900', color: '#008ed3' }}>{auditScopeMetrics.actualM.totalLoad.toLocaleString()} <span style={{ fontSize: '11px', fontWeight: '600', color: '#64748b' }}>AU</span></span>
+              <span style={{ fontSize: '11px', color: '#94a3b8' }}>/ {auditScopeMetrics.proposedM.totalLoad.toLocaleString()} AU</span>
+            </div>
+          </div>
 
           {loading ? <p style={{ color: '#64748b' }}>Loading schedule...</p> : (
             <>
               {/* --- CALENDAR VIEW --- */}
               {auditViewMode === 'calendar' && (
                 <div>
-                  {/* Month Navigation */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', background: '#f8fafc', padding: '10px 16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <button onClick={() => setAuditMonth(new Date(auditMonth.getFullYear(), auditMonth.getMonth() - 1, 1))} style={{ background: '#fff', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
-                        <ChevronLeft size={18} color="#475569" />
-                      </button>
-                      <button onClick={() => setAuditMonth(new Date(auditMonth.getFullYear(), auditMonth.getMonth() + 1, 1))} style={{ background: '#fff', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
-                        <ChevronRight size={18} color="#475569" />
-                      </button>
-                      <h3 style={{ margin: '0 0 0 8px', fontSize: '16px', color: '#0f172a', fontWeight: '800' }}>
-                        {auditMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
-                      </h3>
-                    </div>
-                    <button onClick={() => setAuditMonth(new Date())} style={{ background: '#008ed3', color: '#fff', border: 'none', borderRadius: '6px', padding: '6px 14px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}>
-                      Today
-                    </button>
-                  </div>
-
                   {/* Calendar Grid */}
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '8px', marginBottom: '8px' }}>
                     {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(dayName => (
@@ -1191,51 +1443,70 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '8px' }}>
-                    {calendarGridData.map((cell) => {
+                    {calendarGridData.map((cell, cIdx) => {
                       if (cell.type === 'empty') {
-                        return <div key={cell.key} style={{ minHeight: '100px', background: '#f8fafc', borderRadius: '8px', border: '1px border-dashed #e2e8f0', opacity: 0.5 }} />;
+                        return <div key={cell.key} style={{ minHeight: auditScope === 'week' ? '150px' : '100px', background: '#f8fafc', borderRadius: '8px', border: '1px dashed #e2e8f0', opacity: 0.5 }} />;
                       }
 
+                      const isSunday = (cIdx + 1) % 7 === 0;
+                      const weekSessions = isSunday ? calendarGridData.slice(Math.max(0, cIdx - 6), cIdx + 1).flatMap(c => c.sessions || []) : [];
+                      const weekM = isSunday ? calcCoachMetrics(weekSessions, auditFilter !== 'pending') : null;
+
                       return (
-                        <div key={cell.ymd} style={{ minHeight: '110px', background: cell.isToday ? '#f0f9ff' : '#ffffff', border: cell.isToday ? '2px solid #008ed3' : '1px solid #e2e8f0', borderRadius: '8px', padding: '8px', display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', gap: '6px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span style={{ fontSize: '12px', fontWeight: cell.isToday ? '900' : '700', color: cell.isToday ? '#008ed3' : '#475569', backgroundColor: cell.isToday ? '#e0f2fe' : 'transparent', width: '22px', height: '22px', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                              {cell.dayNumber}
-                            </span>
+                        <div key={cell.ymd} style={{ minHeight: auditScope === 'week' ? '150px' : auditScope === 'season' ? '96px' : '110px', background: cell.isToday ? '#f0f9ff' : '#ffffff', border: cell.isToday ? '2px solid #008ed3' : '1px solid #e2e8f0', borderRadius: '8px', padding: '8px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '6px' }}>
+                          <div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: '22px' }}>
+                              {cell.monthLabel ? (
+                                <span style={{ fontSize: '9px', fontWeight: '800', color: '#008ed3', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{cell.monthLabel}</span>
+                              ) : <span />}
+                              <span style={{ fontSize: '12px', fontWeight: cell.isToday ? '900' : '700', color: cell.isToday ? '#008ed3' : '#475569', backgroundColor: cell.isToday ? '#e0f2fe' : 'transparent', width: '22px', height: '22px', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                                {cell.dayNumber}
+                              </span>
+                            </div>
+
+                            {cell.sessions.map((session, sIdx) => {
+                              const completedCount = session.athletes.filter(a => a.status !== 'Proposed').length;
+                              const isDone = completedCount === session.athletes.length;
+                              const typeColor = TYPE_COLORS[session.type] || '#008ed3';
+                              const sm = getSessionMetrics(session);
+
+                              return (
+                                <div
+                                  key={sIdx}
+                                  onClick={() => setSelectedAuditSession(session)}
+                                  style={{
+                                    backgroundColor: typeColor + '18',
+                                    borderLeft: `4px solid ${typeColor}`,
+                                    borderRadius: '4px',
+                                    padding: '4px 6px',
+                                    cursor: 'pointer',
+                                    fontSize: '11px',
+                                    transition: '0.15s ease',
+                                    marginTop: '4px'
+                                  }}
+                                  title={`${session.type} — ${sm.isActual ? 'Actual' : 'Planned'}: ${sm.mins}m @ RPE ${sm.rpe.toFixed(1)} (${sm.load} AU). ${completedCount}/${session.athletes.length} logged. Click to inspect.`}
+                                >
+                                  <div style={{ fontWeight: '800', color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                    {session.type}
+                                  </div>
+                                  <div style={{ marginTop: '2px', fontSize: '10px', fontWeight: 700, color: sm.isActual ? '#475569' : '#94a3b8', lineHeight: 1.3 }}>
+                                    {sm.isActual ? 'A' : 'P'}: {sm.mins}m · RPE {sm.rpe.toFixed(1)} · <span style={{ color: '#008ed3', fontWeight: 800 }}>{sm.load.toLocaleString()} AU</span>
+                                  </div>
+                                  <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginTop: '2px', fontSize: '10px' }}>
+                                    <span style={{ fontWeight: '800', color: isDone ? '#16a34a' : '#f59e0b' }}>
+                                      {completedCount}/{session.athletes.length}
+                                    </span>
+                                  </div>
+                                </div>
+                              );
+                            })}
                           </div>
 
-                          {cell.sessions.map((session, sIdx) => {
-                            const completedCount = session.athletes.filter(a => a.status !== 'Proposed').length;
-                            const isDone = completedCount === session.athletes.length;
-                            const typeColor = TYPE_COLORS[session.type] || '#008ed3';
-
-                            return (
-                              <div
-                                key={sIdx}
-                                onClick={() => setSelectedAuditSession(session)}
-                                style={{
-                                  backgroundColor: typeColor + '18',
-                                  borderLeft: `4px solid ${typeColor}`,
-                                  borderRadius: '4px',
-                                  padding: '4px 6px',
-                                  cursor: 'pointer',
-                                  fontSize: '11px',
-                                  transition: '0.15s ease'
-                                }}
-                                title={`${session.type} - ${completedCount}/${session.athletes.length} Logged. Click to inspect.`}
-                              >
-                                <div style={{ fontWeight: '800', color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                  {session.type}
-                                </div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '2px', fontSize: '10px' }}>
-                                  <span style={{ color: '#64748b' }}>{session.proposedLoad} AU</span>
-                                  <span style={{ fontWeight: '800', color: isDone ? '#16a34a' : '#f59e0b' }}>
-                                    {completedCount}/{session.athletes.length}
-                                  </span>
-                                </div>
-                              </div>
-                            );
-                          })}
+                          {isSunday && weekM && (
+                            <div style={{ marginTop: '6px', paddingTop: '4px', borderTop: '1px solid #e2e8f0', fontSize: '9px', fontWeight: '700', color: '#475569', backgroundColor: '#f8fafc', borderRadius: '4px', padding: '3px', textAlign: 'center' }}>
+                              Duration: {weekM.durationStr} · RPE {weekM.avgRpe ? weekM.avgRpe.toFixed(1) : '—'} · <span style={{ color: '#008ed3', fontWeight: '800' }}>{weekM.totalLoad.toLocaleString()} AU</span>
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -1246,37 +1517,78 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
               {/* --- AGENDA VIEW --- */}
               {auditViewMode === 'agenda' && (
                 <div style={{ display: 'grid', gap: '12px' }}>
-                  {filteredAuditSessions.length === 0 ? (
+                  {coachAgendaWeekGroups.length === 0 ? (
                     <p style={{ color: '#64748b', textAlign: 'center', padding: '20px' }}>No sessions match your filter.</p>
                   ) : (
-                    filteredAuditSessions.map((session, i) => {
-                      const totalAssigned = session.athletes.length;
-                      const completed = session.athletes.filter(a => a.status !== 'Proposed').length;
-                      const typeColor = TYPE_COLORS[session.type] || '#008ed3';
+                    coachAgendaWeekGroups.map((group, gi) => {
+                      const currentMonday = getWeekMonday(new Date());
+                      const isThisWeek = group.monday.getTime() === currentMonday.getTime();
 
                       return (
-                        <div
-                          key={i}
-                          className="audit-card"
-                          onClick={() => setSelectedAuditSession(session)}
-                          style={{ borderLeft: `6px solid ${typeColor}` }}
-                        >
-                          <div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                              <h3 style={{ margin: 0, fontSize: '16px', color: '#0f172a' }}>{session.type}</h3>
-                              <span style={{ fontSize: '11px', fontWeight: '800', backgroundColor: typeColor + '20', color: typeColor, padding: '2px 8px', borderRadius: '4px' }}>
-                                {session.proposedLoad} AU Target
+                        <div key={gi}>
+                          {/* Week Header + Weekly Metric Summary Pill */}
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '6px', margin: '4px 0 8px 0' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <span style={{ display: 'inline-block', width: '18px', height: '4px', borderRadius: '2px', backgroundColor: group.color }} />
+                              <span style={{ fontSize: '12px', fontWeight: 800, color: group.color, textTransform: 'uppercase' }}>
+                                {isThisWeek ? 'This Week' : `Week of ${group.monday.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}`}
                               </span>
                             </div>
-                            <p style={{ margin: 0, fontSize: '13px', color: '#64748b' }}>
-                              {session.dateStr} {session.location && `• ${session.location}`}
-                            </p>
+                            <span style={{ fontSize: '11px', fontWeight: 700, color: '#475569', background: '#f1f5f9', padding: '3px 8px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                              {group.actualM.durationStr} · Avg RPE {group.actualM.avgRpe ? group.actualM.avgRpe.toFixed(1) : '—'} · <strong style={{ color: group.color }}>{group.actualM.totalLoad.toLocaleString()} AU</strong>
+                              {group.proposedM.totalLoad > 0 && (
+                                <span style={{ color: '#94a3b8' }}> / Plan: {group.proposedM.durationStr} · {group.proposedM.totalLoad.toLocaleString()} AU</span>
+                              )}
+                            </span>
                           </div>
-                          <div style={{ textAlign: 'right' }}>
-                            <div style={{ fontSize: '14px', fontWeight: '800', color: completed === totalAssigned ? '#16a34a' : '#f59e0b' }}>
-                              {completed} / {totalAssigned} Logged
-                            </div>
-                            <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '2px' }}>Click to view audit</div>
+
+                          {/* Session Cards with explicit Planned vs. Actual metrics */}
+                          <div style={{ display: 'grid', gap: '8px' }}>
+                            {group.sessions.map((session, i) => {
+                              const totalAssigned = session.athletes.length;
+                              const completed = session.athletes.filter(a => a.status !== 'Proposed').length;
+                              const typeColor = TYPE_COLORS[session.type] || '#008ed3';
+                              const actualLine = getSessionMetrics(session);
+
+                              return (
+                                <div
+                                  key={i}
+                                  className="audit-card"
+                                  onClick={() => setSelectedAuditSession(session)}
+                                  style={{ borderLeft: `6px solid ${typeColor}` }}
+                                >
+                                  <div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', flexWrap: 'wrap' }}>
+                                      <h3 style={{ margin: 0, fontSize: '16px', color: '#0f172a' }}>{session.type}</h3>
+                                      <span style={{ fontSize: '11px', fontWeight: '800', color: completed === totalAssigned ? '#16a34a' : '#f59e0b' }}>
+                                        {completed} / {totalAssigned} Logged
+                                      </span>
+                                    </div>
+                                    <p style={{ margin: '0 0 4px 0', fontSize: '13px', color: '#64748b' }}>
+                                      {session.dateStr} {session.location && `• ${session.location}`}
+                                    </p>
+                                    {session.proposedMins > 0 && (
+                                      <p style={{ margin: 0, fontSize: '12px', color: '#94a3b8', fontWeight: 700 }}>
+                                        Planned: {session.proposedMins}m @ RPE {Number(session.proposedRpe).toFixed(1)} ({session.proposedLoad} AU)
+                                      </p>
+                                    )}
+                                    {actualLine.isActual ? (
+                                      <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: '#475569', fontWeight: 700 }}>
+                                        Actual: {actualLine.mins}m @ RPE {actualLine.rpe.toFixed(1)} ({actualLine.load.toLocaleString()} AU){actualLine.loggedCount > 1 ? ' avg/athlete' : ''}
+                                      </p>
+                                    ) : (
+                                      <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: '#cbd5e1', fontWeight: 700 }}>Actual: awaiting athlete logs</p>
+                                    )}
+                                  </div>
+                                  <div style={{ textAlign: 'right' }}>
+                                    <div style={{ fontSize: '14px', fontWeight: '900', color: '#008ed3' }}>
+                                      {session.proposedLoad} <span style={{ fontSize: '11px', fontWeight: '600', color: '#64748b' }}>AU Target</span>
+                                    </div>
+                                    <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '2px' }}>Click to view audit</div>
+                                  </div>
+                                </div>
+                              );
+                            })}
                           </div>
                         </div>
                       );
@@ -1506,7 +1818,7 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
   );
 }
 
-const SquadZoneHeatmap = memo(function SquadZoneHeatmap({ data, squadMembers, setSelectedCell, selectedCell }) {
+const SquadZoneHeatmap = memo(function SquadZoneHeatmap({ data, setSelectedCell, selectedCell }) {
   const [typeFilter, setTypeFilter] = useState('All');
   const [mode, setMode] = useState('share');
 
