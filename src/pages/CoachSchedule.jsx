@@ -85,6 +85,32 @@ function calcCoachMetrics(items, isActual = true) {
   return { totalMins, durationStr, avgRpe, totalLoad };
 }
 
+// Per-session metrics: uses averaged ACTUAL values when any athlete has logged,
+// otherwise the planned targets. Shared by the calendar cards and agenda cards
+// so both views always display the same numbers.
+function getSessionMetrics(session) {
+  const logged = (session.athletes || []).filter(a => a.status !== 'Proposed');
+  if (logged.length === 0) {
+    return {
+      isActual: false,
+      loggedCount: 0,
+      mins: session.proposedMins || 0,
+      rpe: session.proposedRpe || 0,
+      load: session.proposedLoad || 0
+    };
+  }
+  const sumMins = logged.reduce((sum, a) => sum + (a.actualMins || 0), 0);
+  const sumLoad = logged.reduce((sum, a) => sum + (a.actualLoad || (a.actualMins || 0) * (a.actualRpe || 0)), 0);
+  const rpeWeighted = sumMins > 0 ? logged.reduce((sum, a) => sum + (a.actualRpe || 0) * (a.actualMins || 0), 0) / sumMins : 0;
+  return {
+    isActual: true,
+    loggedCount: logged.length,
+    mins: Math.round(sumMins / logged.length),
+    rpe: rpeWeighted,
+    load: Math.round(sumLoad / logged.length)
+  };
+}
+
 function getWeekMonday(d) {
   const date = new Date(d);
   const day = date.getDay();
@@ -141,6 +167,7 @@ export default function CoachSchedule() {
   const [auditScope, setAuditScope] = useState('month'); // 'week', 'month', 'season'
   const [auditMonth, setAuditMonth] = useState(new Date());
   const [deleting, setDeleting] = useState(false);
+  const [squadPickerOpen, setSquadPickerOpen] = useState(false);
 
   function showToast(message, isError = false) {
     setToast({ message, isError });
@@ -1346,6 +1373,38 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
                 <List size={14} /> Agenda
               </button>
             </div>
+
+            {/* Selected Athletes chip (expands to show the full squad filter) */}
+            {squadSelection.length > 0 && (
+              <div style={{ position: 'relative' }}>
+                <button
+                  onClick={() => setSquadPickerOpen(o => !o)}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1e40af', borderRadius: '8px', padding: '4px 10px', fontSize: '12px', fontWeight: 800, cursor: 'pointer', maxWidth: '170px' }}
+                  title={squadSelection.length === 1 ? `Filtered to ${squadSelection[0]}` : `Filtered to ${squadSelection.length} athletes — tap to view`}
+                >
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    🎯 {squadSelection.length === 1 ? squadSelection[0] : `${squadSelection.length} athletes`}
+                  </span>
+                  <span style={{ fontSize: '9px', flexShrink: 0 }}>▾</span>
+                </button>
+                {squadPickerOpen && (
+                  <div style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 60, background: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', boxShadow: '0 8px 24px rgba(15,23,42,0.15)', padding: '10px', minWidth: '210px', maxWidth: 'min(300px, calc(100vw - 48px))' }}>
+                    <div style={{ fontSize: '10px', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>
+                      Schedule filtered — {squadSelection.length} selected
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '10px', maxHeight: '150px', overflowY: 'auto' }}>
+                      {squadSelection.map(name => (
+                        <span key={name} style={{ fontSize: '11px', fontWeight: 700, background: '#eff6ff', color: '#1e40af', border: '1px solid #bfdbfe', borderRadius: '6px', padding: '2px 8px' }}>{name}</span>
+                      ))}
+                    </div>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <button onClick={() => { setSquadSelection([]); setSquadPickerOpen(false); }} style={{ flex: 1, background: '#008ed3', color: '#fff', border: 'none', borderRadius: '6px', padding: '6px', fontSize: '11px', fontWeight: 800, cursor: 'pointer' }}>Show Entire Squad</button>
+                      <button onClick={() => setSquadPickerOpen(false)} style={{ background: '#f1f5f9', color: '#64748b', border: 'none', borderRadius: '6px', padding: '6px 10px', fontSize: '11px', fontWeight: 800, cursor: 'pointer' }}>Close</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* ===== Row 2: Scope Metric Summary (text-only labels, no icons) ===== */}
@@ -1368,18 +1427,6 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
               <span style={{ fontSize: '11px', color: '#94a3b8' }}>/ {auditScopeMetrics.proposedM.totalLoad.toLocaleString()} AU</span>
             </div>
           </div>
-
-          {/* Active Selection Banner */}
-          {squadSelection.length > 0 && (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#eff6ff', border: '1px solid #bfdbfe', padding: '10px 16px', borderRadius: '8px', marginBottom: '16px' }}>
-              <span style={{ fontSize: '13px', fontWeight: '700', color: '#1e40af' }}>
-                🎯 Showing schedule for selected athlete{squadSelection.length > 1 ? 's' : ''}: <strong>{squadSelection.join(', ')}</strong>
-              </span>
-              <button onClick={() => setSquadSelection([])} style={{ background: '#dbeafe', color: '#1e40af', border: 'none', padding: '4px 10px', borderRadius: '6px', fontSize: '12px', fontWeight: '800', cursor: 'pointer' }}>
-                Show Entire Squad
-              </button>
-            </div>
-          )}
 
           {loading ? <p style={{ color: '#64748b' }}>Loading schedule...</p> : (
             <>
@@ -1421,6 +1468,7 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
                               const completedCount = session.athletes.filter(a => a.status !== 'Proposed').length;
                               const isDone = completedCount === session.athletes.length;
                               const typeColor = TYPE_COLORS[session.type] || '#008ed3';
+                              const sm = getSessionMetrics(session);
 
                               return (
                                 <div
@@ -1436,13 +1484,15 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
                                     transition: '0.15s ease',
                                     marginTop: '4px'
                                   }}
-                                  title={`${session.type} - ${completedCount}/${session.athletes.length} Logged. Click to inspect.`}
+                                  title={`${session.type} — ${sm.isActual ? 'Actual' : 'Planned'}: ${sm.mins}m @ RPE ${sm.rpe.toFixed(1)} (${sm.load} AU). ${completedCount}/${session.athletes.length} logged. Click to inspect.`}
                                 >
                                   <div style={{ fontWeight: '800', color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                     {session.type}
                                   </div>
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '2px', fontSize: '10px' }}>
-                                    <span style={{ color: '#64748b' }}>{session.proposedLoad} AU</span>
+                                  <div style={{ marginTop: '2px', fontSize: '10px', fontWeight: 700, color: sm.isActual ? '#475569' : '#94a3b8', lineHeight: 1.3 }}>
+                                    {sm.isActual ? 'A' : 'P'}: {sm.mins}m · RPE {sm.rpe.toFixed(1)} · <span style={{ color: '#008ed3', fontWeight: 800 }}>{sm.load.toLocaleString()} AU</span>
+                                  </div>
+                                  <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginTop: '2px', fontSize: '10px' }}>
                                     <span style={{ fontWeight: '800', color: isDone ? '#16a34a' : '#f59e0b' }}>
                                       {completedCount}/{session.athletes.length}
                                     </span>
@@ -1498,19 +1548,7 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
                               const totalAssigned = session.athletes.length;
                               const completed = session.athletes.filter(a => a.status !== 'Proposed').length;
                               const typeColor = TYPE_COLORS[session.type] || '#008ed3';
-                              const loggedAthletes = session.athletes.filter(a => a.status !== 'Proposed');
-
-                              let actualLine = null;
-                              if (loggedAthletes.length > 0) {
-                                const sumMins = loggedAthletes.reduce((sum, a) => sum + (a.actualMins || 0), 0);
-                                const sumLoad = loggedAthletes.reduce((sum, a) => sum + (a.actualLoad || (a.actualMins || 0) * (a.actualRpe || 0)), 0);
-                                const weightedRpe = sumMins > 0 ? loggedAthletes.reduce((sum, a) => sum + (a.actualRpe || 0) * (a.actualMins || 0), 0) / sumMins : 0;
-                                actualLine = {
-                                  mins: Math.round(sumMins / loggedAthletes.length),
-                                  rpe: weightedRpe,
-                                  load: Math.round(sumLoad / loggedAthletes.length)
-                                };
-                              }
+                              const actualLine = getSessionMetrics(session);
 
                               return (
                                 <div
@@ -1534,9 +1572,9 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
                                         Planned: {session.proposedMins}m @ RPE {Number(session.proposedRpe).toFixed(1)} ({session.proposedLoad} AU)
                                       </p>
                                     )}
-                                    {actualLine ? (
+                                    {actualLine.isActual ? (
                                       <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: '#475569', fontWeight: 700 }}>
-                                        Actual: {actualLine.mins}m @ RPE {actualLine.rpe.toFixed(1)} ({actualLine.load.toLocaleString()} AU){loggedAthletes.length > 1 ? ' avg/athlete' : ''}
+                                        Actual: {actualLine.mins}m @ RPE {actualLine.rpe.toFixed(1)} ({actualLine.load.toLocaleString()} AU){actualLine.loggedCount > 1 ? ' avg/athlete' : ''}
                                       </p>
                                     ) : (
                                       <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: '#cbd5e1', fontWeight: 700 }}>Actual: awaiting athlete logs</p>
