@@ -43,6 +43,48 @@ const getIntensityColor = (rpe) => {
   if (rpe <= 8) return '#f59e0b';
   return '#dc2626';
 };
+function calcCoachMetrics(items, isActual = true) {
+  let totalMins = 0;
+  let totalRpeWeighted = 0;
+  let rpeCount = 0;
+  let totalLoad = 0;
+
+  (items || []).forEach(s => {
+    if (s.athletes && Array.isArray(s.athletes)) {
+      s.athletes.forEach(ath => {
+        const mins = isActual ? (ath.actualMins || 0) : (ath.proposedMins || 0);
+        const rpe = isActual ? (ath.actualRpe || 0) : (ath.proposedRpe || 0);
+        const load = isActual ? (ath.actualLoad || (mins * rpe)) : (ath.proposedLoad || (mins * rpe));
+
+        totalMins += mins;
+        if (rpe > 0) {
+          totalRpeWeighted += rpe * mins;
+          rpeCount += mins;
+        }
+        totalLoad += load;
+      });
+    } else {
+      const mins = isActual ? (s.actualMins || 0) : (s.proposedMins || 0);
+      const rpe = isActual ? (s.actualRpe || 0) : (s.proposedRpe || 0);
+      const load = isActual ? (s.actualLoad || (mins * rpe)) : (s.proposedLoad || (mins * rpe));
+
+      totalMins += mins;
+      if (rpe > 0) {
+        totalRpeWeighted += rpe * mins;
+        rpeCount += mins;
+      }
+      totalLoad += load;
+    }
+  });
+
+  const hours = Math.floor(totalMins / 60);
+  const mins = totalMins % 60;
+  const durationStr = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+  const avgRpe = rpeCount > 0 ? (totalRpeWeighted / rpeCount) : 0;
+
+  return { totalMins, durationStr, avgRpe, totalLoad };
+}
+
 export default function CoachSchedule() {
   const { userEmail, role, isLoading: authLoading } = useAuth();
   const navigate = useNavigate();
@@ -81,6 +123,7 @@ export default function CoachSchedule() {
   // Audit View State
   const [auditViewMode, setAuditViewMode] = useState('calendar'); // 'calendar' or 'agenda'
   const [auditFilter, setAuditFilter] = useState('all'); // 'all', 'pending', 'completed'
+  const [auditScope, setAuditScope] = useState('month'); // 'week', 'month', 'season'
   const [auditMonth, setAuditMonth] = useState(new Date());
   const [deleting, setDeleting] = useState(false);
 
@@ -492,6 +535,21 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
         return true;
       });
   }, [groupedAuditSessions, squadSelection, auditFilter]);
+
+  const auditScopeMetrics = useMemo(() => {
+    const days = auditScope === 'week' ? 7 : auditScope === 'month' ? 30 : 90;
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+
+    const filteredLogs = scheduleLogs.filter(l => l.rawDate >= cutoff);
+    const actualLogs = filteredLogs.filter(l => l.status !== 'Proposed');
+    const proposedLogs = filteredLogs;
+
+    const actualM = calcCoachMetrics(actualLogs, true);
+    const proposedM = calcCoachMetrics(proposedLogs, false);
+
+    return { actualM, proposedM };
+  }, [scheduleLogs, auditScope]);
 
   const calendarGridData = useMemo(() => {
     const year = auditMonth.getFullYear();
@@ -1124,15 +1182,49 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
       {/* --- TAB 2: SESSION AUDIT --- */}
       {activeTab === 'audit' && (
         <div className="cs-card">
+          {/* Unified Scope Summary Bar */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+              <span style={{ fontSize: '14px', fontWeight: '800', color: '#0f172a' }}>
+                {auditScope === 'week' ? 'Week (7 Days)' : auditScope === 'month' ? 'Month (30 Days)' : 'Season (90 Days)'} Summary
+              </span>
+              <div style={{ display: 'flex', background: '#e2e8f0', padding: '3px', borderRadius: '8px' }}>
+                <button onClick={() => setAuditScope('week')} style={{ padding: '4px 10px', border: 'none', borderRadius: '6px', background: auditScope === 'week' ? '#fff' : 'transparent', color: auditScope === 'week' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer' }}>Week</button>
+                <button onClick={() => setAuditScope('month')} style={{ padding: '4px 10px', border: 'none', borderRadius: '6px', background: auditScope === 'month' ? '#fff' : 'transparent', color: auditScope === 'month' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer' }}>Month</button>
+                <button onClick={() => setAuditScope('season')} style={{ padding: '4px 10px', border: 'none', borderRadius: '6px', background: auditScope === 'season' ? '#fff' : 'transparent', color: auditScope === 'season' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer' }}>Season</button>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-around', background: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ fontSize: '12px', color: '#64748b', fontWeight: '700' }}>Duration:</span>
+                <span style={{ fontSize: '14px', fontWeight: '800', color: '#0f172a' }}>{auditScopeMetrics.actualM.durationStr}</span>
+                <span style={{ fontSize: '11px', color: '#94a3b8' }}>/ {auditScopeMetrics.proposedM.durationStr}</span>
+              </div>
+              <div style={{ height: '16px', width: '1px', backgroundColor: '#cbd5e1' }} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ fontSize: '12px', color: '#64748b', fontWeight: '700' }}>Avg RPE:</span>
+                <span style={{ fontSize: '14px', fontWeight: '800', color: '#0f172a' }}>{auditScopeMetrics.actualM.avgRpe ? auditScopeMetrics.actualM.avgRpe.toFixed(1) : '—'}</span>
+                <span style={{ fontSize: '11px', color: '#94a3b8' }}>/ {auditScopeMetrics.proposedM.avgRpe ? auditScopeMetrics.proposedM.avgRpe.toFixed(1) : '—'}</span>
+              </div>
+              <div style={{ height: '16px', width: '1px', backgroundColor: '#cbd5e1' }} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ fontSize: '12px', color: '#64748b', fontWeight: '700' }}>Load:</span>
+                <span style={{ fontSize: '14px', fontWeight: '900', color: '#008ed3' }}>{auditScopeMetrics.actualM.totalLoad.toLocaleString()} <span style={{ fontSize: '11px', fontWeight: '600', color: '#64748b' }}>AU</span></span>
+                <span style={{ fontSize: '11px', color: '#94a3b8' }}>/ {auditScopeMetrics.proposedM.totalLoad.toLocaleString()} AU</span>
+              </div>
+            </div>
+          </div>
+
           {/* Header Controls */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '16px' }}>
             <h2 style={{ fontSize: '18px', color: '#0f172a', margin: 0, fontWeight: '800' }}>Session Schedule & Audit</h2>
             <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
               {/* Filter Buttons */}
               <div style={{ display: 'flex', background: '#e2e8f0', padding: '4px', borderRadius: '8px' }}>
-                <button onClick={() => setAuditFilter('all')} style={{ padding: '6px 12px', border: 'none', borderRadius: '6px', background: auditFilter === 'all' ? '#fff' : 'transparent', color: auditFilter === 'all' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer', boxShadow: auditFilter === 'all' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>All</button>
-                <button onClick={() => setAuditFilter('pending')} style={{ padding: '6px 12px', border: 'none', borderRadius: '6px', background: auditFilter === 'pending' ? '#fff' : 'transparent', color: auditFilter === 'pending' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer', boxShadow: auditFilter === 'pending' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>Pending</button>
-                <button onClick={() => setAuditFilter('completed')} style={{ padding: '6px 12px', border: 'none', borderRadius: '6px', background: auditFilter === 'completed' ? '#fff' : 'transparent', color: auditFilter === 'completed' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer', boxShadow: auditFilter === 'completed' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>Completed</button>
+                <button onClick={() => setAuditFilter('all')} style={{ padding: '6px 12px', border: 'none', borderRadius: '6px', background: auditFilter === 'all' ? '#fff' : 'transparent', color: auditFilter === 'all' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer', boxShadow: auditFilter === 'all' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>All View</button>
+                <button onClick={() => setAuditFilter('pending')} style={{ padding: '6px 12px', border: 'none', borderRadius: '6px', background: auditFilter === 'pending' ? '#fff' : 'transparent', color: auditFilter === 'pending' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer', boxShadow: auditFilter === 'pending' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>Proposed Calendar</button>
+                <button onClick={() => setAuditFilter('completed')} style={{ padding: '6px 12px', border: 'none', borderRadius: '6px', background: auditFilter === 'completed' ? '#fff' : 'transparent', color: auditFilter === 'completed' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer', boxShadow: auditFilter === 'completed' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>Actual Calendar</button>
               </div>
               {/* View Mode Toggle */}
               <div style={{ display: 'flex', background: '#e2e8f0', padding: '4px', borderRadius: '8px' }}>
@@ -1191,51 +1283,64 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '8px' }}>
-                    {calendarGridData.map((cell) => {
+                    {calendarGridData.map((cell, cIdx) => {
                       if (cell.type === 'empty') {
                         return <div key={cell.key} style={{ minHeight: '100px', background: '#f8fafc', borderRadius: '8px', border: '1px border-dashed #e2e8f0', opacity: 0.5 }} />;
                       }
 
+                      const isSunday = (cIdx + 1) % 7 === 0;
+                      const weekSessions = isSunday ? calendarGridData.slice(Math.max(0, cIdx - 6), cIdx + 1).flatMap(c => c.sessions || []) : [];
+                      const weekM = isSunday ? calcCoachMetrics(weekSessions, auditFilter !== 'pending') : null;
+
                       return (
-                        <div key={cell.ymd} style={{ minHeight: '110px', background: cell.isToday ? '#f0f9ff' : '#ffffff', border: cell.isToday ? '2px solid #008ed3' : '1px solid #e2e8f0', borderRadius: '8px', padding: '8px', display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', gap: '6px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span style={{ fontSize: '12px', fontWeight: cell.isToday ? '900' : '700', color: cell.isToday ? '#008ed3' : '#475569', backgroundColor: cell.isToday ? '#e0f2fe' : 'transparent', width: '22px', height: '22px', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                              {cell.dayNumber}
-                            </span>
+                        <div key={cell.ymd} style={{ minHeight: '110px', background: cell.isToday ? '#f0f9ff' : '#ffffff', border: cell.isToday ? '2px solid #008ed3' : '1px solid #e2e8f0', borderRadius: '8px', padding: '8px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '6px' }}>
+                          <div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span style={{ fontSize: '12px', fontWeight: cell.isToday ? '900' : '700', color: cell.isToday ? '#008ed3' : '#475569', backgroundColor: cell.isToday ? '#e0f2fe' : 'transparent', width: '22px', height: '22px', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                                {cell.dayNumber}
+                              </span>
+                            </div>
+
+                            {cell.sessions.map((session, sIdx) => {
+                              const completedCount = session.athletes.filter(a => a.status !== 'Proposed').length;
+                              const isDone = completedCount === session.athletes.length;
+                              const typeColor = TYPE_COLORS[session.type] || '#008ed3';
+
+                              return (
+                                <div
+                                  key={sIdx}
+                                  onClick={() => setSelectedAuditSession(session)}
+                                  style={{
+                                    backgroundColor: typeColor + '18',
+                                    borderLeft: `4px solid ${typeColor}`,
+                                    borderRadius: '4px',
+                                    padding: '4px 6px',
+                                    cursor: 'pointer',
+                                    fontSize: '11px',
+                                    transition: '0.15s ease',
+                                    marginTop: '4px'
+                                  }}
+                                  title={`${session.type} - ${completedCount}/${session.athletes.length} Logged. Click to inspect.`}
+                                >
+                                  <div style={{ fontWeight: '800', color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                    {session.type}
+                                  </div>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '2px', fontSize: '10px' }}>
+                                    <span style={{ color: '#64748b' }}>{session.proposedLoad} AU</span>
+                                    <span style={{ fontWeight: '800', color: isDone ? '#16a34a' : '#f59e0b' }}>
+                                      {completedCount}/{session.athletes.length}
+                                    </span>
+                                  </div>
+                                </div>
+                              );
+                            })}
                           </div>
 
-                          {cell.sessions.map((session, sIdx) => {
-                            const completedCount = session.athletes.filter(a => a.status !== 'Proposed').length;
-                            const isDone = completedCount === session.athletes.length;
-                            const typeColor = TYPE_COLORS[session.type] || '#008ed3';
-
-                            return (
-                              <div
-                                key={sIdx}
-                                onClick={() => setSelectedAuditSession(session)}
-                                style={{
-                                  backgroundColor: typeColor + '18',
-                                  borderLeft: `4px solid ${typeColor}`,
-                                  borderRadius: '4px',
-                                  padding: '4px 6px',
-                                  cursor: 'pointer',
-                                  fontSize: '11px',
-                                  transition: '0.15s ease'
-                                }}
-                                title={`${session.type} - ${completedCount}/${session.athletes.length} Logged. Click to inspect.`}
-                              >
-                                <div style={{ fontWeight: '800', color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                  {session.type}
-                                </div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '2px', fontSize: '10px' }}>
-                                  <span style={{ color: '#64748b' }}>{session.proposedLoad} AU</span>
-                                  <span style={{ fontWeight: '800', color: isDone ? '#16a34a' : '#f59e0b' }}>
-                                    {completedCount}/{session.athletes.length}
-                                  </span>
-                                </div>
-                              </div>
-                            );
-                          })}
+                          {isSunday && weekM && (
+                            <div style={{ marginTop: '6px', paddingTop: '4px', borderTop: '1px solid #e2e8f0', fontSize: '9px', fontWeight: '700', color: '#475569', backgroundColor: '#f8fafc', borderRadius: '4px', padding: '3px', textAlign: 'center' }}>
+                              Duration: {weekM.durationStr} · RPE {weekM.avgRpe ? weekM.avgRpe.toFixed(1) : '—'} · <span style={{ color: '#008ed3', fontWeight: '800' }}>{weekM.totalLoad.toLocaleString()} AU</span>
+                            </div>
+                          )}
                         </div>
                       );
                     })}

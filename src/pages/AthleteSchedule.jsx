@@ -60,6 +60,33 @@ function getTypeAbbreviation(type) {
   return map[String(type || '').trim()] || String(type || '').substring(0, 3);
 }
 
+function calcMetrics(sessions, isActual = true) {
+  let totalMins = 0;
+  let totalRpeWeighted = 0;
+  let rpeCount = 0;
+  let totalLoad = 0;
+
+  (sessions || []).forEach(s => {
+    const mins = isActual ? (s.actualMins || 0) : (s.proposedMins || 0);
+    const rpe = isActual ? (s.actualRpe || 0) : (s.proposedRpe || 0);
+    const load = isActual ? (s.actualLoad || (mins * rpe)) : (s.proposedLoad || (mins * rpe));
+
+    totalMins += mins;
+    if (rpe > 0) {
+      totalRpeWeighted += rpe * mins;
+      rpeCount += mins;
+    }
+    totalLoad += load;
+  });
+
+  const hours = Math.floor(totalMins / 60);
+  const mins = totalMins % 60;
+  const durationStr = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+  const avgRpe = rpeCount > 0 ? (totalRpeWeighted / rpeCount) : 0;
+
+  return { totalMins, durationStr, avgRpe, totalLoad };
+}
+
 export default function AthleteSchedule() {
   const { userEmail, athleteName } = useAuth();
   const navigate = useNavigate();
@@ -73,6 +100,7 @@ export default function AthleteSchedule() {
   const [medicalInjuries, setMedicalInjuries] = useState([]); 
 
   const [viewMode, setViewMode] = useState('agenda'); 
+  const [analyticsScope, setAnalyticsScope] = useState('week'); 
 
   const [showManualLog, setShowManualLog] = useState(false);
   const [manualDate, setManualDate] = useState(getTodayYMD()); 
@@ -190,14 +218,10 @@ export default function AthleteSchedule() {
         });
 
         const completed = myLogs.filter(s => s.status !== 'Proposed');
-        const proposed = myLogs.filter(s => s.status === 'Proposed');
-
-        const activeGhostCards = proposed.filter(p => {
-          return !completed.some(c => c.type === p.type && Math.abs(c.rawDate - p.rawDate) < 86400000 * 2);
-        });
+        const proposed = myLogs.filter(s => s.status === 'Proposed' || s.proposedMins > 0);
 
         setCompletedSessions(completed.sort((a,b) => a.rawDate - b.rawDate));
-        setProposedSessions(activeGhostCards.reverse());
+        setProposedSessions(proposed.reverse());
       } else {
         setCompletedSessions([]);
         setProposedSessions([]);
@@ -334,11 +358,26 @@ export default function AthleteSchedule() {
       groups[groups.length - 1].sessions.push(s);
     });
     groups.forEach(g => {
-      g.totalLoad = g.sessions.reduce((sum, s) => sum + s.actualLoad, 0);
+      g.metrics = calcMetrics(g.sessions, true);
+      g.totalLoad = g.metrics.totalLoad;
       g.color = getWeekColor(g.monday);
     });
     return groups;
   }, [completedSessions]);
+
+  const scopeMetrics = useMemo(() => {
+    const days = analyticsScope === 'week' ? 7 : analyticsScope === 'month' ? 30 : 90;
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+    
+    const actualFiltered = completedSessions.filter(s => s.rawDate >= cutoff);
+    const proposedFiltered = proposedSessions.filter(s => s.rawDate >= cutoff);
+
+    const actualM = calcMetrics(actualFiltered, true);
+    const proposedM = calcMetrics(proposedFiltered, false);
+
+    return { actualM, proposedM };
+  }, [completedSessions, proposedSessions, analyticsScope]);
 
   if (saveSuccess) {
     return (
@@ -585,16 +624,33 @@ export default function AthleteSchedule() {
 
       {activeTab === 'analytics' && (
         <>
-          <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
-            <div style={{ flex: 1, backgroundColor: '#fff', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', textAlign: 'center' }}>
-              <div style={{ fontSize: '12px', fontWeight: '700', color: '#64748b', textTransform: 'uppercase' }}>Last 7 Days</div>
-              <div style={{ fontSize: '28px', fontWeight: '900', color: '#008ed3' }}>{rolling7DayLoad} <span style={{ fontSize: '14px', color: '#94a3b8' }}>AU</span></div>
-              <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: '600' }}>Rolling, any day of the week</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px', backgroundColor: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: '14px', fontWeight: '800', color: '#0f172a' }}>
+                {analyticsScope === 'week' ? 'Week (7 Days)' : analyticsScope === 'month' ? 'Month (30 Days)' : 'Season (90 Days)'} Summary
+              </span>
+              <div style={{ display: 'flex', background: '#e2e8f0', padding: '3px', borderRadius: '8px' }}>
+                <button onClick={() => setAnalyticsScope('week')} style={{ padding: '4px 10px', border: 'none', borderRadius: '6px', background: analyticsScope === 'week' ? '#fff' : 'transparent', color: analyticsScope === 'week' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer' }}>Week</button>
+                <button onClick={() => setAnalyticsScope('month')} style={{ padding: '4px 10px', border: 'none', borderRadius: '6px', background: analyticsScope === 'month' ? '#fff' : 'transparent', color: analyticsScope === 'month' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer' }}>Month</button>
+                <button onClick={() => setAnalyticsScope('season')} style={{ padding: '4px 10px', border: 'none', borderRadius: '6px', background: analyticsScope === 'season' ? '#fff' : 'transparent', color: analyticsScope === 'season' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer' }}>Season</button>
+              </div>
             </div>
-            <div style={{ flex: 1, backgroundColor: '#fff', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', textAlign: 'center' }}>
-              <div style={{ fontSize: '12px', fontWeight: '700', color: '#64748b', textTransform: 'uppercase' }}>This Training Week</div>
-              <div style={{ fontSize: '28px', fontWeight: '900', color: '#008ed3' }}>{weekToDateLoad} <span style={{ fontSize: '14px', color: '#94a3b8' }}>AU</span></div>
-              <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: '600' }}>Since Monday — accumulates daily</div>
+
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-around', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px', marginTop: '4px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ fontSize: '12px', color: '#64748b', fontWeight: '700' }}>Duration:</span>
+                <span style={{ fontSize: '14px', fontWeight: '800', color: '#0f172a' }}>{scopeMetrics.actualM.durationStr}</span>
+              </div>
+              <div style={{ height: '16px', width: '1px', backgroundColor: '#cbd5e1' }} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ fontSize: '12px', color: '#64748b', fontWeight: '700' }}>Avg RPE:</span>
+                <span style={{ fontSize: '14px', fontWeight: '800', color: '#0f172a' }}>{scopeMetrics.actualM.avgRpe ? scopeMetrics.actualM.avgRpe.toFixed(1) : '—'}</span>
+              </div>
+              <div style={{ height: '16px', width: '1px', backgroundColor: '#cbd5e1' }} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ fontSize: '12px', color: '#64748b', fontWeight: '700' }}>Load:</span>
+                <span style={{ fontSize: '14px', fontWeight: '900', color: '#008ed3' }}>{scopeMetrics.actualM.totalLoad.toLocaleString()} <span style={{ fontSize: '11px', fontWeight: '600', color: '#64748b' }}>AU</span></span>
+              </div>
             </div>
           </div>
 
@@ -638,7 +694,9 @@ export default function AthleteSchedule() {
                         {isThisWeek ? 'This Week' : `Week of ${group.monday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`}
                       </span>
                     </div>
-                    <span style={{ fontSize: '12px', fontWeight: 800, color: group.color }}>{group.totalLoad} AU total</span>
+                    <span style={{ fontSize: '11px', fontWeight: 700, color: '#475569', background: '#f1f5f9', padding: '3px 8px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                      Duration: {group.metrics.durationStr} · Avg RPE: {group.metrics.avgRpe ? group.metrics.avgRpe.toFixed(1) : '—'} · <strong style={{ color: group.color }}>{group.totalLoad} AU</strong>
+                    </span>
                   </div>
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -684,9 +742,9 @@ export default function AthleteSchedule() {
               return mondays.map((monday, wi) => {
                 const weekEnd = new Date(monday); weekEnd.setDate(monday.getDate() + 7);
                 const sessionsInWeek = sorted.filter(s => s.rawDate >= monday && s.rawDate < weekEnd);
+                const weekMetrics = calcMetrics(sessionsInWeek, true);
                 const weekColor = getWeekColor(monday);
                 const isThisWeek = monday.getTime() === currentMonday.getTime();
-                const weekLoad = sessionsInWeek.reduce((sum, s) => sum + s.actualLoad, 0);
                 const today = new Date(); today.setHours(0, 0, 0, 0);
 
                 return (
@@ -698,7 +756,9 @@ export default function AthleteSchedule() {
                           {isThisWeek ? 'This Week' : `Week of ${monday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`}
                         </span>
                       </div>
-                      <span style={{ fontSize: '12px', fontWeight: 800, color: weekColor }}>{weekLoad} AU total</span>
+                      <span style={{ fontSize: '11px', fontWeight: 700, color: '#475569', background: '#f1f5f9', padding: '3px 8px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                        Duration: {weekMetrics.durationStr} · Avg RPE: {weekMetrics.avgRpe ? weekMetrics.avgRpe.toFixed(1) : '—'} · <strong style={{ color: weekColor }}>{weekMetrics.totalLoad} AU</strong>
+                      </span>
                     </div>
 
                     <div className="cal-scroll">
@@ -710,10 +770,18 @@ export default function AthleteSchedule() {
                           const isToday = dayStart.getTime() === today.getTime();
 
                           return (
-                            <div key={dayIdx} className="cal-cell" style={{ background: isToday ? '#eff6ff' : '#fff' }}>
-                              <div className="cal-day-label" style={{ color: isToday ? '#008ed3' : '#64748b' }}>{dayLabels[dayIdx]}</div>
-                              <div className="cal-day-num" style={{ color: isToday ? '#008ed3' : '#0f172a' }}>{dayStart.getDate()}</div>
-                              {daySessions.map((s, si) => renderCalendarMiniCard(s, si))}
+                            <div key={dayIdx} className="cal-cell" style={{ background: isToday ? '#eff6ff' : '#fff', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                              <div>
+                                <div className="cal-day-label" style={{ color: isToday ? '#008ed3' : '#64748b' }}>{dayLabels[dayIdx]}</div>
+                                <div className="cal-day-num" style={{ color: isToday ? '#008ed3' : '#0f172a' }}>{dayStart.getDate()}</div>
+                                {daySessions.map((s, si) => renderCalendarMiniCard(s, si))}
+                              </div>
+
+                              {dayIdx === 6 && (
+                                <div style={{ marginTop: '6px', paddingTop: '4px', borderTop: '1px solid #e2e8f0', fontSize: '9px', fontWeight: '700', color: '#475569', backgroundColor: '#f8fafc', borderRadius: '4px', padding: '3px' }}>
+                                  Duration: {weekMetrics.durationStr} · RPE {weekMetrics.avgRpe ? weekMetrics.avgRpe.toFixed(1) : '—'} · <span style={{ color: '#008ed3', fontWeight: '800' }}>{weekMetrics.totalLoad} AU</span>
+                                </div>
+                              )}
                             </div>
                           );
                         })}
