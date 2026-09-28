@@ -4,7 +4,7 @@ import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
 import { fetchAthletes, fetchSchedule, fetchWellnessLogs, saveScheduleSession, deleteScheduleSession } from '../api';
 import { ArrowLeft, Calendar, BarChart2, Plus, AlertCircle, CheckCircle, Clock, X, AlertTriangle, Users, Layers, CalendarDays, List, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
-import { BarChart, Bar, Cell, LineChart, Line, ComposedChart, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer } from 'recharts';
+import { BarChart, Bar, Cell, LineChart, Line, ComposedChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer } from 'recharts';
 
 const SQUAD_COLORS = ['#008ed3', '#0ea5e9', '#6366f1', '#8b5cf6', '#ec4899', '#ef4444', '#f97316', '#f59e0b', '#84cc16', '#10b981', '#14b8a6', '#64748b', '#a8a29e'];
 // ===== SESSION TYPE COLORS (aligned with AthleteSchedule) =====
@@ -424,12 +424,22 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
         });
 
         const typeLoads = {};
-        let rpeSum = 0, loadSum = 0;
+        const typeDetails = [];
+        let rpeSum = 0, loadSum = 0, minsSum = 0;
         dayLogs.forEach(l => {
           const type = l.type || 'Other';
           typeLoads[type] = (typeLoads[type] || 0) + l.actualLoad;
           loadSum += l.actualLoad;
+          minsSum += l.actualMins || 0;
           rpeSum += l.actualLoad * l.actualRpe;
+
+          typeDetails.push({
+            type,
+            load: l.actualLoad,
+            mins: l.actualMins || 0,
+            rpe: l.actualRpe || 0,
+            location: l.location || ''
+          });
         });
 
         const well = wellByDayKey[dayKey];
@@ -440,9 +450,11 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
           date: dateStr,
           dateFull: dateFullStr,
           loadSum,
+          minsSum,
           avgRpe: loadSum > 0 ? Math.round((rpeSum / loadSum) * 10) / 10 : null,
           dynoKg,
-          typeLoads
+          typeLoads,
+          typeDetails
         });
       }
 
@@ -1130,11 +1142,14 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', margin: '0 0 16px 0' }}>
                                   <div>
                                     <h4 style={{ margin: 0, color: '#0f172a', fontSize: '14px', fontWeight: '800' }}>
-                                      {loadChartTimeframe === 'week' ? '7-Day' : loadChartTimeframe === 'month' ? '30-Day' : '90-Day'} Load by Session Type & Dyno Trend
+                                      Load by Session Type & Dyno
                                     </h4>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '4px', fontSize: '11px', color: '#64748b' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '4px', fontSize: '11px', color: '#64748b', flexWrap: 'wrap' }}>
                                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                                         <span style={{ width: 10, height: 10, borderRadius: 2, background: '#10b981', display: 'inline-block' }}></span> Load Bars (AU)
+                                      </span>
+                                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#dc2626', display: 'inline-block' }}></span> RPE Dot (1-10)
                                       </span>
                                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                                         <span style={{ width: 10, height: 3, background: '#0284c7', display: 'inline-block' }}></span> Dyno Peak (kg)
@@ -1164,9 +1179,20 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
                                             <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 11 }} />
                                             <YAxis yAxisId="left" axisLine={false} tickLine={false} tick={{ fontSize: 11 }} />
                                             <YAxis yAxisId="right" orientation="right" domain={['auto', 'auto']} axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#0284c7' }} unit="kg" />
-                                            <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.15)', fontSize: '12px' }} formatter={(value, name) => {
+                                            <YAxis yAxisId="rpe" domain={[0, 10]} hide />
+                                            <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.15)', fontSize: '12px' }} formatter={(value, name, item) => {
                                               if (name === 'Dyno Peak') return [`${value} kg`, 'Dyno (Daily)'];
                                               if (name === '7d Dyno Avg') return [`${value} kg`, '7d Dyno Avg'];
+                                              if (name === 'Session RPE') return [`RPE ${value}`, 'Intensity'];
+                                              
+                                              // Session type load with duration breakdown if available
+                                              const payload = item && item.payload;
+                                              if (payload && payload.typeDetails) {
+                                                const match = payload.typeDetails.find(td => td.type === name);
+                                                if (match) {
+                                                  return [`${value} AU (${match.mins}m @ RPE ${match.rpe})`, name];
+                                                }
+                                              }
                                               return [`${value} AU`, name];
                                             }} />
                                             {ath.chartTypes.map(t => (
@@ -1174,6 +1200,16 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
                                             ))}
                                             <Line yAxisId="right" type="monotone" dataKey="dyno7dAvg" name="7d Dyno Avg" stroke="#0284c7" strokeWidth={2.5} strokeDasharray="4 4" dot={false} connectNulls />
                                             <Line yAxisId="right" type="monotone" dataKey="dynoKg" name="Dyno Peak" stroke="#0284c7" strokeWidth={3} dot={{ r: 4, fill: '#0284c7', strokeWidth: 2, stroke: '#ffffff' }} activeDot={{ r: 6 }} connectNulls />
+                                            <Line yAxisId="rpe" type="monotone" dataKey="avgRpe" name="Session RPE" stroke="transparent" dot={(props) => {
+                                              const { cx, cy, payload } = props;
+                                              if (!payload || payload.avgRpe == null || cx == null || cy == null) return null;
+                                              const dotColor = getIntensityColor(payload.avgRpe);
+                                              return (
+                                                <g key={props.key || cx}>
+                                                  <circle cx={cx} cy={cy} r={6} fill={dotColor} stroke="#ffffff" strokeWidth={2} />
+                                                </g>
+                                              );
+                                            }} activeDot={false} connectNulls />
                                           </ComposedChart>
                                         </ResponsiveContainer>
                                       </div>
@@ -1184,6 +1220,7 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
                                             <span style={{ fontSize: '12px', fontWeight: '800', color: '#0f172a' }}>{selectedDay.dateFull || selectedDay.date}</span>
                                             <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
                                               <span>Load: <strong>{selectedDay.loadSum || 0} AU</strong></span>
+                                              <span>Mins: <strong>{selectedDay.minsSum || 0}m</strong></span>
                                               <span>Avg RPE: <strong>{selectedDay.avgRpe != null ? selectedDay.avgRpe : '—'}</strong></span>
                                             </div>
                                           </div>
@@ -1208,22 +1245,8 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
                                     </>
                                   );
                                 })()}
-                                <h4 style={{ margin: '16px 0 8px 0', color: '#0f172a', fontSize: '14px' }}>Daily Intensity (Load-Weighted RPE)</h4>
-                                <div style={{ height: '60px', width: '100%' }}>
-                                  <ResponsiveContainer width="100%" height="100%">
-                                    <BarChart data={ath.chartData}>
-                                      <XAxis dataKey="date" axisLine={false} tickLine={false} tick={false} />
-                                      <YAxis domain={[0, 10]} hide />
-                                      <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
-                                      <Bar dataKey="avgRpe" radius={[3, 3, 0, 0]}>
-                                        {ath.chartData.map((d, i) => (
-                                          <Cell key={i} fill={getIntensityColor(d.avgRpe)} />
-                                        ))}
-                                      </Bar>
-                                    </BarChart>
-                                  </ResponsiveContainer>
-                                </div>
-                                <h4 style={{ margin: '16px 0 8px 0', color: '#0f172a', fontSize: '14px' }}>ACWR Trend (Last 14 Days)</h4>
+
+                                 <h4 style={{ margin: '16px 0 8px 0', color: '#0f172a', fontSize: '14px' }}>ACWR Trend (Last 14 Days)</h4>
                                 <div style={{ height: '80px', width: '100%' }}>
                                   <ResponsiveContainer width="100%" height="100%">
                                     <LineChart data={ath.acwrHistory}>
@@ -1333,11 +1356,14 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', margin: '0 0 16px 0' }}>
                     <div>
                       <h4 style={{ margin: 0, color: '#0f172a', fontSize: '14px', fontWeight: '800' }}>
-                        {drilledAthleteData.name} — {loadChartTimeframe === 'week' ? '7-Day' : loadChartTimeframe === 'month' ? '30-Day' : '90-Day'} Load by Session Type & Dyno Trend
+                        {drilledAthleteData.name} — Load by Session Type & Dyno
                       </h4>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '4px', fontSize: '11px', color: '#64748b' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '4px', fontSize: '11px', color: '#64748b', flexWrap: 'wrap' }}>
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                           <span style={{ width: 10, height: 10, borderRadius: 2, background: '#10b981', display: 'inline-block' }}></span> Load Bars (AU)
+                        </span>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                          <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#dc2626', display: 'inline-block' }}></span> RPE Dot (1-10)
                         </span>
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                           <span style={{ width: 10, height: 3, background: '#0284c7', display: 'inline-block' }}></span> Dyno Peak (kg)
@@ -1367,9 +1393,19 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
                               <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 11 }} />
                               <YAxis yAxisId="left" axisLine={false} tickLine={false} tick={{ fontSize: 11 }} />
                               <YAxis yAxisId="right" orientation="right" domain={['auto', 'auto']} axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#0284c7' }} unit="kg" />
-                              <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.15)', fontSize: '12px' }} formatter={(value, name) => {
+                              <YAxis yAxisId="rpe" domain={[0, 10]} hide />
+                              <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.15)', fontSize: '12px' }} formatter={(value, name, item) => {
                                 if (name === 'Dyno Peak') return [`${value} kg`, 'Dyno (Daily)'];
                                 if (name === '7d Dyno Avg') return [`${value} kg`, '7d Dyno Avg'];
+                                if (name === 'Session RPE') return [`RPE ${value}`, 'Intensity'];
+                                
+                                const payload = item && item.payload;
+                                if (payload && payload.typeDetails) {
+                                  const match = payload.typeDetails.find(td => td.type === name);
+                                  if (match) {
+                                    return [`${value} AU (${match.mins}m @ RPE ${match.rpe})`, name];
+                                  }
+                                }
                                 return [`${value} AU`, name];
                               }} />
                               {drilledAthleteData.chartTypes.map(t => (
@@ -1377,6 +1413,16 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
                               ))}
                               <Line yAxisId="right" type="monotone" dataKey="dyno7dAvg" name="7d Dyno Avg" stroke="#0284c7" strokeWidth={2.5} strokeDasharray="4 4" dot={false} connectNulls />
                               <Line yAxisId="right" type="monotone" dataKey="dynoKg" name="Dyno Peak" stroke="#0284c7" strokeWidth={3} dot={{ r: 4, fill: '#0284c7', strokeWidth: 2, stroke: '#ffffff' }} activeDot={{ r: 6 }} connectNulls />
+                              <Line yAxisId="rpe" type="monotone" dataKey="avgRpe" name="Session RPE" stroke="transparent" dot={(props) => {
+                                const { cx, cy, payload } = props;
+                                if (!payload || payload.avgRpe == null || cx == null || cy == null) return null;
+                                const dotColor = getIntensityColor(payload.avgRpe);
+                                return (
+                                  <g key={props.key || cx}>
+                                    <circle cx={cx} cy={cy} r={6} fill={dotColor} stroke="#ffffff" strokeWidth={2} />
+                                  </g>
+                                );
+                              }} activeDot={false} connectNulls />
                             </ComposedChart>
                           </ResponsiveContainer>
                         </div>
@@ -1388,6 +1434,7 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
                               <span style={{ fontSize: '12px', fontWeight: '800', color: '#0f172a' }}>{selectedDay.dateFull || selectedDay.date}</span>
                               <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
                                 <span>Load: <strong>{selectedDay.loadSum || 0} AU</strong></span>
+                                <span>Mins: <strong>{selectedDay.minsSum || 0}m</strong></span>
                                 <span>Avg RPE: <strong>{selectedDay.avgRpe != null ? selectedDay.avgRpe : '—'}</strong></span>
                               </div>
                             </div>
