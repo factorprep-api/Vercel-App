@@ -3,8 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
 import { fetchAthletes, fetchSchedule, fetchWellnessLogs, saveScheduleSession, deleteScheduleSession } from '../api';
-import { ArrowLeft, BarChart2, Plus, AlertCircle, CheckCircle, X, AlertTriangle, Users, Layers, CalendarDays, List, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
-import { BarChart, Bar, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer } from 'recharts';
+import { ArrowLeft, Calendar, BarChart2, Plus, AlertCircle, CheckCircle, Clock, X, AlertTriangle, Users, Layers, CalendarDays, List, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { BarChart, Bar, Cell, LineChart, Line, ComposedChart, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer } from 'recharts';
 
 const SQUAD_COLORS = ['#008ed3', '#0ea5e9', '#6366f1', '#8b5cf6', '#ec4899', '#ef4444', '#f97316', '#f59e0b', '#84cc16', '#10b981', '#14b8a6', '#64748b', '#a8a29e'];
 // ===== SESSION TYPE COLORS (aligned with AthleteSchedule) =====
@@ -85,32 +85,6 @@ function calcCoachMetrics(items, isActual = true) {
   return { totalMins, durationStr, avgRpe, totalLoad };
 }
 
-// Per-session metrics: uses averaged ACTUAL values when any athlete has logged,
-// otherwise the planned targets. Shared by the calendar cards and agenda cards
-// so both views always display the same numbers.
-function getSessionMetrics(session) {
-  const logged = (session.athletes || []).filter(a => a.status !== 'Proposed');
-  if (logged.length === 0) {
-    return {
-      isActual: false,
-      loggedCount: 0,
-      mins: session.proposedMins || 0,
-      rpe: session.proposedRpe || 0,
-      load: session.proposedLoad || 0
-    };
-  }
-  const sumMins = logged.reduce((sum, a) => sum + (a.actualMins || 0), 0);
-  const sumLoad = logged.reduce((sum, a) => sum + (a.actualLoad || (a.actualMins || 0) * (a.actualRpe || 0)), 0);
-  const rpeWeighted = sumMins > 0 ? logged.reduce((sum, a) => sum + (a.actualRpe || 0) * (a.actualMins || 0), 0) / sumMins : 0;
-  return {
-    isActual: true,
-    loggedCount: logged.length,
-    mins: Math.round(sumMins / logged.length),
-    rpe: rpeWeighted,
-    load: Math.round(sumLoad / logged.length)
-  };
-}
-
 function getWeekMonday(d) {
   const date = new Date(d);
   const day = date.getDay();
@@ -127,7 +101,7 @@ function getWeekColor(monday) {
 }
 
 export default function CoachSchedule() {
-  const { userEmail, isLoading: authLoading } = useAuth();
+  const { userEmail, role, isLoading: authLoading } = useAuth();
   const navigate = useNavigate();
 
   const [loading, setLoading] = useState(true);
@@ -139,6 +113,8 @@ export default function CoachSchedule() {
   const [expandedAthlete, setExpandedAthlete] = useState(null);
   const [hoveredAthlete, setHoveredAthlete] = useState(null);
   const [drilledAthlete, setDrilledAthlete] = useState(null);
+  const [loadChartTimeframe, setLoadChartTimeframe] = useState('week'); // 'week' (7d), 'month' (30d), 'season' (90d)
+  const [selectedChartDate, setSelectedChartDate] = useState(null);
 
   const [squadAxis, setSquadAxis] = useState('rel');
   const [searchQuery, setSearchQuery] = useState('');
@@ -167,7 +143,6 @@ export default function CoachSchedule() {
   const [auditScope, setAuditScope] = useState('month'); // 'week', 'month', 'season'
   const [auditMonth, setAuditMonth] = useState(new Date());
   const [deleting, setDeleting] = useState(false);
-  const [squadPickerOpen, setSquadPickerOpen] = useState(false);
 
   function showToast(message, isError = false) {
     setToast({ message, isError });
@@ -203,7 +178,7 @@ export default function CoachSchedule() {
         showToast(`Proposed session deleted successfully.`);
         await loadData();
       }
-    } catch {
+    } catch (err) {
       showToast("Network error deleting session.", true);
     }
     setDeleting(false);
@@ -410,37 +385,100 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
       let acwr = 0;
       if (chronicLoad > 0) acwr = acuteLoad / chronicLoad;
 
-      // 14-Day Load by Session Type
-      const chartMap = {};
-      for (let i = 13; i >= 0; i--) {
-        const d = new Date(today); d.setDate(today.getDate() - i);
-        chartMap[d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })] = { rpeSum: 0, loadSum: 0 };
-      }
-
-      athLogsFiltered.forEach(l => {
-        if (l.rawDate < new Date(today.getTime() - 14 * 24 * 60 * 60 * 1000)) return;
-        const dStr = l.rawDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-        const day = chartMap[dStr];
-        if (!day) return;
-        const type = l.type || 'Other';
-        day[type] = (day[type] || 0) + l.actualLoad;
-        day.loadSum += l.actualLoad;
-        day.rpeSum += l.actualLoad * l.actualRpe;
+      // Build multi-timeframe Load & Dyno Chart Series (90d max lookback)
+      const numDays = 90;
+      const dayEntries = [];
+      const wellEntries = wellnessByEmail[ath.email] || [];
+      const wellByDayKey = {};
+      
+      wellEntries.forEach(w => {
+        if (w.rawDate) {
+          const dk = new Date(w.rawDate.getFullYear(), w.rawDate.getMonth(), w.rawDate.getDate()).getTime();
+          wellByDayKey[dk] = w;
+        }
       });
 
-      const chartData = Object.values(chartMap).map((day, idx) => {
-        const { rpeSum, loadSum, ...typeLoads } = day;
+      // Calculate 28-day baseline average grip for percentage calculations
+      let grip28Sum = 0, grip28Count = 0;
+      wellEntries.forEach(w => {
+        if (w.grip != null && w.rawDate) {
+          const dk = new Date(w.rawDate.getFullYear(), w.rawDate.getMonth(), w.rawDate.getDate()).getTime();
+          if (dk >= wellMin28) {
+            grip28Sum += w.grip;
+            grip28Count++;
+          }
+        }
+      });
+      const gripBaselineAvg = grip28Count > 0 ? grip28Sum / grip28Count : null;
+
+      for (let i = numDays - 1; i >= 0; i--) {
+        const d = new Date(today); d.setDate(today.getDate() - i);
+        const dayKey = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+        const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        const dateFullStr = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+        
+        // Find logs for this day
+        const dayLogs = athLogsFiltered.filter(l => {
+          const lKey = new Date(l.rawDate.getFullYear(), l.rawDate.getMonth(), l.rawDate.getDate()).getTime();
+          return lKey === dayKey;
+        });
+
+        const typeLoads = {};
+        let rpeSum = 0, loadSum = 0;
+        dayLogs.forEach(l => {
+          const type = l.type || 'Other';
+          typeLoads[type] = (typeLoads[type] || 0) + l.actualLoad;
+          loadSum += l.actualLoad;
+          rpeSum += l.actualLoad * l.actualRpe;
+        });
+
+        const well = wellByDayKey[dayKey];
+        const dynoKg = well && well.grip != null ? Number(well.grip) : null;
+
+        dayEntries.push({
+          dayKey,
+          date: dateStr,
+          dateFull: dateFullStr,
+          loadSum,
+          avgRpe: loadSum > 0 ? Math.round((rpeSum / loadSum) * 10) / 10 : null,
+          dynoKg,
+          typeLoads
+        });
+      }
+
+      // Compute 7-day rolling average Dyno for each day
+      const fullChartData = dayEntries.map((day, idx) => {
+        const slice7 = dayEntries.slice(Math.max(0, idx - 6), idx + 1);
+        const validGrips = slice7.map(d => d.dynoKg).filter(g => g != null);
+        const dyno7dAvg = validGrips.length > 0 ? Math.round((validGrips.reduce((a, b) => a + b, 0) / validGrips.length) * 10) / 10 : null;
+        
+        let dynoPct = null;
+        if (day.dynoKg != null && gripBaselineAvg && gripBaselineAvg > 0) {
+          dynoPct = Math.round((day.dynoKg / gripBaselineAvg) * 100);
+        } else if (dyno7dAvg != null && gripBaselineAvg && gripBaselineAvg > 0) {
+          dynoPct = Math.round((dyno7dAvg / gripBaselineAvg) * 100);
+        }
+
         return {
-          date: Object.keys(chartMap)[idx],
-          ...typeLoads,
-          avgRpe: loadSum > 0 ? Math.round((rpeSum / loadSum) * 10) / 10 : null
+          ...day,
+          ...day.typeLoads,
+          dyno7dAvg,
+          dynoPct
         };
       });
 
+      // Filter for timeframes (7d, 30d, 90d)
+      const chartData7d = fullChartData.slice(-7);
+      const chartData30d = fullChartData.slice(-30);
+      const chartData90d = fullChartData;
+
+      // Backward compatible default 14-day series
+      const chartData = fullChartData.slice(-14);
+
       const chartTypes = [];
-      chartData.forEach(day => {
-        Object.keys(day).forEach(k => {
-          if (k !== 'date' && k !== 'avgRpe' && !chartTypes.includes(k)) chartTypes.push(k);
+      fullChartData.forEach(day => {
+        Object.keys(day.typeLoads).forEach(k => {
+          if (!chartTypes.includes(k)) chartTypes.push(k);
         });
       });
 
@@ -462,13 +500,11 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
         acwrHistory.push({ day: 13 - i, acwr: chronicWin > 0 ? Math.round((acuteWin / chronicWin) * 100) / 100 : null });
       }
 
-      // --- WELLNESS (Wellness_Logs joined by email; missing components skipped, never zero) ---
-      const wellEntries = wellnessByEmail[ath.email] || [];
-      const wellDayComp = {}; // dayKey -> pooled { sum, count } for the 14-day series
+      // --- WELLNESS SUMMARY CALCULATIONS ---
       let well7Sum = 0, well7Count = 0;
-      let grip28Sum = 0, grip28Count = 0;
       let latestGrip = null;
       let latestWellEntry = null;
+      const wellDayComp = {};
 
       wellEntries.forEach(w => {
         const dk = new Date(w.rawDate.getFullYear(), w.rawDate.getMonth(), w.rawDate.getDate()).getTime();
@@ -524,7 +560,27 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
       if (acwr > 0 && acwr < 0.8) flags.push({ label: 'Undertraining', detail: 'ACWR below 0.8 — detraining risk', color: '#0ea5e9' });
       if (sessions7d === 0 && chronicLoad > 0) flags.push({ label: 'Inactive', detail: 'No sessions logged in the last 7 days', color: '#dc2626' });
 
-      return { ...ath, acuteLoad, chronicLoad, acwr, chartData, chartTypes, monotony, strain, sessions7d, acwrHistory, flags, wellnessComposite, wellnessTip, gripPct, wellnessHistory, hasWellness };
+      return { 
+        ...ath, 
+        acuteLoad, 
+        chronicLoad, 
+        acwr, 
+        chartData, 
+        chartData7d, 
+        chartData30d, 
+        chartData90d, 
+        chartTypes, 
+        monotony, 
+        strain, 
+        sessions7d, 
+        acwrHistory, 
+        flags, 
+        wellnessComposite, 
+        wellnessTip, 
+        gripPct, 
+        wellnessHistory, 
+        hasWellness 
+      };
     });
   }, [roster, logsByAthlete, wellnessByEmail]);
 
@@ -593,7 +649,7 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
   const getAuditHeaderDateLabel = () => {
     if (auditScope === 'week') {
       const mon = getWeekMonday(auditMonth);
-      return `Week of ${mon.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}`;
+      return `Week of ${mon.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
     }
     if (auditScope === 'season') {
       const start = getWeekMonday(auditMonth);
@@ -920,7 +976,7 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
         showToast(`Session proposed for ${count} athlete${count > 1 ? 's' : ''}!`);
         loadData();
       }
-    } catch { showToast("Failed to save session.", true); }
+    } catch(e) { showToast("Failed to save session.", true); }
     setSaving(false);
   }
 
@@ -1068,20 +1124,87 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
                           <tr>
                             <td colSpan="10" style={{ padding: 0, borderBottom: '2px solid #e2e8f0' }}>
                               <div style={{ background: '#f8fafc', padding: '20px', borderTop: '1px solid #e2e8f0' }}>
-                                <h4 style={{ margin: '0 0 16px 0', color: '#0f172a', fontSize: '14px' }}>14-Day Load by Session Type</h4>
-                                <div style={{ height: '200px', width: '100%' }}>
-                                  <ResponsiveContainer width="100%" height="100%">
-                                    <BarChart data={ath.chartData}>
-                                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#cbd5e1" />
-                                      <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 11 }} />
-                                      <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 11 }} />
-                                      <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
-                                      {ath.chartTypes.map(t => (
-                                        <Bar key={t} dataKey={t} stackId="load" fill={TYPE_COLORS[t] || '#64748b'} />
-                                      ))}
-                                    </BarChart>
-                                  </ResponsiveContainer>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', margin: '0 0 16px 0' }}>
+                                  <div>
+                                    <h4 style={{ margin: 0, color: '#0f172a', fontSize: '14px', fontWeight: '800' }}>
+                                      {loadChartTimeframe === 'week' ? '7-Day' : loadChartTimeframe === 'month' ? '30-Day' : '90-Day'} Load by Session Type & Dyno Trend
+                                    </h4>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '4px', fontSize: '11px', color: '#64748b' }}>
+                                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                        <span style={{ width: 10, height: 10, borderRadius: 2, background: '#10b981', display: 'inline-block' }}></span> Load Bars (AU)
+                                      </span>
+                                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                        <span style={{ width: 10, height: 3, background: '#0284c7', display: 'inline-block' }}></span> Dyno Peak (kg)
+                                      </span>
+                                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                        <span style={{ width: 10, height: 2, borderTop: '2px dashed #0284c7', display: 'inline-block' }}></span> 7d Dyno Avg
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  <div style={{ display: 'flex', background: '#e2e8f0', padding: '3px', borderRadius: '8px' }}>
+                                    <button onClick={() => { setLoadChartTimeframe('week'); setSelectedChartDate(null); }} style={{ padding: '4px 10px', border: 'none', borderRadius: '6px', background: loadChartTimeframe === 'week' ? '#fff' : 'transparent', color: loadChartTimeframe === 'week' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer', boxShadow: loadChartTimeframe === 'week' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>Week (7d)</button>
+                                    <button onClick={() => { setLoadChartTimeframe('month'); setSelectedChartDate(null); }} style={{ padding: '4px 10px', border: 'none', borderRadius: '6px', background: loadChartTimeframe === 'month' ? '#fff' : 'transparent', color: loadChartTimeframe === 'month' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer', boxShadow: loadChartTimeframe === 'month' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>Month (30d)</button>
+                                    <button onClick={() => { setLoadChartTimeframe('season'); setSelectedChartDate(null); }} style={{ padding: '4px 10px', border: 'none', borderRadius: '6px', background: loadChartTimeframe === 'season' ? '#fff' : 'transparent', color: loadChartTimeframe === 'season' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer', boxShadow: loadChartTimeframe === 'season' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>Season (90d)</button>
+                                  </div>
                                 </div>
+                                {(() => {
+                                  const activeSeries = loadChartTimeframe === 'week' ? ath.chartData7d : loadChartTimeframe === 'month' ? ath.chartData30d : ath.chartData90d;
+                                  const selectedDay = selectedChartDate ? activeSeries.find(d => d.date === selectedChartDate) : null;
+
+                                  return (
+                                    <>
+                                      <div style={{ height: '220px', width: '100%' }}>
+                                        <ResponsiveContainer width="100%" height="100%">
+                                          <ComposedChart data={activeSeries} onClick={(e) => { if (e && e.activePayload && e.activePayload[0]) { setSelectedChartDate(e.activePayload[0].payload.date); } }}>
+                                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#cbd5e1" />
+                                            <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 11 }} />
+                                            <YAxis yAxisId="left" axisLine={false} tickLine={false} tick={{ fontSize: 11 }} />
+                                            <YAxis yAxisId="right" orientation="right" domain={['auto', 'auto']} axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#0284c7' }} unit="kg" />
+                                            <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.15)', fontSize: '12px' }} formatter={(value, name) => {
+                                              if (name === 'Dyno Peak') return [`${value} kg`, 'Dyno (Daily)'];
+                                              if (name === '7d Dyno Avg') return [`${value} kg`, '7d Dyno Avg'];
+                                              return [`${value} AU`, name];
+                                            }} />
+                                            {ath.chartTypes.map(t => (
+                                              <Bar key={t} yAxisId="left" dataKey={t} stackId="load" fill={TYPE_COLORS[t] || '#64748b'} cursor="pointer" />
+                                            ))}
+                                            <Line yAxisId="right" type="monotone" dataKey="dyno7dAvg" name="7d Dyno Avg" stroke="#0284c7" strokeWidth={2.5} strokeDasharray="4 4" dot={false} connectNulls />
+                                            <Line yAxisId="right" type="monotone" dataKey="dynoKg" name="Dyno Peak" stroke="#0284c7" strokeWidth={3} dot={{ r: 4, fill: '#0284c7', strokeWidth: 2, stroke: '#ffffff' }} activeDot={{ r: 6 }} connectNulls />
+                                          </ComposedChart>
+                                        </ResponsiveContainer>
+                                      </div>
+                                      {/* Mobile & Desktop Tap Inspection Box */}
+                                      {selectedDay && (
+                                        <div style={{ marginTop: '12px', padding: '12px 16px', background: '#ffffff', border: '1px solid #008ed3', borderRadius: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', boxShadow: '0 2px 8px rgba(0,142,211,0.08)' }}>
+                                          <div>
+                                            <span style={{ fontSize: '12px', fontWeight: '800', color: '#0f172a' }}>{selectedDay.dateFull || selectedDay.date}</span>
+                                            <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                                              <span>Load: <strong>{selectedDay.loadSum || 0} AU</strong></span>
+                                              <span>Avg RPE: <strong>{selectedDay.avgRpe != null ? selectedDay.avgRpe : '—'}</strong></span>
+                                            </div>
+                                          </div>
+                                          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                                            <div style={{ textAlign: 'right' }}>
+                                              <span style={{ fontSize: '10px', textTransform: 'uppercase', fontWeight: '800', color: '#0284c7' }}>Dyno Peak</span>
+                                              <p style={{ margin: 0, fontSize: '14px', fontWeight: '800', color: '#0284c7' }}>
+                                                {selectedDay.dynoKg != null ? `${selectedDay.dynoKg} kg` : '—'}
+                                              </p>
+                                            </div>
+                                            <div style={{ textAlign: 'right', paddingLeft: '12px', borderLeft: '1px solid #e2e8f0' }}>
+                                              <span style={{ fontSize: '10px', textTransform: 'uppercase', fontWeight: '800', color: '#64748b' }}>7d Trend</span>
+                                              <p style={{ margin: 0, fontSize: '14px', fontWeight: '800', color: '#0f172a' }}>
+                                                {selectedDay.dyno7dAvg != null ? `${selectedDay.dyno7dAvg} kg` : '—'}
+                                                {selectedDay.dynoPct != null && <span style={{ fontSize: '11px', color: '#64748b', fontWeight: '600', marginLeft: '4px' }}>({selectedDay.dynoPct}%)</span>}
+                                              </p>
+                                            </div>
+                                            <button onClick={() => setSelectedChartDate(null)} style={{ background: '#f1f5f9', border: 'none', borderRadius: '50%', width: '22px', height: '22px', cursor: 'pointer', color: '#64748b', fontWeight: 'bold', fontSize: '12px' }}>✕</button>
+                                          </div>
+                                        </div>
+                                      )}
+                                    </>
+                                  );
+                                })()}
                                 <h4 style={{ margin: '16px 0 8px 0', color: '#0f172a', fontSize: '14px' }}>Daily Intensity (Load-Weighted RPE)</h4>
                                 <div style={{ height: '60px', width: '100%' }}>
                                   <ResponsiveContainer width="100%" height="100%">
@@ -1204,20 +1327,88 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
 
               {drilledAthlete && drilledAthleteData && (
                 <div style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid #e2e8f0' }}>
-                  <h4 style={{ margin: '0 0 16px 0', color: '#0f172a', fontSize: '14px' }}>{drilledAthleteData.name} — 14-Day Load by Session Type</h4>
-                  <div style={{ height: '200px', width: '100%' }}>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={drilledAthleteData.chartData}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#cbd5e1" />
-                        <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 11 }} />
-                        <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 11 }} />
-                        <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
-                        {drilledAthleteData.chartTypes.map(t => (
-                          <Bar key={t} dataKey={t} stackId="load" fill={TYPE_COLORS[t] || '#64748b'} />
-                        ))}
-                      </BarChart>
-                    </ResponsiveContainer>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', margin: '0 0 16px 0' }}>
+                    <div>
+                      <h4 style={{ margin: 0, color: '#0f172a', fontSize: '14px', fontWeight: '800' }}>
+                        {drilledAthleteData.name} — {loadChartTimeframe === 'week' ? '7-Day' : loadChartTimeframe === 'month' ? '30-Day' : '90-Day'} Load by Session Type & Dyno Trend
+                      </h4>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '4px', fontSize: '11px', color: '#64748b' }}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                          <span style={{ width: 10, height: 10, borderRadius: 2, background: '#10b981', display: 'inline-block' }}></span> Load Bars (AU)
+                        </span>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                          <span style={{ width: 10, height: 3, background: '#0284c7', display: 'inline-block' }}></span> Dyno Peak (kg)
+                        </span>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                          <span style={{ width: 10, height: 2, borderTop: '2px dashed #0284c7', display: 'inline-block' }}></span> 7d Dyno Avg
+                        </span>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', background: '#e2e8f0', padding: '3px', borderRadius: '8px' }}>
+                      <button onClick={() => { setLoadChartTimeframe('week'); setSelectedChartDate(null); }} style={{ padding: '4px 10px', border: 'none', borderRadius: '6px', background: loadChartTimeframe === 'week' ? '#fff' : 'transparent', color: loadChartTimeframe === 'week' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer', boxShadow: loadChartTimeframe === 'week' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>Week (7d)</button>
+                      <button onClick={() => { setLoadChartTimeframe('month'); setSelectedChartDate(null); }} style={{ padding: '4px 10px', border: 'none', borderRadius: '6px', background: loadChartTimeframe === 'month' ? '#fff' : 'transparent', color: loadChartTimeframe === 'month' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer', boxShadow: loadChartTimeframe === 'month' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>Month (30d)</button>
+                      <button onClick={() => { setLoadChartTimeframe('season'); setSelectedChartDate(null); }} style={{ padding: '4px 10px', border: 'none', borderRadius: '6px', background: loadChartTimeframe === 'season' ? '#fff' : 'transparent', color: loadChartTimeframe === 'season' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer', boxShadow: loadChartTimeframe === 'season' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>Season (90d)</button>
+                    </div>
                   </div>
+                  {(() => {
+                    const activeSeries = loadChartTimeframe === 'week' ? drilledAthleteData.chartData7d : loadChartTimeframe === 'month' ? drilledAthleteData.chartData30d : drilledAthleteData.chartData90d;
+                    const selectedDay = selectedChartDate ? activeSeries.find(d => d.date === selectedChartDate) : null;
+
+                    return (
+                      <>
+                        <div style={{ height: '220px', width: '100%' }}>
+                          <ResponsiveContainer width="100%" height="100%">
+                            <ComposedChart data={activeSeries} onClick={(e) => { if (e && e.activePayload && e.activePayload[0]) { setSelectedChartDate(e.activePayload[0].payload.date); } }}>
+                              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#cbd5e1" />
+                              <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 11 }} />
+                              <YAxis yAxisId="left" axisLine={false} tickLine={false} tick={{ fontSize: 11 }} />
+                              <YAxis yAxisId="right" orientation="right" domain={['auto', 'auto']} axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#0284c7' }} unit="kg" />
+                              <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.15)', fontSize: '12px' }} formatter={(value, name) => {
+                                if (name === 'Dyno Peak') return [`${value} kg`, 'Dyno (Daily)'];
+                                if (name === '7d Dyno Avg') return [`${value} kg`, '7d Dyno Avg'];
+                                return [`${value} AU`, name];
+                              }} />
+                              {drilledAthleteData.chartTypes.map(t => (
+                                <Bar key={t} yAxisId="left" dataKey={t} stackId="load" fill={TYPE_COLORS[t] || '#64748b'} cursor="pointer" />
+                              ))}
+                              <Line yAxisId="right" type="monotone" dataKey="dyno7dAvg" name="7d Dyno Avg" stroke="#0284c7" strokeWidth={2.5} strokeDasharray="4 4" dot={false} connectNulls />
+                              <Line yAxisId="right" type="monotone" dataKey="dynoKg" name="Dyno Peak" stroke="#0284c7" strokeWidth={3} dot={{ r: 4, fill: '#0284c7', strokeWidth: 2, stroke: '#ffffff' }} activeDot={{ r: 6 }} connectNulls />
+                            </ComposedChart>
+                          </ResponsiveContainer>
+                        </div>
+
+                        {/* Mobile & Desktop Tap Inspection Box */}
+                        {selectedDay && (
+                          <div style={{ marginTop: '12px', padding: '12px 16px', background: '#ffffff', border: '1px solid #008ed3', borderRadius: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', boxShadow: '0 2px 8px rgba(0,142,211,0.08)' }}>
+                            <div>
+                              <span style={{ fontSize: '12px', fontWeight: '800', color: '#0f172a' }}>{selectedDay.dateFull || selectedDay.date}</span>
+                              <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                                <span>Load: <strong>{selectedDay.loadSum || 0} AU</strong></span>
+                                <span>Avg RPE: <strong>{selectedDay.avgRpe != null ? selectedDay.avgRpe : '—'}</strong></span>
+                              </div>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                              <div style={{ textAlign: 'right' }}>
+                                <span style={{ fontSize: '10px', textTransform: 'uppercase', fontWeight: '800', color: '#0284c7' }}>Dyno Peak</span>
+                                <p style={{ margin: 0, fontSize: '14px', fontWeight: '800', color: '#0284c7' }}>
+                                  {selectedDay.dynoKg != null ? `${selectedDay.dynoKg} kg` : '—'}
+                                </p>
+                              </div>
+                              <div style={{ textAlign: 'right', paddingLeft: '12px', borderLeft: '1px solid #e2e8f0' }}>
+                                <span style={{ fontSize: '10px', textTransform: 'uppercase', fontWeight: '800', color: '#64748b' }}>7d Trend</span>
+                                <p style={{ margin: 0, fontSize: '14px', fontWeight: '800', color: '#0f172a' }}>
+                                  {selectedDay.dyno7dAvg != null ? `${selectedDay.dyno7dAvg} kg` : '—'}
+                                  {selectedDay.dynoPct != null && <span style={{ fontSize: '11px', color: '#64748b', fontWeight: '600', marginLeft: '4px' }}>({selectedDay.dynoPct}%)</span>}
+                                </p>
+                              </div>
+                              <button onClick={() => setSelectedChartDate(null)} style={{ background: '#f1f5f9', border: 'none', borderRadius: '50%', width: '22px', height: '22px', cursor: 'pointer', color: '#64748b', fontWeight: 'bold', fontSize: '12px' }}>✕</button>
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
                   <h4 style={{ margin: '16px 0 8px 0', color: '#0f172a', fontSize: '14px' }}>Daily Intensity (Load-Weighted RPE)</h4>
                   <div style={{ height: '60px', width: '100%' }}>
                     <ResponsiveContainer width="100%" height="100%">
@@ -1334,105 +1525,97 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
       {/* --- TAB 2: SESSION AUDIT --- */}
       {activeTab === 'audit' && (
         <div className="cs-card">
-          <h2 style={{ fontSize: '18px', color: '#0f172a', margin: '0 0 12px 0', fontWeight: '800' }}>Session Schedule & Audit</h2>
-
-          {/* ===== Consolidated Control Bar — Row 1: Date Navigator | Scope | Mode Filter | View Mode ===== */}
-          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-            {/* Date Navigator (scope-aware) */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '4px 8px' }}>
-              <button onClick={() => handleAuditNavigate('prev')} style={{ background: '#fff', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center' }} title="Previous">
-                <ChevronLeft size={16} color="#475569" />
-              </button>
-              <button onClick={() => handleAuditNavigate('next')} style={{ background: '#fff', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center' }} title="Next">
-                <ChevronRight size={16} color="#475569" />
-              </button>
-              <span style={{ fontSize: '12px', fontWeight: '800', color: '#0f172a', whiteSpace: 'nowrap' }}>{getAuditHeaderDateLabel()}</span>
-              <button onClick={() => setAuditMonth(new Date())} style={{ background: '#008ed3', color: '#fff', border: 'none', borderRadius: '6px', padding: '4px 10px', fontSize: '11px', fontWeight: '700', cursor: 'pointer' }}>Today</button>
-            </div>
-
-            {/* Scope Selector (bound to calendar viewport) */}
-            <div style={{ display: 'flex', background: '#e2e8f0', padding: '3px', borderRadius: '8px' }}>
-              <button onClick={() => setAuditScope('week')} style={{ padding: '4px 10px', border: 'none', borderRadius: '6px', background: auditScope === 'week' ? '#fff' : 'transparent', color: auditScope === 'week' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer', boxShadow: auditScope === 'week' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>Week</button>
-              <button onClick={() => setAuditScope('month')} style={{ padding: '4px 10px', border: 'none', borderRadius: '6px', background: auditScope === 'month' ? '#fff' : 'transparent', color: auditScope === 'month' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer', boxShadow: auditScope === 'month' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>Month</button>
-              <button onClick={() => setAuditScope('season')} style={{ padding: '4px 10px', border: 'none', borderRadius: '6px', background: auditScope === 'season' ? '#fff' : 'transparent', color: auditScope === 'season' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer', boxShadow: auditScope === 'season' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>Season</button>
-            </div>
-
-            {/* Mode Filter */}
-            <div style={{ display: 'flex', background: '#e2e8f0', padding: '3px', borderRadius: '8px' }}>
-              <button onClick={() => setAuditFilter('all')} style={{ padding: '4px 10px', border: 'none', borderRadius: '6px', background: auditFilter === 'all' ? '#fff' : 'transparent', color: auditFilter === 'all' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer', boxShadow: auditFilter === 'all' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>All</button>
-              <button onClick={() => setAuditFilter('pending')} style={{ padding: '4px 10px', border: 'none', borderRadius: '6px', background: auditFilter === 'pending' ? '#fff' : 'transparent', color: auditFilter === 'pending' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer', boxShadow: auditFilter === 'pending' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>Proposed</button>
-              <button onClick={() => setAuditFilter('completed')} style={{ padding: '4px 10px', border: 'none', borderRadius: '6px', background: auditFilter === 'completed' ? '#fff' : 'transparent', color: auditFilter === 'completed' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer', boxShadow: auditFilter === 'completed' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>Actual</button>
-            </div>
-
-            {/* View Mode */}
-            <div style={{ display: 'flex', background: '#e2e8f0', padding: '3px', borderRadius: '8px' }}>
-              <button onClick={() => setAuditViewMode('calendar')} style={{ padding: '4px 10px', border: 'none', borderRadius: '6px', background: auditViewMode === 'calendar' ? '#fff' : 'transparent', color: auditViewMode === 'calendar' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', boxShadow: auditViewMode === 'calendar' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>
-                <CalendarDays size={14} /> Calendar
-              </button>
-              <button onClick={() => setAuditViewMode('agenda')} style={{ padding: '4px 10px', border: 'none', borderRadius: '6px', background: auditViewMode === 'agenda' ? '#fff' : 'transparent', color: auditViewMode === 'agenda' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', boxShadow: auditViewMode === 'agenda' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>
-                <List size={14} /> Agenda
-              </button>
-            </div>
-
-            {/* Selected Athletes chip (expands to show the full squad filter) */}
-            {squadSelection.length > 0 && (
-              <div style={{ position: 'relative' }}>
-                <button
-                  onClick={() => setSquadPickerOpen(o => !o)}
-                  style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1e40af', borderRadius: '8px', padding: '4px 10px', fontSize: '12px', fontWeight: 800, cursor: 'pointer', maxWidth: '170px' }}
-                  title={squadSelection.length === 1 ? `Filtered to ${squadSelection[0]}` : `Filtered to ${squadSelection.length} athletes — tap to view`}
-                >
-                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    🎯 {squadSelection.length === 1 ? squadSelection[0] : `${squadSelection.length} athletes`}
-                  </span>
-                  <span style={{ fontSize: '9px', flexShrink: 0 }}>▾</span>
-                </button>
-                {squadPickerOpen && (
-                  <div style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 60, background: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', boxShadow: '0 8px 24px rgba(15,23,42,0.15)', padding: '10px', minWidth: '210px', maxWidth: 'min(300px, calc(100vw - 48px))' }}>
-                    <div style={{ fontSize: '10px', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>
-                      Schedule filtered — {squadSelection.length} selected
-                    </div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '10px', maxHeight: '150px', overflowY: 'auto' }}>
-                      {squadSelection.map(name => (
-                        <span key={name} style={{ fontSize: '11px', fontWeight: 700, background: '#eff6ff', color: '#1e40af', border: '1px solid #bfdbfe', borderRadius: '6px', padding: '2px 8px' }}>{name}</span>
-                      ))}
-                    </div>
-                    <div style={{ display: 'flex', gap: '6px' }}>
-                      <button onClick={() => { setSquadSelection([]); setSquadPickerOpen(false); }} style={{ flex: 1, background: '#008ed3', color: '#fff', border: 'none', borderRadius: '6px', padding: '6px', fontSize: '11px', fontWeight: 800, cursor: 'pointer' }}>Show Entire Squad</button>
-                      <button onClick={() => setSquadPickerOpen(false)} style={{ background: '#f1f5f9', color: '#64748b', border: 'none', borderRadius: '6px', padding: '6px 10px', fontSize: '11px', fontWeight: 800, cursor: 'pointer' }}>Close</button>
-                    </div>
-                  </div>
-                )}
+          {/* Unified Scope Summary Bar */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+              <span style={{ fontSize: '14px', fontWeight: '800', color: '#0f172a' }}>
+                {auditScope === 'week' ? 'Week (7 Days)' : auditScope === 'month' ? 'Month (30 Days)' : 'Season (90 Days)'} Summary
+              </span>
+              <div style={{ display: 'flex', background: '#e2e8f0', padding: '3px', borderRadius: '8px' }}>
+                <button onClick={() => setAuditScope('week')} style={{ padding: '4px 10px', border: 'none', borderRadius: '6px', background: auditScope === 'week' ? '#fff' : 'transparent', color: auditScope === 'week' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer' }}>Week</button>
+                <button onClick={() => setAuditScope('month')} style={{ padding: '4px 10px', border: 'none', borderRadius: '6px', background: auditScope === 'month' ? '#fff' : 'transparent', color: auditScope === 'month' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer' }}>Month</button>
+                <button onClick={() => setAuditScope('season')} style={{ padding: '4px 10px', border: 'none', borderRadius: '6px', background: auditScope === 'season' ? '#fff' : 'transparent', color: auditScope === 'season' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer' }}>Season</button>
               </div>
-            )}
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-around', background: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ fontSize: '12px', color: '#64748b', fontWeight: '700' }}>Duration:</span>
+                <span style={{ fontSize: '14px', fontWeight: '800', color: '#0f172a' }}>{auditScopeMetrics.actualM.durationStr}</span>
+                <span style={{ fontSize: '11px', color: '#94a3b8' }}>/ {auditScopeMetrics.proposedM.durationStr}</span>
+              </div>
+              <div style={{ height: '16px', width: '1px', backgroundColor: '#cbd5e1' }} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ fontSize: '12px', color: '#64748b', fontWeight: '700' }}>Avg RPE:</span>
+                <span style={{ fontSize: '14px', fontWeight: '800', color: '#0f172a' }}>{auditScopeMetrics.actualM.avgRpe ? auditScopeMetrics.actualM.avgRpe.toFixed(1) : '—'}</span>
+                <span style={{ fontSize: '11px', color: '#94a3b8' }}>/ {auditScopeMetrics.proposedM.avgRpe ? auditScopeMetrics.proposedM.avgRpe.toFixed(1) : '—'}</span>
+              </div>
+              <div style={{ height: '16px', width: '1px', backgroundColor: '#cbd5e1' }} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ fontSize: '12px', color: '#64748b', fontWeight: '700' }}>Load:</span>
+                <span style={{ fontSize: '14px', fontWeight: '900', color: '#008ed3' }}>{auditScopeMetrics.actualM.totalLoad.toLocaleString()} <span style={{ fontSize: '11px', fontWeight: '600', color: '#64748b' }}>AU</span></span>
+                <span style={{ fontSize: '11px', color: '#94a3b8' }}>/ {auditScopeMetrics.proposedM.totalLoad.toLocaleString()} AU</span>
+              </div>
+            </div>
           </div>
 
-          {/* ===== Row 2: Scope Metric Summary (text-only labels, no icons) ===== */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-around', flexWrap: 'wrap', gap: '8px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px', marginBottom: '16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontSize: '12px', color: '#64748b', fontWeight: '700' }}>Duration:</span>
-              <span style={{ fontSize: '14px', fontWeight: '800', color: '#0f172a' }}>{auditScopeMetrics.actualM.durationStr}</span>
-              <span style={{ fontSize: '11px', color: '#94a3b8' }}>/ {auditScopeMetrics.proposedM.durationStr}</span>
-            </div>
-            <div style={{ height: '16px', width: '1px', backgroundColor: '#cbd5e1' }} />
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontSize: '12px', color: '#64748b', fontWeight: '700' }}>Avg RPE:</span>
-              <span style={{ fontSize: '14px', fontWeight: '800', color: '#0f172a' }}>{auditScopeMetrics.actualM.avgRpe ? auditScopeMetrics.actualM.avgRpe.toFixed(1) : '—'}</span>
-              <span style={{ fontSize: '11px', color: '#94a3b8' }}>/ {auditScopeMetrics.proposedM.avgRpe ? auditScopeMetrics.proposedM.avgRpe.toFixed(1) : '—'}</span>
-            </div>
-            <div style={{ height: '16px', width: '1px', backgroundColor: '#cbd5e1' }} />
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontSize: '12px', color: '#64748b', fontWeight: '700' }}>Load:</span>
-              <span style={{ fontSize: '14px', fontWeight: '900', color: '#008ed3' }}>{auditScopeMetrics.actualM.totalLoad.toLocaleString()} <span style={{ fontSize: '11px', fontWeight: '600', color: '#64748b' }}>AU</span></span>
-              <span style={{ fontSize: '11px', color: '#94a3b8' }}>/ {auditScopeMetrics.proposedM.totalLoad.toLocaleString()} AU</span>
+          {/* Header Controls */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '16px' }}>
+            <h2 style={{ fontSize: '18px', color: '#0f172a', margin: 0, fontWeight: '800' }}>Session Schedule & Audit</h2>
+            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
+              {/* Filter Buttons */}
+              <div style={{ display: 'flex', background: '#e2e8f0', padding: '4px', borderRadius: '8px' }}>
+                <button onClick={() => setAuditFilter('all')} style={{ padding: '6px 12px', border: 'none', borderRadius: '6px', background: auditFilter === 'all' ? '#fff' : 'transparent', color: auditFilter === 'all' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer', boxShadow: auditFilter === 'all' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>All View</button>
+                <button onClick={() => setAuditFilter('pending')} style={{ padding: '6px 12px', border: 'none', borderRadius: '6px', background: auditFilter === 'pending' ? '#fff' : 'transparent', color: auditFilter === 'pending' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer', boxShadow: auditFilter === 'pending' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>Proposed Calendar</button>
+                <button onClick={() => setAuditFilter('completed')} style={{ padding: '6px 12px', border: 'none', borderRadius: '6px', background: auditFilter === 'completed' ? '#fff' : 'transparent', color: auditFilter === 'completed' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer', boxShadow: auditFilter === 'completed' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>Actual Calendar</button>
+              </div>
+              {/* View Mode Toggle */}
+              <div style={{ display: 'flex', background: '#e2e8f0', padding: '4px', borderRadius: '8px' }}>
+                <button onClick={() => setAuditViewMode('calendar')} style={{ padding: '6px 12px', border: 'none', borderRadius: '6px', background: auditViewMode === 'calendar' ? '#fff' : 'transparent', color: auditViewMode === 'calendar' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', boxShadow: auditViewMode === 'calendar' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>
+                  <CalendarDays size={14} /> Calendar View
+                </button>
+                <button onClick={() => setAuditViewMode('agenda')} style={{ padding: '6px 12px', border: 'none', borderRadius: '6px', background: auditViewMode === 'agenda' ? '#fff' : 'transparent', color: auditViewMode === 'agenda' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', boxShadow: auditViewMode === 'agenda' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>
+                  <List size={14} /> Agenda View
+                </button>
+              </div>
             </div>
           </div>
+
+          {/* Active Selection Banner */}
+          {squadSelection.length > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#eff6ff', border: '1px solid #bfdbfe', padding: '10px 16px', borderRadius: '8px', marginBottom: '16px' }}>
+              <span style={{ fontSize: '13px', fontWeight: '700', color: '#1e40af' }}>
+                🎯 Showing schedule for selected athlete{squadSelection.length > 1 ? 's' : ''}: <strong>{squadSelection.join(', ')}</strong>
+              </span>
+              <button onClick={() => setSquadSelection([])} style={{ background: '#dbeafe', color: '#1e40af', border: 'none', padding: '4px 10px', borderRadius: '6px', fontSize: '12px', fontWeight: '800', cursor: 'pointer' }}>
+                Show Entire Squad
+              </button>
+            </div>
+          )}
 
           {loading ? <p style={{ color: '#64748b' }}>Loading schedule...</p> : (
             <>
               {/* --- CALENDAR VIEW --- */}
               {auditViewMode === 'calendar' && (
                 <div>
+                  {/* Month Navigation */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', background: '#f8fafc', padding: '10px 16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <button onClick={() => setAuditMonth(new Date(auditMonth.getFullYear(), auditMonth.getMonth() - 1, 1))} style={{ background: '#fff', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                        <ChevronLeft size={18} color="#475569" />
+                      </button>
+                      <button onClick={() => setAuditMonth(new Date(auditMonth.getFullYear(), auditMonth.getMonth() + 1, 1))} style={{ background: '#fff', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                        <ChevronRight size={18} color="#475569" />
+                      </button>
+                      <h3 style={{ margin: '0 0 0 8px', fontSize: '16px', color: '#0f172a', fontWeight: '800' }}>
+                        {auditMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                      </h3>
+                    </div>
+                    <button onClick={() => setAuditMonth(new Date())} style={{ background: '#008ed3', color: '#fff', border: 'none', borderRadius: '6px', padding: '6px 14px', fontSize: '12px', fontWeight: '700', cursor: 'pointer' }}>
+                      Today
+                    </button>
+                  </div>
+
                   {/* Calendar Grid */}
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '8px', marginBottom: '8px' }}>
                     {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(dayName => (
@@ -1445,7 +1628,7 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '8px' }}>
                     {calendarGridData.map((cell, cIdx) => {
                       if (cell.type === 'empty') {
-                        return <div key={cell.key} style={{ minHeight: auditScope === 'week' ? '150px' : '100px', background: '#f8fafc', borderRadius: '8px', border: '1px dashed #e2e8f0', opacity: 0.5 }} />;
+                        return <div key={cell.key} style={{ minHeight: '100px', background: '#f8fafc', borderRadius: '8px', border: '1px border-dashed #e2e8f0', opacity: 0.5 }} />;
                       }
 
                       const isSunday = (cIdx + 1) % 7 === 0;
@@ -1453,12 +1636,9 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
                       const weekM = isSunday ? calcCoachMetrics(weekSessions, auditFilter !== 'pending') : null;
 
                       return (
-                        <div key={cell.ymd} style={{ minHeight: auditScope === 'week' ? '150px' : auditScope === 'season' ? '96px' : '110px', background: cell.isToday ? '#f0f9ff' : '#ffffff', border: cell.isToday ? '2px solid #008ed3' : '1px solid #e2e8f0', borderRadius: '8px', padding: '8px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '6px' }}>
+                        <div key={cell.ymd} style={{ minHeight: '110px', background: cell.isToday ? '#f0f9ff' : '#ffffff', border: cell.isToday ? '2px solid #008ed3' : '1px solid #e2e8f0', borderRadius: '8px', padding: '8px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '6px' }}>
                           <div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: '22px' }}>
-                              {cell.monthLabel ? (
-                                <span style={{ fontSize: '9px', fontWeight: '800', color: '#008ed3', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{cell.monthLabel}</span>
-                              ) : <span />}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                               <span style={{ fontSize: '12px', fontWeight: cell.isToday ? '900' : '700', color: cell.isToday ? '#008ed3' : '#475569', backgroundColor: cell.isToday ? '#e0f2fe' : 'transparent', width: '22px', height: '22px', borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                                 {cell.dayNumber}
                               </span>
@@ -1468,7 +1648,6 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
                               const completedCount = session.athletes.filter(a => a.status !== 'Proposed').length;
                               const isDone = completedCount === session.athletes.length;
                               const typeColor = TYPE_COLORS[session.type] || '#008ed3';
-                              const sm = getSessionMetrics(session);
 
                               return (
                                 <div
@@ -1484,15 +1663,13 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
                                     transition: '0.15s ease',
                                     marginTop: '4px'
                                   }}
-                                  title={`${session.type} — ${sm.isActual ? 'Actual' : 'Planned'}: ${sm.mins}m @ RPE ${sm.rpe.toFixed(1)} (${sm.load} AU). ${completedCount}/${session.athletes.length} logged. Click to inspect.`}
+                                  title={`${session.type} - ${completedCount}/${session.athletes.length} Logged. Click to inspect.`}
                                 >
                                   <div style={{ fontWeight: '800', color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                     {session.type}
                                   </div>
-                                  <div style={{ marginTop: '2px', fontSize: '10px', fontWeight: 700, color: sm.isActual ? '#475569' : '#94a3b8', lineHeight: 1.3 }}>
-                                    {sm.isActual ? 'A' : 'P'}: {sm.mins}m · RPE {sm.rpe.toFixed(1)} · <span style={{ color: '#008ed3', fontWeight: 800 }}>{sm.load.toLocaleString()} AU</span>
-                                  </div>
-                                  <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginTop: '2px', fontSize: '10px' }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '2px', fontSize: '10px' }}>
+                                    <span style={{ color: '#64748b' }}>{session.proposedLoad} AU</span>
                                     <span style={{ fontWeight: '800', color: isDone ? '#16a34a' : '#f59e0b' }}>
                                       {completedCount}/{session.athletes.length}
                                     </span>
@@ -1517,78 +1694,37 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
               {/* --- AGENDA VIEW --- */}
               {auditViewMode === 'agenda' && (
                 <div style={{ display: 'grid', gap: '12px' }}>
-                  {coachAgendaWeekGroups.length === 0 ? (
+                  {filteredAuditSessions.length === 0 ? (
                     <p style={{ color: '#64748b', textAlign: 'center', padding: '20px' }}>No sessions match your filter.</p>
                   ) : (
-                    coachAgendaWeekGroups.map((group, gi) => {
-                      const currentMonday = getWeekMonday(new Date());
-                      const isThisWeek = group.monday.getTime() === currentMonday.getTime();
+                    filteredAuditSessions.map((session, i) => {
+                      const totalAssigned = session.athletes.length;
+                      const completed = session.athletes.filter(a => a.status !== 'Proposed').length;
+                      const typeColor = TYPE_COLORS[session.type] || '#008ed3';
 
                       return (
-                        <div key={gi}>
-                          {/* Week Header + Weekly Metric Summary Pill */}
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '6px', margin: '4px 0 8px 0' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <span style={{ display: 'inline-block', width: '18px', height: '4px', borderRadius: '2px', backgroundColor: group.color }} />
-                              <span style={{ fontSize: '12px', fontWeight: 800, color: group.color, textTransform: 'uppercase' }}>
-                                {isThisWeek ? 'This Week' : `Week of ${group.monday.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}`}
+                        <div
+                          key={i}
+                          className="audit-card"
+                          onClick={() => setSelectedAuditSession(session)}
+                          style={{ borderLeft: `6px solid ${typeColor}` }}
+                        >
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                              <h3 style={{ margin: 0, fontSize: '16px', color: '#0f172a' }}>{session.type}</h3>
+                              <span style={{ fontSize: '11px', fontWeight: '800', backgroundColor: typeColor + '20', color: typeColor, padding: '2px 8px', borderRadius: '4px' }}>
+                                {session.proposedLoad} AU Target
                               </span>
                             </div>
-                            <span style={{ fontSize: '11px', fontWeight: 700, color: '#475569', background: '#f1f5f9', padding: '3px 8px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-                              {group.actualM.durationStr} · Avg RPE {group.actualM.avgRpe ? group.actualM.avgRpe.toFixed(1) : '—'} · <strong style={{ color: group.color }}>{group.actualM.totalLoad.toLocaleString()} AU</strong>
-                              {group.proposedM.totalLoad > 0 && (
-                                <span style={{ color: '#94a3b8' }}> / Plan: {group.proposedM.durationStr} · {group.proposedM.totalLoad.toLocaleString()} AU</span>
-                              )}
-                            </span>
+                            <p style={{ margin: 0, fontSize: '13px', color: '#64748b' }}>
+                              {session.dateStr} {session.location && `• ${session.location}`}
+                            </p>
                           </div>
-
-                          {/* Session Cards with explicit Planned vs. Actual metrics */}
-                          <div style={{ display: 'grid', gap: '8px' }}>
-                            {group.sessions.map((session, i) => {
-                              const totalAssigned = session.athletes.length;
-                              const completed = session.athletes.filter(a => a.status !== 'Proposed').length;
-                              const typeColor = TYPE_COLORS[session.type] || '#008ed3';
-                              const actualLine = getSessionMetrics(session);
-
-                              return (
-                                <div
-                                  key={i}
-                                  className="audit-card"
-                                  onClick={() => setSelectedAuditSession(session)}
-                                  style={{ borderLeft: `6px solid ${typeColor}` }}
-                                >
-                                  <div>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', flexWrap: 'wrap' }}>
-                                      <h3 style={{ margin: 0, fontSize: '16px', color: '#0f172a' }}>{session.type}</h3>
-                                      <span style={{ fontSize: '11px', fontWeight: '800', color: completed === totalAssigned ? '#16a34a' : '#f59e0b' }}>
-                                        {completed} / {totalAssigned} Logged
-                                      </span>
-                                    </div>
-                                    <p style={{ margin: '0 0 4px 0', fontSize: '13px', color: '#64748b' }}>
-                                      {session.dateStr} {session.location && `• ${session.location}`}
-                                    </p>
-                                    {session.proposedMins > 0 && (
-                                      <p style={{ margin: 0, fontSize: '12px', color: '#94a3b8', fontWeight: 700 }}>
-                                        Planned: {session.proposedMins}m @ RPE {Number(session.proposedRpe).toFixed(1)} ({session.proposedLoad} AU)
-                                      </p>
-                                    )}
-                                    {actualLine.isActual ? (
-                                      <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: '#475569', fontWeight: 700 }}>
-                                        Actual: {actualLine.mins}m @ RPE {actualLine.rpe.toFixed(1)} ({actualLine.load.toLocaleString()} AU){actualLine.loggedCount > 1 ? ' avg/athlete' : ''}
-                                      </p>
-                                    ) : (
-                                      <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: '#cbd5e1', fontWeight: 700 }}>Actual: awaiting athlete logs</p>
-                                    )}
-                                  </div>
-                                  <div style={{ textAlign: 'right' }}>
-                                    <div style={{ fontSize: '14px', fontWeight: '900', color: '#008ed3' }}>
-                                      {session.proposedLoad} <span style={{ fontSize: '11px', fontWeight: '600', color: '#64748b' }}>AU Target</span>
-                                    </div>
-                                    <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '2px' }}>Click to view audit</div>
-                                  </div>
-                                </div>
-                              );
-                            })}
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontSize: '14px', fontWeight: '800', color: completed === totalAssigned ? '#16a34a' : '#f59e0b' }}>
+                              {completed} / {totalAssigned} Logged
+                            </div>
+                            <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '2px' }}>Click to view audit</div>
                           </div>
                         </div>
                       );
@@ -1818,7 +1954,7 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
   );
 }
 
-const SquadZoneHeatmap = memo(function SquadZoneHeatmap({ data, setSelectedCell, selectedCell }) {
+const SquadZoneHeatmap = memo(function SquadZoneHeatmap({ data, squadMembers, setSelectedCell, selectedCell }) {
   const [typeFilter, setTypeFilter] = useState('All');
   const [mode, setMode] = useState('share');
 
