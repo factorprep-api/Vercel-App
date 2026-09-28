@@ -188,17 +188,43 @@ export const saveWellnessLog = async (payload) => {
     if (!athleteId) return { status: 'Error', message: 'Athlete not found' };
 
     const num = (v) => (v !== undefined && v !== null && v !== '') ? Number(v) : null;
-    const insert = {
-      athlete_id: athleteId,
-      date: new Date().toISOString().split('T')[0],
+    const todayYMD = new Date().toISOString().split('T')[0];
+    const logData = {
       grip_kg: num(payload.grip),
       feeling: num(payload.feeling),
       soreness: num(payload.soreness),
       sleep: num(payload.sleep),
       nutrition: num(payload.nutrition)
     };
-    const { error } = await supabase.from('wellness_logs').insert(insert);
-    if (error) return { status: 'Error', message: error.message };
+
+    // Check if a wellness log already exists for this athlete today
+    const { data: existing } = await supabase
+      .from('wellness_logs')
+      .select('id')
+      .eq('athlete_id', athleteId)
+      .eq('date', todayYMD)
+      .is('deleted_at', null)
+      .maybeSingle();
+
+    if (existing) {
+      // Update today's existing log
+      const { error } = await supabase
+        .from('wellness_logs')
+        .update(logData)
+        .eq('id', existing.id);
+      if (error) return { status: 'Error', message: error.message };
+    } else {
+      // Insert new log for today
+      const { error } = await supabase
+        .from('wellness_logs')
+        .insert({
+          athlete_id: athleteId,
+          date: todayYMD,
+          ...logData
+        });
+      if (error) return { status: 'Error', message: error.message };
+    }
+
     return { status: 'Success' };
   } catch (err) { return { status: 'Error', message: err.message }; }
 };
