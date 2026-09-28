@@ -111,6 +111,7 @@ export default function AthleteSchedule() {
 
   const [selectedProposed, setSelectedProposed] = useState(null);
   const [auditMode, setAuditMode] = useState(null); 
+  const [auditDate, setAuditDate] = useState(getTodayYMD());
   const [actualMins, setActualMins] = useState('');
   const [actualRpe, setActualRpe] = useState('');
 
@@ -218,7 +219,18 @@ export default function AthleteSchedule() {
         });
 
         const completed = myLogs.filter(s => s.status !== 'Proposed');
-        const proposed = myLogs.filter(s => s.status === 'Proposed' || s.proposedMins > 0);
+        
+        // Filter proposed sessions for athletes: hide uncompleted proposed sessions that are older than 3 days
+        const todayMs = new Date().setHours(0, 0, 0, 0);
+        const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
+        
+        const proposed = myLogs.filter(s => {
+          if (s.status !== 'Proposed' && !(s.proposedMins > 0 && s.actualMins === 0)) return false;
+          // Calculate day difference from scheduled rawDate to today
+          const sessionDayMs = new Date(s.rawDate.getFullYear(), s.rawDate.getMonth(), s.rawDate.getDate()).getTime();
+          const isExpired = (todayMs - sessionDayMs) > THREE_DAYS_MS;
+          return !isExpired;
+        });
 
         setCompletedSessions(completed.sort((a,b) => a.rawDate - b.rawDate));
         setProposedSessions(proposed.reverse());
@@ -306,6 +318,7 @@ export default function AthleteSchedule() {
       const payload = {
       sessionId: selectedProposed.id || null,
       auditMode: auditMode,
+      date: auditDate || getTodayYMD(),
       email: userEmail, athlete: nameToSave, type: selectedProposed.type,
       proposedMins: selectedProposed.proposedMins, proposedRpe: selectedProposed.proposedRpe,
       actualMins: finalMins, actualRpe: finalRpe,
@@ -454,7 +467,7 @@ export default function AthleteSchedule() {
             proposedSessions.map((s, i) => {
               const typeColor = getTypeColor(s.type);
               return (
-                <div key={i} className="ghost-card" style={{ borderLeft: `6px solid ${typeColor}` }} onClick={() => { setSelectedProposed(s); setAuditMode(null); setActualMins(s.proposedMins); setActualRpe(s.proposedRpe); setNotes(''); }}>
+                <div key={i} className="ghost-card" style={{ borderLeft: `6px solid ${typeColor}` }} onClick={() => { setSelectedProposed(s); setAuditMode(null); setAuditDate(getTodayYMD()); setActualMins(s.proposedMins); setActualRpe(s.proposedRpe); setNotes(''); }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
                     <div>
                       <div style={{ fontWeight: '800', color: '#0f172a', fontSize: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -506,9 +519,14 @@ export default function AthleteSchedule() {
               <button onClick={() => setSelectedProposed(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}><X size={24}/></button>
             </div>
             
-            <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '8px', marginBottom: '20px', border: '1px solid #e2e8f0' }}>
+            <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '8px', marginBottom: '16px', border: '1px solid #e2e8f0' }}>
               <p style={{ margin: '0 0 4px 0', fontSize: '12px', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>Coach Proposed:</p>
               <p style={{ margin: 0, fontSize: '16px', fontWeight: '800', color: '#0f172a' }}>{selectedProposed.proposedMins} mins @ RPE {selectedProposed.proposedRpe}</p>
+            </div>
+
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ fontSize: '12px', fontWeight: '700', color: '#64748b', display: 'block', marginBottom: '4px' }}>Date Performed</label>
+              <input type="date" className="as-select" value={auditDate} max={getTodayYMD()} onChange={(e) => setAuditDate(e.target.value)} />
             </div>
 
             <h3 style={{ fontSize: '15px', color: '#334155', marginBottom: '12px' }}>Did you complete this as planned?</h3>

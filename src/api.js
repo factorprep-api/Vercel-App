@@ -292,6 +292,10 @@ export const saveScheduleSession = async (payload) => {
 
       const actualMins = parseInt(payload.actualMins) || 0;
       const actualRpe = parseInt(payload.actualRpe) || 0;
+      // Record completion on the actual execution date (payload.date) if provided,
+      // defaulting to today's date so load reflects when the athlete physically performed it.
+      const actualDate = payload.date || new Date().toISOString().split('T')[0];
+
       // NOTE: actual_load is a GENERATED column in session_logs — never insert it;
       // the database computes it from actual_mins × actual_rpe automatically.
       const { error } = await supabase.from('session_logs').insert({
@@ -299,7 +303,7 @@ export const saveScheduleSession = async (payload) => {
         athlete_id: prop.athlete_id,
         team_id: prop.team_id,
         session_type: prop.session_type,
-        date: prop.date,
+        date: actualDate,
         actual_mins: actualMins,
         actual_rpe: actualRpe,
         location: payload.location || prop.location || '',

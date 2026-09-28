@@ -120,8 +120,8 @@ export default function AthleteWellness() {
           <h3 className="aw-card-title"><Smile size={20} color="#0ea5e9" /> 1. How are you feeling?</h3>
           <span className="aw-card-value" style={{ color: '#0ea5e9' }}>{feeling}/10</span>
         </div>
-        <input type="range" min="1" max="10" step="1" className="aw-slider slider-feeling" value={feeling} onChange={(e) => setFeeling(e.target.value)} />
-        <div className="aw-slider-labels"><span>1 (Terrible)</span><span>10 (Prime)</span></div>
+        <input type="range" min="0" max="10" step="1" className="aw-slider slider-feeling" value={feeling} onChange={(e) => setFeeling(e.target.value)} />
+        <div className="aw-slider-labels"><span>0 (Terrible)</span><span>10 (Prime)</span></div>
       </div>
 
       <div className="aw-card">
@@ -129,8 +129,8 @@ export default function AthleteWellness() {
           <h3 className="aw-card-title"><Heart size={20} color="#ef4444" /> 2. Muscle Soreness</h3>
           <span className="aw-card-value" style={{ color: '#ef4444' }}>{soreness}/10</span>
         </div>
-        <input type="range" min="1" max="10" step="1" className="aw-slider slider-soreness" value={soreness} onChange={(e) => setSoreness(e.target.value)} />
-        <div className="aw-slider-labels"><span>1 (Extreme)</span><span>10 (None)</span></div>
+        <input type="range" min="0" max="10" step="1" className="aw-slider slider-soreness" value={soreness} onChange={(e) => setSoreness(e.target.value)} />
+        <div className="aw-slider-labels"><span>0 (Extreme)</span><span>10 (None)</span></div>
       </div>
 
       <div className="aw-card">
@@ -147,8 +147,8 @@ export default function AthleteWellness() {
           <h3 className="aw-card-title"><Utensils size={20} color="#10b981" /> 4. How was your Nutrition?</h3>
           <span className="aw-card-value" style={{ color: '#10b981' }}>{nutrition}/10</span>
         </div>
-        <input type="range" min="1" max="10" step="1" className="aw-slider slider-nutrition" value={nutrition} onChange={(e) => setNutrition(e.target.value)} />
-        <div className="aw-slider-labels"><span>1 (Poor)</span><span>10 (Perfect)</span></div>
+        <input type="range" min="0" max="10" step="1" className="aw-slider slider-nutrition" value={nutrition} onChange={(e) => setNutrition(e.target.value)} />
+        <div className="aw-slider-labels"><span>0 (Poor)</span><span>10 (Perfect)</span></div>
       </div>
 
       <button className="aw-save-btn" onClick={handleSave} disabled={saving}>
