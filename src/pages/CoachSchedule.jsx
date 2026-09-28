@@ -804,22 +804,25 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
     }));
     const dateLabels = rows.length ? rows[0].chartData.map(d => d.date) : [];
 
+    const IGNORED_COMPOSITION_KEYS = new Set(['date', 'avgRpe', 'dayKey', 'dateFull', 'loadSum', 'dynoKg', 'dyno7dAvg', 'dynoPct', 'typeLoads', 'rpeSum']);
+
     // Team Composition: sum each type's load across all selected athletes per day
     const teamTotals = dateLabels.map((d, idx) => {
       const dayTotal = { date: d, rpeSum: 0, loadSum: 0 };
       rows.forEach(a => {
-        const athleteDay = a.chartData[idx];
+        const athleteDay = a.chartData[idx] || {};
         Object.keys(athleteDay).forEach(k => {
-          if (k === 'date' || k === 'avgRpe') return;
-          dayTotal[k] = (dayTotal[k] || 0) + athleteDay[k];
-          dayTotal.loadSum += athleteDay[k];
-          dayTotal.rpeSum += athleteDay[k] * (athleteDay.avgRpe || 0);
+          if (IGNORED_COMPOSITION_KEYS.has(k)) return;
+          const val = Number(athleteDay[k]) || 0;
+          dayTotal[k] = (dayTotal[k] || 0) + val;
+          dayTotal.loadSum += val;
+          dayTotal.rpeSum += val * (athleteDay.avgRpe || 0);
         });
       });
       dayTotal.avgRpe = dayTotal.loadSum > 0 ? Math.round((dayTotal.rpeSum / dayTotal.loadSum) * 10) / 10 : null;
       return dayTotal;
     });
-    const teamTypes = Object.keys(teamTotals.reduce((acc, t) => ({ ...acc, ...t }), {})).filter(k => k !== 'date' && k !== 'avgRpe' && k !== 'loadSum' && k !== 'rpeSum');
+    const teamTypes = Object.keys(teamTotals.reduce((acc, t) => ({ ...acc, ...t }), {})).filter(k => !IGNORED_COMPOSITION_KEYS.has(k));
 
     return { rows, maxDaily, dateLabels, teamTotals, teamTypes };
   }, [squadSelection, rosterWithLoads]);
