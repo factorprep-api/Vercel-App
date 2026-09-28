@@ -117,10 +117,10 @@ create table public.wellness_logs (
   athlete_id uuid not null references public.athletes(id) on delete cascade,
   date date not null,
   grip_kg numeric,
-  feeling numeric check (feeling between 1 and 10),
-  soreness numeric check (soreness between 1 and 10),
-  sleep numeric check (sleep between 1 and 10),
-  nutrition numeric check (nutrition between 1 and 10),
+  feeling numeric check (feeling between 0 and 10),
+  soreness numeric check (soreness between 0 and 10),
+  sleep numeric check (sleep between 0 and 10),
+  nutrition numeric check (nutrition between 0 and 10),
   deleted_at timestamptz,
   created_at timestamptz not null default now()
 );
@@ -278,7 +278,7 @@ create index idx_sl_athlete_date     on public.session_logs(athlete_id, date);
 create index idx_sl_athlete_team     on public.session_logs(athlete_id, team_id);
 
 -- Athlete-data tier
-create index idx_wl_athlete_date     on public.wellness_logs(athlete_id, date);
+create unique index uq_wl_athlete_date on public.wellness_logs(athlete_id, date) where deleted_at is null;
 create index idx_me_athlete_date     on public.medical_entries(athlete_id, date_logged);
 create index idx_lb_athlete_date     on public.logbook_entries(athlete_id, date);
 create index idx_att_athlete_ts      on public.attendance(athlete_id, attended_at);

@@ -251,9 +251,19 @@ export default function CoachResults() {
         
         if (name && pods.includes('wellness')) {
           const athLogs = logsByAthlete[name] || [];
-          const latest = athLogs.length > 0 ? athLogs[athLogs.length - 1] : { grip: 0, feeling: 0, soreness: 0, sleep: 0, nutrition: 0 };
+          const latest = athLogs.length > 0 ? athLogs[athLogs.length - 1] : null;
+
+          // Check if latest log is actually from TODAY
+          const todayYMD = new Date().toISOString().split('T')[0];
+          const latestYMD = latest && latest.rawDate ? latest.rawDate.toISOString().split('T')[0] : null;
+          const isTodayLog = latestYMD === todayYMD;
+
+          const todayLog = isTodayLog ? latest : { grip: null, feeling: null, soreness: null, sleep: null, nutrition: null };
+
           let isFatigued = false;
-          if (latest.feeling > 0 && (latest.feeling <= 4 || latest.soreness <= 4 || latest.sleep <= 5.5)) isFatigued = true;
+          if (todayLog.feeling != null && (todayLog.feeling <= 4 || (todayLog.soreness != null && todayLog.soreness <= 4) || (todayLog.sleep != null && todayLog.sleep <= 5.5))) {
+            isFatigued = true;
+          }
 
           let medicalStatus = 'Fully Fit';
           let activeInjury = null;
@@ -266,9 +276,19 @@ export default function CoachResults() {
           }
 
           roster.push({
-            id: i, name: name, grip: latest.grip, feeling: latest.feeling, soreness: latest.soreness, sleep: latest.sleep, nutrition: latest.nutrition,
+            id: i, 
+            name: name, 
+            grip: todayLog.grip, 
+            feeling: todayLog.feeling, 
+            soreness: todayLog.soreness, 
+            sleep: todayLog.sleep, 
+            nutrition: todayLog.nutrition,
+            isTodayLog,
             status: isFatigued ? 'fatigued' : 'normal',
-            medicalStatus, activeInjury, medicalHistory: athMed, history: athLogs
+            medicalStatus, 
+            activeInjury, 
+            medicalHistory: athMed, 
+            history: athLogs
           });
         }
       }
@@ -783,11 +803,11 @@ export default function CoachResults() {
                             {isAlert && !medBadge && <AlertCircle size={16} color="#dc2626" title="Fatigue Warning" style={{marginLeft:'8px'}} />}
                           </div>
                         </td>
-                        <td><span className={`status-badge ${getColorClass(athlete.grip, 'grip')}`}>{athlete.grip ? athlete.grip.toFixed(1) : '--'}</span></td>
-                        <td><span className={`status-badge ${getColorClass(athlete.feeling, 'feeling')}`}>{athlete.feeling ? athlete.feeling + '/10' : '--'}</span></td>
-                        <td><span className={`status-badge ${getColorClass(athlete.soreness, 'soreness')}`}>{athlete.soreness ? athlete.soreness + '/10' : '--'}</span></td>
-                        <td><span className={`status-badge ${getColorClass(athlete.sleep, 'sleep')}`}>{athlete.sleep ? athlete.sleep.toFixed(1) + 'h' : '--'}</span></td>
-                        <td><span className={`status-badge ${getColorClass(athlete.nutrition, 'nutrition')}`}>{athlete.nutrition ? athlete.nutrition + '/10' : '--'}</span></td>
+                        <td><span className={`status-badge ${athlete.grip != null ? getColorClass(athlete.grip, 'grip') : ''}`}>{athlete.grip != null ? athlete.grip.toFixed(1) : '--'}</span></td>
+                        <td><span className={`status-badge ${athlete.feeling != null ? getColorClass(athlete.feeling, 'feeling') : ''}`}>{athlete.feeling != null ? athlete.feeling + '/10' : '--'}</span></td>
+                        <td><span className={`status-badge ${athlete.soreness != null ? getColorClass(athlete.soreness, 'soreness') : ''}`}>{athlete.soreness != null ? athlete.soreness + '/10' : '--'}</span></td>
+                        <td><span className={`status-badge ${athlete.sleep != null ? getColorClass(athlete.sleep, 'sleep') : ''}`}>{athlete.sleep != null ? athlete.sleep.toFixed(1) + 'h' : '--'}</span></td>
+                        <td><span className={`status-badge ${athlete.nutrition != null ? getColorClass(athlete.nutrition, 'nutrition') : ''}`}>{athlete.nutrition != null ? athlete.nutrition + '/10' : '--'}</span></td>
                       </tr>
                     );
                   })}
