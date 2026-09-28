@@ -337,14 +337,34 @@ export default function AthleteSchedule() {
 
   const loadChartData = useMemo(() => {
     if (completedSessions.length === 0) return [];
-    const dailyMap = {};
+    
+    const numDays = analyticsScope === 'week' ? 7 : analyticsScope === 'month' ? 30 : 90;
+    const today = new Date();
+    today.setHours(0,0,0,0);
+
+    // Map existing completed sessions by start-of-day timestamp
+    const loadByDayMs = {};
     completedSessions.forEach(s => {
-      const dStr = s.dateStr;
-      if (!dailyMap[dStr]) dailyMap[dStr] = { date: dStr, load: 0 };
-      dailyMap[dStr].load += s.actualLoad;
+      if (s.rawDate) {
+        const dKey = new Date(s.rawDate.getFullYear(), s.rawDate.getMonth(), s.rawDate.getDate()).getTime();
+        loadByDayMs[dKey] = (loadByDayMs[dKey] || 0) + s.actualLoad;
+      }
     });
-    return Object.values(dailyMap).slice(-14);
-  }, [completedSessions]);
+
+    const series = [];
+    for (let i = numDays - 1; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(today.getDate() - i);
+      const dayMs = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+      const dateLabel = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      series.push({
+        date: dateLabel,
+        load: loadByDayMs[dayMs] || 0
+      });
+    }
+
+    return series;
+  }, [completedSessions, analyticsScope]);
 
   const weekGroups = useMemo(() => {
     const recent = [...completedSessions].sort((a, b) => b.rawDate - a.rawDate);
@@ -661,7 +681,9 @@ export default function AthleteSchedule() {
           </div>
 
           <div className="as-card" style={{ padding: '20px 10px 10px 0' }}>
-            <h3 style={{ margin: '0 0 16px 20px', fontSize: '16px', color: '#0f172a' }}>Load Trend (14 Days)</h3>
+            <h3 style={{ margin: '0 0 16px 20px', fontSize: '16px', color: '#0f172a' }}>
+              Load Trend ({analyticsScope === 'week' ? '7 Days' : analyticsScope === 'month' ? '30 Days' : '90 Days'})
+            </h3>
             {/* FIX 2: Recharts Rendering bug fixed via strictly defined wrapper and explicit 99% width & numeric height */}
             <div style={{ height: 220, width: '100%', minHeight: '220px' }}>
               {loadChartData.length === 0 ? <p style={{ textAlign: 'center', color: '#64748b', paddingTop: '40px' }}>No load data yet.</p> : (
