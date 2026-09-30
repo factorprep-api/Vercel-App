@@ -61,7 +61,29 @@ function parseDistance(str) {
   return { val: 0, unit: 'm' };
 }
 
-function calculateTargetLoad(libraryData, athleteMaxes, lastWeights, exerciseName, reps, intensity) {
+// Recall rule: the athlete's most recent logged set for this exercise,
+// preferring a set performed at the same reps AND prescribed intensity.
+// Returns the logged weight (kg) or 0 — NO formula is applied to history:
+// the Epley formula is only valid from a true 1RM.
+function recallLogbookWeight(logbookByExercise, exerciseName, reps, intensity) {
+  const entries = logbookByExercise[normalizeString(exerciseName)];
+  if (!entries || entries.length === 0) return 0;
+  const presReps = parseFloat(String(reps).replace('%', '')) || null;
+  const presPct = parseFloat(String(intensity).replace('%', '')) || null;
+  let recalled = 0;
+  if (presReps && presPct) {
+    const match = entries.find(e => (parseFloat(e.wt) || 0) > 0
+      && (parseFloat(e.reps) || 0) === presReps && (parseFloat(e.intensity) || 0) === presPct);
+    if (match) recalled = parseFloat(match.wt);
+  }
+  if (!recalled) {
+    const latest = entries.find(e => (parseFloat(e.wt) || 0) > 0);
+    recalled = parseFloat(latest?.wt) || 0;
+  }
+  return recalled;
+}
+
+function calculateTargetLoad(libraryData, athleteMaxes, lastWeights, exerciseName, reps, intensity, logbookByExercise = {}) {
   if (!intensity || isNaN(parseFloat(intensity)) || parseFloat(intensity) <= 0) return { text: '', val: '', source: 'none', metric: '' };
   const safeReps = parseFloat(reps) || 1;
   const intensityDecimal = parseFloat(intensity) / 100;
@@ -95,25 +117,34 @@ function calculateTargetLoad(libraryData, athleteMaxes, lastWeights, exerciseNam
       }
     }
   } else if (calcType === 'weight') {
-    let oneRM = 0;
     const maxEntry = athleteMaxes[normalizeString(exerciseName)];
     if (maxEntry && maxEntry.oneRM > 0) {
-      oneRM = maxEntry.oneRM;
-      source = '1rm';
-    } else {
-      const lastEntry = lastWeights[normalizeString(exerciseName)];
-      if (lastEntry && lastEntry.weight > 0) {
-        const lastWt = parseFloat(lastEntry.weight);
-        let lastRepsNum = parseFloat(lastEntry.repsString) || 1;
-        oneRM = lastWt * (1 + 0.0333 * lastRepsNum);
-        source = 'history';
-      }
-    }
-    if (oneRM > 0) {
+      // Saved 1RM — Epley direction B (1RM -> load for N reps at X%).
+      const oneRM = maxEntry.oneRM;
       const repMax = oneRM / (1 + 0.0333 * safeReps);
       const target = repMax * intensityDecimal;
       targetVal = Math.round(target);
       targetText = targetVal + 'kg';
+      source = '1rm';
+    } else {
+      // No saved 1RM — recall the athlete's most recent proven weight for
+      // this exercise at the same reps and intensity. No Epley estimation
+      // of the max from history: that would produce unsafe loads.
+      const recalled = recallLogbookWeight(logbookByExercise, exerciseName, reps, intensity);
+      if (recalled > 0) {
+        targetVal = recalled;
+        targetText = recalled + 'kg';
+        source = 'history';
+      }
+    }
+  } else {
+    // Standard exercises (no formula in the library) — same recall rule.
+    const recalled = recallLogbookWeight(logbookByExercise, exerciseName, reps, intensity);
+    if (recalled > 0) {
+      targetVal = recalled;
+      targetText = recalled + 'kg';
+      source = 'history';
+      metricType = 'weight';
     }
   }
   return { text: targetText, val: targetVal, source: source, metric: metricType };
@@ -412,10 +443,18 @@ export default function ProgramViewer() {
         Object.keys(maxesResp.maxes).forEach(key => { athleteMaxes[normalizeString(key)] = { oneRM: maxesResp.maxes[key] }; });
       }
       const lastWeights = {};
+      const logbookByExercise = {};
       try {
         const logbookResp = await fetchLogbookByAthlete(athleteName);
         if (!cancelled && logbookResp.status === 'Success' && logbookResp.data) {
           const logData = logbookResp.data;
+          // Group every logged set per exercise (newest first) for the recall rule
+          logData.forEach(entry => {
+            const normEx = normalizeString(entry.ex);
+            if (!normEx) return;
+            if (!logbookByExercise[normEx]) logbookByExercise[normEx] = [];
+            logbookByExercise[normEx].push({ wt: entry.wt || 0, reps: entry.reps, intensity: entry.intensity, date: entry.date });
+          });
           const uniqueExercises = [...new Set(workoutGroups.map(g => g.name))];
           uniqueExercises.forEach(exName => {
             const normEx = normalizeString(exName);
@@ -429,7 +468,7 @@ export default function ProgramViewer() {
       workoutGroups.forEach(group => {
         group.details.forEach((set, idx) => {
           const inputKey = group.id + '_' + idx;
-          calcs[inputKey] = calculateTargetLoad(libraryData, athleteMaxes, lastWeights, group.name, set.reps, set.intensity);
+          calcs[inputKey] = calculateTargetLoad(libraryData, athleteMaxes, lastWeights, group.name, set.reps, set.intensity, logbookByExercise);
         });
       });
       setTargetCalcs(calcs);

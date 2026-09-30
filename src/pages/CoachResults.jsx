@@ -2,8 +2,8 @@ import { useState, useEffect, useMemo, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
-import { fetchAthletes, fetchLogbookByAthlete, fetchWellnessLogs, fetchMedicalLogs, saveMedicalLog } from '../api';
-import { ArrowLeft, Search, AlertCircle, Heart, Moon, Utensils, HandMetal, Smile, BarChart2, LayoutGrid, Dumbbell, Activity, ShieldAlert, X } from 'lucide-react';
+import { fetchAthletes, fetchLogbookByAthlete, fetchWellnessLogs, fetchMedicalLogs, saveMedicalLog, fetchExerciseLibrary, getLatestMaxes, saveAthleteMax } from '../api';
+import { ArrowLeft, Search, AlertCircle, Heart, Moon, Utensils, HandMetal, Smile, BarChart2, LayoutGrid, Dumbbell, Activity, ShieldAlert, X, Plus } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 const COLORS = {
@@ -108,6 +108,15 @@ export default function CoachResults() {
   const [error, setError] = useState(null);
   const [showLogbook, setShowLogbook] = useState(false);
 
+  // SET 1RM MODAL STATE (Performance Engine)
+  const [showMaxModal, setShowMaxModal] = useState(false);
+  const [maxExercises, setMaxExercises] = useState([]);
+  const [maxExerciseSel, setMaxExerciseSel] = useState('');
+  const [maxValueInput, setMaxValueInput] = useState('');
+  const [maxDateInput, setMaxDateInput] = useState(new Date().toISOString().split('T')[0]);
+  const [maxSaving, setMaxSaving] = useState(false);
+  const [currentMaxes, setCurrentMaxes] = useState({});
+
   // WELLNESS & MEDICAL STATE
   const [wellnessRoster, setWellnessRoster] = useState([]);
   const [teamWellnessHistory, setTeamWellnessHistory] = useState([]);
@@ -189,6 +198,40 @@ export default function CoachResults() {
   useEffect(() => {
     loadWellnessAndMedical();
   }, []);
+
+  // === SET 1RM (Performance Engine) ===
+  async function openMaxModal() {
+    setShowMaxModal(true);
+    setMaxExerciseSel('');
+    setMaxValueInput('');
+    setMaxDateInput(new Date().toISOString().split('T')[0]);
+    try {
+      // Only exercises with the weight/1RM (Epley) formula enabled can take a 1RM
+      const lib = await fetchExerciseLibrary();
+      setMaxExercises(lib.filter(e => e.isEpley).map(e => e.name).sort((a, b) => a.localeCompare(b)));
+      const maxRes = await getLatestMaxes(selectedAthlete);
+      setCurrentMaxes(maxRes.status === 'Success' ? (maxRes.maxes || {}) : {});
+    } catch { setMaxExercises([]); }
+  }
+
+  async function handleSaveMax() {
+    if (!maxExerciseSel) { alert('Please select an exercise.'); return; }
+    const val = parseFloat(maxValueInput);
+    if (!Number.isFinite(val) || val <= 0) { alert('Please enter a valid 1RM value.'); return; }
+    setMaxSaving(true);
+    try {
+      const res = await saveAthleteMax(selectedAthlete, maxExerciseSel, val, maxDateInput);
+      if (res.status === 'Success') {
+        setCurrentMaxes(prev => ({ ...prev, [maxExerciseSel]: Math.round(val * 10) / 10 }));
+        setShowMaxModal(false);
+        setMaxExerciseSel('');
+        setMaxValueInput('');
+      } else {
+        alert('Save failed: ' + (res.message || 'Unknown error'));
+      }
+    } catch { alert('Network error. Please try again.'); }
+    setMaxSaving(false);
+  }
 
   async function loadWellnessAndMedical() {
     setWellnessLoading(true);
@@ -584,6 +627,14 @@ export default function CoachResults() {
                   {athletes.map((a, i) => <option key={i} value={a.name}>{a.name}</option>)}
                 </select>
               </div>
+              {selectedAthlete !== 'all' && (
+                <div style={styles.filterGroup}>
+                  <label style={styles.label}>1RM</label>
+                  <button onClick={openMaxModal} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: COLORS.primaryBlue, color: COLORS.white, border: 'none', borderRadius: '8px', padding: '8px 16px', fontSize: '14px', fontWeight: '700', cursor: 'pointer' }}>
+                    <Plus size={16} /> Set 1RM
+                  </button>
+                </div>
+              )}
               <div style={styles.filterGroup}>
                 <label style={styles.label}>From</label>
                 <input type="date" value={dateRange.start} onChange={(e) => setDateRange((p) => ({ ...p, start: e.target.value }))} style={styles.input} />
@@ -902,6 +953,48 @@ export default function CoachResults() {
               <textarea value={medFormNotes} onChange={e=>setMedFormNotes(e.target.value)} placeholder="e.g. Swelling reduced. Cleared for bike." style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', marginBottom: '16px', minHeight: '60px', resize: 'vertical' }} />
               <button onClick={handleSaveMedical} disabled={medSaving} style={{ width: '100%', padding: '12px', background: '#008ed3', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '700', cursor: 'pointer' }}>
                 {medSaving ? 'Saving...' : 'Save Clinical Update'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showMaxModal && (
+        <div className="modal-overlay" onClick={() => { if (!maxSaving) setShowMaxModal(false); }}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <h2 style={{ fontSize: '20px', fontWeight: '800', color: COLORS.darkText, margin: '0 0 4px 0' }}>Set 1RM</h2>
+            <p style={{ fontSize: '13px', color: COLORS.bodyGray, margin: '0 0 16px 0' }}>
+              Athlete: <strong>{selectedAthlete}</strong> — the saved 1RM feeds the Epley formula used to calculate loads in the Program Viewer.
+            </p>
+            <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: COLORS.bodyGray, textTransform: 'uppercase', marginBottom: '6px' }}>
+              Exercise (1RM / Epley enabled)
+            </label>
+            <select value={maxExerciseSel} onChange={(e) => setMaxExerciseSel(e.target.value)} style={{ ...styles.select, width: '100%' }}>
+              <option value="">Select an exercise…</option>
+              {maxExercises.map((name) => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </select>
+            {maxExerciseSel && currentMaxes[maxExerciseSel] ? (
+              <p style={{ fontSize: '12px', color: COLORS.green, margin: '8px 0 0 0', fontWeight: '600' }}>
+                Current saved 1RM: {currentMaxes[maxExerciseSel]} kg
+              </p>
+            ) : null}
+            <div style={{ display: 'flex', gap: '12px', marginTop: '14px' }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: COLORS.bodyGray, textTransform: 'uppercase', marginBottom: '6px' }}>1RM (kg)</label>
+                <input type="number" min="0" step="0.5" value={maxValueInput} onChange={(e) => setMaxValueInput(e.target.value)} placeholder="e.g. 120" style={{ ...styles.input, width: '100%', cursor: 'text' }} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: COLORS.bodyGray, textTransform: 'uppercase', marginBottom: '6px' }}>Date</label>
+                <input type="date" value={maxDateInput} onChange={(e) => setMaxDateInput(e.target.value)} style={{ ...styles.input, width: '100%' }} />
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
+              <button onClick={handleSaveMax} disabled={maxSaving} style={{ flex: 1, background: COLORS.primaryBlue, color: COLORS.white, border: 'none', borderRadius: '8px', padding: '12px', fontWeight: '700', fontSize: '14px', cursor: maxSaving ? 'wait' : 'pointer', opacity: maxSaving ? 0.7 : 1 }}>
+                {maxSaving ? 'Saving…' : 'Save 1RM'}
+              </button>
+              <button onClick={() => setShowMaxModal(false)} disabled={maxSaving} style={{ flex: 1, background: COLORS.white, color: COLORS.bodyGray, border: `1px solid ${COLORS.border}`, borderRadius: '8px', padding: '12px', fontWeight: '700', fontSize: '14px', cursor: 'pointer' }}>
+                Cancel
               </button>
             </div>
           </div>

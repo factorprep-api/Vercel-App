@@ -576,6 +576,30 @@ export const getLatestMaxes = async (athleteName) => {
   } catch { return { status: "Error", maxes: {} }; }
 };
 
+// Manually save a 1RM value for an athlete/exercise (coach or athlete entry).
+// Inserts a new dated row — the newest row per exercise wins in getLatestMaxes,
+// so history is preserved. RLS already permits coach/athlete writes.
+export const saveAthleteMax = async (athleteName, exerciseName, oneRmKg, date) => {
+  try {
+    const athleteId = await resolveAthleteRow(athleteName);
+    if (!athleteId) return { status: 'Error', message: 'Athlete not found' };
+    const val = parseFloat(oneRmKg);
+    if (!Number.isFinite(val) || val <= 0) return { status: 'Error', message: 'Please enter a valid 1RM value.' };
+    const { data: exRow, error: exErr } = await supabase
+      .from('exercises').select('id').ilike('exercise_name', exerciseName).limit(1);
+    if (exErr) return { status: 'Error', message: exErr.message };
+    if (!exRow || exRow.length === 0) return { status: 'Error', message: 'Exercise not found.' };
+    const { error } = await supabase.from('athlete_maxes').insert({
+      athlete_id: athleteId,
+      exercise_id: exRow[0].id,
+      date: date || new Date().toISOString().split('T')[0],
+      one_rm_kg: Math.round(val * 10) / 10
+    });
+    if (error) return { status: 'Error', message: error.message };
+    return { status: 'Success' };
+  } catch (err) { return { status: 'Error', message: err.message }; }
+};
+
 export const getLastLoggedWeight = async (athleteName, exerciseName) => {
   try {
     const athleteId = await resolveAthleteRow(athleteName);
@@ -719,6 +743,41 @@ export const saveSession = async (payload) => {
         const { error: lbErr } = await supabase.from('logbook_entries').insert(logbookInserts);
         if (lbErr) return { status: 'Error', message: lbErr.message };
       }
+
+      // === 1RM AUTO-CAPTURE (Epley, direction A) ===
+      // Only sets prescribed at 100% intensity may write a 1RM:
+      // est1RM = weight x (1 + 0.0333 x reps). Sub-max sets (80/90/95%)
+      // never touch the max. Saved only when it beats the athlete's
+      // current latest 1RM for that exercise (protects coach-entered maxes).
+      try {
+        const capSets = payload.sets.filter(s => {
+          const pct = parseFloat(String(s.intensity || '').replace('%', ''));
+          return pct === 100 && parseFloat(s.weight) > 0;
+        });
+        for (const s of capSets) {
+          const exRow = allExercises.find(e => e.exercise_name.toLowerCase() === (s.exercise || '').toLowerCase());
+          if (!exRow) continue;
+          const repsNum = parseFloat(String(s.reps)) || 0;
+          if (repsNum <= 0) continue;
+          const est1RM = parseFloat(s.weight) * (1 + 0.0333 * repsNum);
+          const { data: curMax } = await supabase
+            .from('athlete_maxes')
+            .select('one_rm_kg')
+            .eq('athlete_id', athleteId)
+            .eq('exercise_id', exRow.id)
+            .is('deleted_at', null)
+            .order('date', { ascending: false })
+            .limit(1);
+          const curVal = curMax && curMax.length > 0 ? Number(curMax[0].one_rm_kg) || 0 : 0;
+          if (est1RM <= curVal) continue;
+          await supabase.from('athlete_maxes').insert({
+            athlete_id: athleteId,
+            exercise_id: exRow.id,
+            date: payload.date || new Date().toISOString().split('T')[0],
+            one_rm_kg: Math.round(est1RM * 10) / 10
+          });
+        }
+      } catch (maxErr) { console.warn('1RM auto-capture skipped:', maxErr); }
     }
 
     return { status: 'Success' };
