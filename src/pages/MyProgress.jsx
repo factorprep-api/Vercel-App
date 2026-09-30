@@ -625,7 +625,7 @@ useEffect(() => {
     const key = selectedMetric.toLowerCase();
     const validValues = last7DaysWellness
       .map(d => d[key])
-      .filter(v => v !== null && !isNaN(v) && v > 0);
+      .filter(v => v !== null && !isNaN(v) && (key === 'soreness' ? v >= 0 : v > 0));
 
     if (!validValues.length) return { avg: null, min: null, max: null, latest: null };
 

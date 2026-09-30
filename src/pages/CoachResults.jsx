@@ -261,7 +261,7 @@ export default function CoachResults() {
           const todayLog = isTodayLog ? latest : { grip: null, feeling: null, soreness: null, sleep: null, nutrition: null };
 
           let isFatigued = false;
-          if (todayLog.feeling != null && (todayLog.feeling <= 4 || (todayLog.soreness != null && todayLog.soreness <= 4) || (todayLog.sleep != null && todayLog.sleep <= 5.5))) {
+          if (todayLog.feeling != null && (todayLog.feeling <= 4 || (todayLog.soreness != null && todayLog.soreness >= 5) || (todayLog.sleep != null && todayLog.sleep <= 5.5))) {
             isFatigued = true;
           }
 
@@ -448,6 +448,7 @@ export default function CoachResults() {
   }
 
   const getColorClass = (val, type) => {
+    if (type === 'soreness') { if (val <= 1) return 'status-green'; if (val >= 5) return 'status-red'; return 'status-amber'; }
     if (val === 0) return 'status-amber'; 
     if (type === 'grip') { if (val >= 45) return 'status-green'; if (val <= 40) return 'status-red'; return 'status-amber'; }
     if (type === 'sleep') { if (val >= 7.5) return 'status-green'; if (val <= 5.5) return 'status-red'; return 'status-amber'; }
