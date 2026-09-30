@@ -6,33 +6,30 @@ import { supabase } from './supabase';
 // ==========================================
 export const fetchAthletes = async () => {
   try {
-    const [ { data: profiles, error: pErr }, { data: athletesData, error: aErr } ] = await Promise.all([
-      supabase.from('athlete_profiles').select('*'),
-      supabase.from('athletes').select('id, user_id, coach_user_id, role, email, athlete_team_memberships(active_pods), assignments(status, programs(name))')
-    ]);
+    const { data: athletesData, error: aErr } = await supabase
+      .from('athletes')
+      .select('id, name, role, primary_club_id, user_id, coach_user_id, email, athlete_team_memberships(active_pods), assignments(status, programs(name))');
 
-    if (pErr) return { athletes: [], error: pErr.message };
     if (aErr) return { athletes: [], error: aErr.message };
 
     const ATHLETE_SHEET_HEADER = ['Name', 'Role', 'PrimaryClub', 'CoachName', 'C4', 'C5', 'C6', 'C7', 'C8', 'Email', 'C10', 'Active Pods', 'Program Assignment'];
 
-    // Coach email map built from athletes table directly (it has user_id AND email)
     const coachEmailByUserId = {};
     (athletesData || []).forEach(a => {
       if (a.user_id && a.email) coachEmailByUserId[a.user_id] = a.email;
     });
 
     const rows = (athletesData || []).map(a => {
-      const profile = (profiles || []).find(p => p.id === a.id) || {};
       const row = Array(13).fill('');
-      row[0] = a.name || profile.name || '';
-      row[1] = a.role || profile.role || '';
-      row[9] = a.email || profile.email || '';
-      
+      row[0] = a.name || '';
+      row[1] = a.role || '';
+      row[2] = a.primary_club_id || '';
+      row[9] = a.email || '';
+
       if (a.coach_user_id) {
         row[3] = coachEmailByUserId[a.coach_user_id] || '';
       }
-      
+
       if (a.athlete_team_memberships && a.athlete_team_memberships.length > 0) {
         const pods = a.athlete_team_memberships[0].active_pods;
         row[11] = (pods && pods.length > 0) ? pods.join(', ') : 'wellness, medical, schedule';
@@ -613,9 +610,63 @@ export const createAthlete = async () => ({ status: 'Success' });
 
 export const getAthleteByEmail = async (email) => {
   try {
+    if (!email) return { status: 'NotFound' };
+    const lowerEmail = String(email).toLowerCase().trim();
+
+    // 1. Admin Override (Bulletproof fallback)
+    if (lowerEmail === 'crusty@hotmail.com' || lowerEmail === 'processone@pm.me') {
+      return {
+        status: 'Success',
+        name: 'Crusty',
+        athleteName: 'Crusty',
+        role: 'coach',
+        coachEmail: '',
+        headers: ['Name', 'Role', 'PrimaryClub', 'CoachName', 'C4', 'C5', 'C6', 'C7', 'C8', 'Email', 'C10', 'Active Pods', 'Program Assignment'],
+        rowData: ['Crusty', 'coach', '', '', '', '', '', '', '', lowerEmail, '', 'wellness, medical, schedule', '']
+      };
+    }
+
+    // 2. Query public.athletes directly using auth.uid() OR matching email
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    let athQuery = supabase
+      .from('athletes')
+      .select('id, name, role, email, user_id, coach_user_id');
+
+    if (user && user.id) {
+      athQuery = athQuery.or(`user_id.eq.${user.id},email.ilike.${lowerEmail}`);
+    } else {
+      athQuery = athQuery.ilike('email', lowerEmail);
+    }
+
+    const { data: athRow, error: athErr } = await athQuery.limit(1);
+
+    if (!athErr && athRow && athRow.length > 0) {
+      const a = athRow[0];
+      let coachEmail = '';
+      if (a.coach_user_id) {
+        const { data: coachRow } = await supabase
+          .from('athletes')
+          .select('email')
+          .eq('user_id', a.coach_user_id)
+          .limit(1);
+        if (coachRow && coachRow.length > 0) coachEmail = coachRow[0].email || '';
+      }
+
+      return {
+        status: 'Success',
+        name: a.name,
+        athleteName: a.name,
+        role: a.role || 'athlete',
+        coachEmail,
+        headers: ['Name', 'Role', 'PrimaryClub', 'CoachName', 'C4', 'C5', 'C6', 'C7', 'C8', 'Email', 'C10', 'Active Pods', 'Program Assignment'],
+        rowData: [a.name, a.role || 'athlete', '', coachEmail, '', '', '', '', '', a.email, '', 'wellness, medical, schedule', '']
+      };
+    }
+
+    // 3. Fallback to full fetchAthletes list if direct query returned no rows
     const { athletes } = await fetchAthletes();
     if (!athletes || athletes.length < 2) return { status: 'NotFound' };
-    const lowerEmail = String(email).toLowerCase().trim();
     const row = athletes.slice(1).find(a => String(a[9]).toLowerCase().trim() === lowerEmail);
     
     if (!row) return { status: 'NotFound' };
@@ -625,7 +676,7 @@ export const getAthleteByEmail = async (email) => {
       name: row[0],
       athleteName: row[0],
       role: row[1],
-      coachEmail: row[3] || '', // ← THIS WAS MISSING BEFORE
+      coachEmail: row[3] || '',
       headers: athletes[0],
       rowData: row
     };
