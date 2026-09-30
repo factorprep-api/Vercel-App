@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Play, Video, Image as ImageIcon, Save, CheckCircle, MessageSquare, UserPlus, Globe, Timer, Pause, Plus, Minus, X, ArrowLeft } from 'lucide-react';
 import { getYouTubeId } from '../utils/helpers';
 import { useAuth } from '../hooks/useAuth';
@@ -178,6 +178,11 @@ export default function ProgramViewer() {
   const [timerInputValue, setTimerInputValue] = useState('');
   const { userEmail } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  // Session-linked entry (via a paperclip on a proposed session):
+  // ?program=<program name>&session=<proposal UUID>
+  const linkedProgramParam = searchParams.get('program') || '';
+  const linkedSessionId = searchParams.get('session') || '';
 
   const activePods = useMemo(() => {
     if (athleteRowIndex === null || !athletesData.length) return [];
@@ -527,6 +532,15 @@ export default function ProgramViewer() {
     }
   }
 
+  // Session-linked entry (paperclip on a proposed session): auto-select the
+  // attached program once program data has loaded, so it opens exactly as
+  // any of the athlete's assigned programs would.
+  useEffect(() => {
+    if (!linkedProgramParam || !programData.length) return;
+    const exists = programData.slice(1).some(r => String(r[0] || '').trim() === linkedProgramParam);
+    if (exists && selectedProgram !== linkedProgramParam) handleProgramChange(linkedProgramParam);
+  }, [linkedProgramParam, programData, selectedProgram, handleProgramChange]);
+
   function toggleMedia(groupId) {
     setExpandedVideos(prev => {
       const next = new Set(prev);
@@ -585,12 +599,21 @@ export default function ProgramViewer() {
       const res = await saveSession(payload);
       if (res.status === 'Success') {
         if (dur !== null && rpeVal !== null) {
-          const schedPayload = { email: userEmail, athlete: athleteName, type: sessionCategory, proposedMins: 0, proposedRpe: 0, actualMins: parseInt(dur), actualRpe: parseInt(rpeVal), location: 'App Logged', notes: `Program: ${loggedProgStr}`, status: 'Actual' };
-          await saveScheduleSession(schedPayload);
+          if (linkedSessionId) {
+            // Completed FROM a proposed session (paperclip entry): log the
+            // actuals against the proposal (Branch 1) so the session flips to
+            // "Actual" and load analytics link correctly. The DB trigger
+            // archives the transient assignment automatically.
+            const schedPayload = { sessionId: linkedSessionId, actualMins: parseInt(dur), actualRpe: parseInt(rpeVal), notes: `Program: ${loggedProgStr}` };
+            await saveScheduleSession(schedPayload);
+          } else {
+            const schedPayload = { email: userEmail, athlete: athleteName, type: sessionCategory, proposedMins: 0, proposedRpe: 0, actualMins: parseInt(dur), actualRpe: parseInt(rpeVal), location: 'App Logged', notes: `Program: ${loggedProgStr}`, status: 'Actual' };
+            await saveScheduleSession(schedPayload);
+          }
         }
         setSaveSuccess(true);
         setShowSrpeModal(false);
-        setTimeout(() => navigate('/athlete-hub'), 2000);
+        setTimeout(() => navigate(linkedSessionId ? '/athlete-schedule' : '/athlete-hub'), 2000);
       } else {
         alert('Save failed: ' + (res.message || 'Unknown error'));
       }

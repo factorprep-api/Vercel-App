@@ -2,8 +2,8 @@ import React, { useState, useEffect, useMemo, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
-import { fetchAthletes, fetchSchedule, fetchWellnessLogs, saveScheduleSession, deleteScheduleSession } from '../api';
-import { ArrowLeft, Calendar, BarChart2, Plus, AlertCircle, CheckCircle, Clock, X, AlertTriangle, Users, Layers, CalendarDays, List, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { fetchAthletes, fetchSchedule, fetchWellnessLogs, saveScheduleSession, deleteScheduleSession, fetchAttachablePrograms } from '../api';
+import { ArrowLeft, Calendar, BarChart2, Plus, AlertCircle, CheckCircle, Clock, X, AlertTriangle, Users, Layers, CalendarDays, List, Trash2, ChevronLeft, ChevronRight, Paperclip } from 'lucide-react';
 import { BarChart, Bar, Cell, LineChart, Line, ComposedChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer } from 'recharts';
 
 const SQUAD_COLORS = ['#008ed3', '#0ea5e9', '#6366f1', '#8b5cf6', '#ec4899', '#ef4444', '#f97316', '#f59e0b', '#84cc16', '#10b981', '#14b8a6', '#64748b', '#a8a29e'];
@@ -137,6 +137,12 @@ export default function CoachSchedule() {
   const [form, setForm] = useState({ date: '', type: 'Field Session', duration: 60, rpe: 7, location: '', notes: '' });
   const [toast, setToast] = useState(null);
 
+  // Attach Exercise Program state (Propose Session modal)
+  const [attachablePrograms, setAttachablePrograms] = useState([]);
+  const [attachSearch, setAttachSearch] = useState('');
+  const [attachedProgram, setAttachedProgram] = useState(null); // { id, name }
+  const [showAttachList, setShowAttachList] = useState(false);
+
   // Audit View State
   const [auditViewMode, setAuditViewMode] = useState('calendar'); // 'calendar' or 'agenda'
   const [auditFilter, setAuditFilter] = useState('all'); // 'all', 'pending', 'completed'
@@ -253,6 +259,7 @@ export default function CoachSchedule() {
             actualLoad: aLoad,
             location: r[10] || '',
             notes: rowNotes,
+            attachedProgram: String(r[13] || '').trim(),
             status: sessionStatus,
             id: r[12] || null
           });
@@ -613,6 +620,7 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
           proposedRpe: log.proposedRpe,
           proposedLoad: log.proposedLoad,
           location: log.location,
+          attachedProgram: log.attachedProgram || '',
           athletes: []
         };
       }
@@ -973,7 +981,8 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
           date: form.date,
           proposedMins: parseInt(form.duration), proposedRpe: parseInt(form.rpe),
           actualMins: 0, actualRpe: 0,
-          location: form.location, notes: form.notes
+          location: form.location, notes: form.notes,
+          attachedProgramId: attachedProgram ? attachedProgram.id : null
         };
         return saveScheduleSession(payload);
       }));
@@ -1036,6 +1045,12 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
             const t = new Date();
             const todayYMD = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
             setForm(f => ({ ...f, date: todayYMD }));
+            setAttachedProgram(null);
+            setAttachSearch('');
+            setShowAttachList(false);
+            fetchAttachablePrograms().then(res => {
+              setAttachablePrograms(res.programs || []);
+            }).catch(() => setAttachablePrograms([]));
             setShowModal(true);
           }}
           style={{ background: '#16a34a', color: 'white', border: 'none', padding: '10px 16px', borderRadius: '8px', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
@@ -1716,7 +1731,7 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
                                   title={`${session.type} - ${completedCount}/${session.athletes.length} Logged. Click to inspect.`}
                                 >
                                   <div style={{ fontWeight: '800', color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                    {session.type}
+                                    {session.attachedProgram ? <Paperclip size={10} style={{ display: 'inline', verticalAlign: '-1px', marginRight: '3px', color: '#008ed3' }} /> : null}{session.type}
                                   </div>
                                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '2px', fontSize: '10px' }}>
                                     <span style={{ color: '#64748b' }}>{session.proposedLoad} AU</span>
@@ -1766,8 +1781,13 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
                                 {session.proposedLoad} AU Target
                               </span>
                             </div>
-                            <p style={{ margin: 0, fontSize: '13px', color: '#64748b' }}>
+                            <p style={{ margin: 0, fontSize: '13px', color: '#64748b', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                               {session.dateStr} {session.location && `• ${session.location}`}
+                              {session.attachedProgram && (
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: '800', color: '#008ed3', background: '#f0f9ff', border: '1px solid #bae6fd', padding: '2px 8px', borderRadius: '4px' }}>
+                                  <Paperclip size={11} /> {session.attachedProgram}
+                                </span>
+                              )}
                             </p>
                           </div>
                           <div style={{ textAlign: 'right' }}>
@@ -1849,6 +1869,66 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
 
             <label style={{ fontSize: '12px', fontWeight: '700', color: '#64748b' }}>Notes / Requirements</label>
             <textarea className="modal-input" placeholder="e.g. Bring cleats and running shoes." value={form.notes} onChange={e=>setForm({...form, notes: e.target.value})} style={{ minHeight: '60px', resize: 'vertical' }} />
+
+            {/* --- ATTACH EXERCISE PROGRAM --- */}
+            <label style={{ fontSize: '12px', fontWeight: '700', color: '#64748b', display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
+              <Paperclip size={12} /> Attach Exercise Program (optional)
+            </label>
+            {attachedProgram ? (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', padding: '10px 12px', borderRadius: '8px', border: '1px solid #008ed3', background: '#f0f9ff' }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: '800', color: '#008ed3', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <Paperclip size={14} /> {attachedProgram.name}
+                </span>
+                <button
+                  onClick={() => { setAttachedProgram(null); setShowAttachList(false); }}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', display: 'flex', padding: '2px' }}
+                  title="Remove attachment"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            ) : (
+              <>
+                <button
+                  onClick={() => setShowAttachList(v => !v)}
+                  style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#fff', fontWeight: '700', color: '#334155', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontSize: '13px' }}
+                >
+                  <Paperclip size={14} color="#008ed3" /> Choose from Public or My Private Library
+                </button>
+                {showAttachList && (
+                  <div style={{ marginTop: '8px', border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden' }}>
+                    <input
+                      type="text"
+                      className="modal-input"
+                      placeholder="Search programs..."
+                      value={attachSearch}
+                      onChange={e => setAttachSearch(e.target.value)}
+                      style={{ borderRadius: 0, borderBottom: '1px solid #e2e8f0' }}
+                    />
+                    <div style={{ maxHeight: '180px', overflowY: 'auto' }}>
+                      {attachablePrograms.filter(p => p.name.toLowerCase().includes(attachSearch.toLowerCase())).length === 0 ? (
+                        <p style={{ margin: 0, padding: '12px', fontSize: '13px', color: '#94a3b8', textAlign: 'center' }}>No programs found in your libraries.</p>
+                      ) : (
+                        attachablePrograms
+                          .filter(p => p.name.toLowerCase().includes(attachSearch.toLowerCase()))
+                          .map(p => (
+                            <div
+                              key={p.id}
+                              onClick={() => { setAttachedProgram({ id: p.id, name: p.name }); setShowAttachList(false); setAttachSearch(''); }}
+                              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', cursor: 'pointer', borderBottom: '1px solid #f1f5f9' }}
+                            >
+                              <span style={{ fontSize: '14px', color: '#0f172a', fontWeight: '600', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</span>
+                              <span style={{ fontSize: '10px', fontWeight: '800', color: p.privacy === 'public' ? '#16a34a' : '#f59e0b', backgroundColor: p.privacy === 'public' ? '#f0fdf4' : '#fffbeb', padding: '2px 8px', borderRadius: '4px', flexShrink: 0, marginLeft: '8px' }}>
+                                {p.privacy === 'public' ? 'PUBLIC' : 'PRIVATE'}
+                              </span>
+                            </div>
+                          ))
+                      )}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
 
                        <button
               onClick={handlePropose}
