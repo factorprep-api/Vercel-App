@@ -613,25 +613,12 @@ export const getAthleteByEmail = async (email) => {
     if (!email) return { status: 'NotFound' };
     const lowerEmail = String(email).toLowerCase().trim();
 
-    // 1. Admin Override (Bulletproof fallback)
-    if (lowerEmail === 'crusty@hotmail.com' || lowerEmail === 'processone@pm.me') {
-      return {
-        status: 'Success',
-        name: 'Crusty',
-        athleteName: 'Crusty',
-        role: 'coach',
-        coachEmail: '',
-        headers: ['Name', 'Role', 'PrimaryClub', 'CoachName', 'C4', 'C5', 'C6', 'C7', 'C8', 'Email', 'C10', 'Active Pods', 'Program Assignment'],
-        rowData: ['Crusty', 'coach', '', '', '', '', '', '', '', lowerEmail, '', 'wellness, medical, schedule', '']
-      };
-    }
-
-    // 2. Query public.athletes directly using auth.uid() OR matching email
+    // Query public.athletes directly using auth.uid() OR matching email
     const { data: { user } } = await supabase.auth.getUser();
-    
+
     let athQuery = supabase
       .from('athletes')
-      .select('id, name, role, email, user_id, coach_user_id');
+      .select('id, name, role, email, user_id, coach_user_id, athlete_team_memberships(active_pods), assignments(status, programs(name))');
 
     if (user && user.id) {
       athQuery = athQuery.or(`user_id.eq.${user.id},email.ilike.${lowerEmail}`);
@@ -643,6 +630,8 @@ export const getAthleteByEmail = async (email) => {
 
     if (!athErr && athRow && athRow.length > 0) {
       const a = athRow[0];
+      const role = a.role || 'athlete';
+
       let coachEmail = '';
       if (a.coach_user_id) {
         const { data: coachRow } = await supabase
@@ -653,33 +642,34 @@ export const getAthleteByEmail = async (email) => {
         if (coachRow && coachRow.length > 0) coachEmail = coachRow[0].email || '';
       }
 
+      // Real pods from athlete_team_memberships
+      let pods = 'wellness, medical, schedule';
+      if (a.athlete_team_memberships && a.athlete_team_memberships.length > 0) {
+        const p = a.athlete_team_memberships[0].active_pods;
+        if (p && p.length > 0) pods = p.join(', ');
+      }
+
+      // Real program assignment from assignments relation
+      let programAssignment = '';
+      if (a.assignments && a.assignments.length > 0) {
+        programAssignment = a.assignments
+          .filter(asg => asg.status === 'active' && asg.programs)
+          .map(asg => asg.programs.name)
+          .join(', ');
+      }
+
       return {
         status: 'Success',
         name: a.name,
         athleteName: a.name,
-        role: a.role || 'athlete',
+        role,
         coachEmail,
         headers: ['Name', 'Role', 'PrimaryClub', 'CoachName', 'C4', 'C5', 'C6', 'C7', 'C8', 'Email', 'C10', 'Active Pods', 'Program Assignment'],
-        rowData: [a.name, a.role || 'athlete', '', coachEmail, '', '', '', '', '', a.email, '', 'wellness, medical, schedule', '']
+        rowData: [a.name, role, '', coachEmail, '', '', '', '', '', a.email, '', pods, programAssignment]
       };
     }
 
-    // 3. Fallback to full fetchAthletes list if direct query returned no rows
-    const { athletes } = await fetchAthletes();
-    if (!athletes || athletes.length < 2) return { status: 'NotFound' };
-    const row = athletes.slice(1).find(a => String(a[9]).toLowerCase().trim() === lowerEmail);
-    
-    if (!row) return { status: 'NotFound' };
-    
-    return {
-      status: 'Success',
-      name: row[0],
-      athleteName: row[0],
-      role: row[1],
-      coachEmail: row[3] || '',
-      headers: athletes[0],
-      rowData: row
-    };
+    return { status: 'NotFound' };
   } catch (err) {
     return { status: 'Error', message: err.message };
   }
