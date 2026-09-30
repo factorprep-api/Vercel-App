@@ -323,48 +323,68 @@
 /* Add Exercise Modal */
 .exlib-add-modal {
   background: white;
-  border-radius: 12px;
+  border-radius: 24px;
   padding: 24px;
   width: 90%;
-  max-width: 420px;
+  max-width: 500px;
   position: relative;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+  box-shadow: 0 20px 40px rgba(0,0,0,0.2);
   max-height: 90vh;
   overflow-y: auto;
 }
+.exlib-add-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
 .exlib-add-title {
-  font-size: 18px;
-  color: #2e7d32;
-  margin-bottom: 16px;
+  font-size: 20px;
+  color: #0f172a;
+  margin: 0;
   font-weight: 700;
 }
+.exlib-add-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #64748b;
+  display: flex;
+  padding: 0;
+}
+.exlib-add-close:hover { color: #0f172a; }
 .exlib-add-field { margin-bottom: 14px; }
 .exlib-add-label {
   display: block;
-  font-size: 13px;
-  font-weight: 600;
-  color: #555;
+  font-size: 12px;
+  font-weight: 700;
+  color: #64748b;
   margin-bottom: 4px;
 }
 .exlib-add-input {
   width: 100%;
-  padding: 10px 12px;
-  border: 1px solid #ddd;
-  border-radius: 6px;
-  font-size: 14px;
+  padding: 12px;
+  border: 2px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #0f172a;
   box-sizing: border-box;
+  background: #fff;
+  outline: none;
 }
+.exlib-add-input:focus { border-color: #008ed3; }
 .exlib-add-save-btn {
   width: 100%;
-  padding: 12px;
+  padding: 16px;
   background: #2e7d32;
   color: white;
   border: none;
-  border-radius: 6px;
-  font-size: 15px;
-  font-weight: 600;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 800;
   cursor: pointer;
-  margin-top: 6px;
+  margin-top: 24px;
 }
 .exlib-add-save-btn:hover { background: #1b5e20; }
 .exlib-add-save-btn:disabled { opacity: 0.5; cursor: not-allowed; }
