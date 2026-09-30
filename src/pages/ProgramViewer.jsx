@@ -632,6 +632,7 @@ export default function ProgramViewer() {
           </div>
         </div>
       )}
+      {selectedProgram && (
       <div className={`pv-floating-fab ${timerActive ? 'is-active' : ''}`}>
         {timerExpanded ? (
           <>
@@ -653,6 +654,7 @@ export default function ProgramViewer() {
           <button className="pv-fab-collapsed" onClick={() => setTimerExpanded(true)}><Timer size={20} color="#38bdf8" /> <span>Rest Timer</span></button>
         )}
       </div>
+      )}
       <div className="pv-body">
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: '16px' }}>
           <button onClick={() => navigate(-1)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#008ed3', padding: 0, display: 'flex', marginRight: '12px' }}>
