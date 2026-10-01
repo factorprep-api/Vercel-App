@@ -5,22 +5,10 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  // `dist` = build output, `.kilo/worktrees` = tool-managed worktree copies,
-  // and the root-level check-/fix-/test-/… files are one-off Node debug scripts
-  // (not part of the app bundle). Leading `/` anchors them to the project root.
+  // `dist` = build output, `.kilo/worktrees` = tool-managed worktree copies
   globalIgnores([
     'dist',
     '.kilo/worktrees',
-    '/check-*.js',
-    '/check-*.mjs',
-    '/compare-db.mjs',
-    '/fix-*.js',
-    '/fix-*.mjs',
-    '/inspect-*.mjs',
-    '/patch.js',
-    '/test-*.js',
-    '/test-*.mjs',
-    '/verify-*.mjs',
   ]),
   {
     // Bundler/ESLint config files run in Node
