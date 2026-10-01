@@ -1,4 +1,3 @@
-export const GOOGLE_SCRIPT_API_URL = "https://script.google.com/macros/s/AKfycbzIBfOpFxgmTYWlFDuKPVSx30tXJRlyWhhvZVBqkAO_nKeF1GfGTFVvTolLr-CBpoHl8A/exec";
 import { supabase } from './supabase';
 
 // ==========================================
@@ -1171,6 +1170,6 @@ const api = {
   assignProgramBulk, assignProgramToAthletes, addExerciseToLibrary, 
   deleteExerciseFromLibrary, updateExerciseInLibrary, fetchHelpVideos, 
   updateProgram, updateLogbookEntry, fetchAuditLog, getMediaType, 
-  parseProgramsFromRaw, GOOGLE_SCRIPT_API_URL
+  parseProgramsFromRaw
 };
 export default api;

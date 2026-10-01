@@ -661,7 +661,7 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
     } else if (auditScope === 'season') {
       next.setDate(next.getDate() + (direction === 'prev' ? -84 : 84));
     } else {
-      next.setMonth(next.getMonth() + (direction === 'prev' ? -1 : 1));
+      next.setDate(next.getDate() + (direction === 'prev' ? -28 : 28));
     }
     setAuditMonth(next);
   };
@@ -677,7 +677,13 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
       end.setDate(end.getDate() + 83);
       return `Season Block (${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })})`;
     }
-    return auditMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    // "Month" = rolling 4-week window: current week + past 3 weeks
+    const mon = getWeekMonday(auditMonth);
+    const start = new Date(mon);
+    start.setDate(start.getDate() - 21);
+    const end = new Date(mon);
+    end.setDate(end.getDate() + 6);
+    return `${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
   };
 
   const auditScopeMetrics = useMemo(() => {
@@ -688,8 +694,13 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
       end.setDate(end.getDate() + 6);
       end.setHours(23, 59, 59, 999);
     } else if (auditScope === 'month') {
-      start = new Date(auditMonth.getFullYear(), auditMonth.getMonth(), 1);
-      end = new Date(auditMonth.getFullYear(), auditMonth.getMonth() + 1, 0, 23, 59, 59, 999);
+      // Rolling 4-week window: current week + past 3 weeks
+      const mon = getWeekMonday(auditMonth);
+      start = new Date(mon);
+      start.setDate(start.getDate() - 21);
+      end = new Date(mon);
+      end.setDate(end.getDate() + 6);
+      end.setHours(23, 59, 59, 999);
     } else {
       start = getWeekMonday(auditMonth);
       end = new Date(start);
@@ -758,33 +769,31 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
         });
       }
     } else {
-      const year = auditMonth.getFullYear();
-      const month = auditMonth.getMonth();
+      // "Month" = rolling 4-week window: current week first (top row), then the past 3 weeks.
+      // Every cell is a real day, so sessions from the previous month are always visible.
+      const mon = getWeekMonday(auditMonth);
+      for (let w = 0; w < 4; w++) {
+        const weekStart = new Date(mon);
+        weekStart.setDate(mon.getDate() - w * 7);
+        for (let i = 0; i < 7; i++) {
+          const dayDate = new Date(weekStart);
+          dayDate.setDate(weekStart.getDate() + i);
+          const year = dayDate.getFullYear();
+          const month = dayDate.getMonth();
+          const dayNum = dayDate.getDate();
+          const ymd = `${year}-${String(month + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
+          const daySessions = filteredAuditSessions.filter(s => s.ymd === ymd);
 
-      const firstDay = new Date(year, month, 1);
-      const lastDay = new Date(year, month + 1, 0);
-      const daysInMonth = lastDay.getDate();
-
-      let startDayOfWeek = firstDay.getDay() - 1;
-      if (startDayOfWeek < 0) startDayOfWeek = 6;
-
-      for (let i = 0; i < startDayOfWeek; i++) {
-        days.push({ type: 'empty', key: `empty-${i}` });
-      }
-
-      for (let day = 1; day <= daysInMonth; day++) {
-        const dayDate = new Date(year, month, day);
-        const ymd = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-        const daySessions = filteredAuditSessions.filter(s => s.ymd === ymd);
-
-        days.push({
-          type: 'day',
-          dayNumber: day,
-          date: dayDate,
-          ymd: ymd,
-          isToday: ymd === todayYMD,
-          sessions: daySessions
-        });
+          days.push({
+            type: 'day',
+            dayNumber: dayNum,
+            monthLabel: dayNum === 1 || (w === 0 && i === 0) ? dayDate.toLocaleDateString('en-US', { month: 'short' }) : '',
+            date: dayDate,
+            ymd: ymd,
+            isToday: ymd === todayYMD,
+            sessions: daySessions
+          });
+        }
       }
     }
 
@@ -1594,7 +1603,7 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px', backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
               <span style={{ fontSize: '14px', fontWeight: '800', color: '#0f172a' }}>
-                {auditScope === 'week' ? 'Week (7 Days)' : auditScope === 'month' ? 'Month (30 Days)' : 'Season (90 Days)'} Summary
+                {auditScope === 'week' ? 'Week (7 Days)' : auditScope === 'month' ? 'Month (4 Weeks)' : 'Season (90 Days)'} Summary
               </span>
               <div style={{ display: 'flex', background: '#e2e8f0', padding: '3px', borderRadius: '8px' }}>
                 <button onClick={() => setAuditScope('week')} style={{ padding: '4px 10px', border: 'none', borderRadius: '6px', background: auditScope === 'week' ? '#fff' : 'transparent', color: auditScope === 'week' ? '#008ed3' : '#64748b', fontWeight: 700, fontSize: '12px', cursor: 'pointer' }}>Week</button>
