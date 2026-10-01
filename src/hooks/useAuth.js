@@ -72,14 +72,12 @@ export function useAuth() {
       if (cached) {
         try {
           const parsed = JSON.parse(cached);
-          
-          const isCrusty = parsed.email && parsed.email.toLowerCase() === 'crusty@hotmail.com';
-          
-          if (!isCrusty && parsed.email === session.user.email && parsed.role) {
+          if (parsed.email === session.user.email && parsed.role) {
             setRole(parsed.role);
             setAthleteName(parsed.name || session.user.email.split('@')[0]);
             setAthleteData(parsed);
             setIsLoading(false);
+            // Still fetch fresh role from DB in background — corrects any stale cache
             fetchRoleFromSheets(session.user.email);
             return;
           }

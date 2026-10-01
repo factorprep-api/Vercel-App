@@ -153,4 +153,31 @@ begin
   values (tg_table_name, new.id, (select auth.uid()), to_jsonb(old), to_jsonb(new));
   return new;
 end;
+
+-- (11) archive_session_assignment()
+-- Fires on session_logs insert (Branch 1: athlete completes a proposed
+-- session — via the attached program's popup or the normal audit popup).
+-- Archives the transient assignment created when a coach attached a
+-- program to that proposal, so it drops off the athlete's "My Programs".
+create or replace function public.archive_session_assignment()
+returns trigger
+language plpgsql
+security definer
+set search_path = 'public'
+as $function$
+begin
+  if new.session_id is not null then
+    update public.assignments
+      set status = 'archived'
+      where source_session_id = new.session_id
+        and status = 'active';
+  end if;
+  return new;
+end;
+$function$;
+
+drop trigger if exists trg_archive_session_assignment on public.session_logs;
+create trigger trg_archive_session_assignment
+  after insert on public.session_logs
+  for each row execute function public.archive_session_assignment();
 $function$;

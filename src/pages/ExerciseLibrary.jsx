@@ -542,8 +542,10 @@ function AddExerciseModal({ userEmail, athleteName, existingCategories, onClose,
   return (
     <div className="exlib-modal-overlay" onClick={onClose}>
       <div className="exlib-add-modal" onClick={e => e.stopPropagation()}>
-        <button className="exlib-close-btn" onClick={onClose}><X size={24} /></button>
-        <h3 className="exlib-add-title">Add New Exercise</h3>
+        <div className="exlib-add-header">
+          <h3 className="exlib-add-title">Add New Exercise</h3>
+          <button className="exlib-add-close" onClick={onClose}><X size={24} /></button>
+        </div>
         
         <div className="exlib-add-field">
           <label className="exlib-add-label">Exercise Name (Required):</label>

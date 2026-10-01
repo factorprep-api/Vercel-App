@@ -87,6 +87,7 @@ create table public.schedule_sessions (
   proposed_load int,
   location text,
   created_by uuid references auth.users(id),
+  attached_program_id uuid references public.programs(id) on delete set null,
   created_at timestamptz not null default now()
 );
 
@@ -192,6 +193,7 @@ create table public.assignments (
   assigned_at timestamptz not null default now(),
   expires_at date,
   status text not null default 'active' check (status in ('active','expired','archived')),
+  source_session_id uuid references public.schedule_sessions(id) on delete cascade,
   deleted_at timestamptz
 );
 
@@ -287,6 +289,7 @@ create index idx_max_athlete_ex_date on public.athlete_maxes(athlete_id, exercis
 
 -- Assignment / library / audit tier
 create index idx_asg_athlete         on public.assignments(athlete_id);
+create index idx_asg_source_session  on public.assignments(source_session_id);
 create index idx_pe_program          on public.program_exercises(program_id);
 create index idx_ex_owner            on public.exercises(owner_user_id);
 create index idx_prg_owner           on public.programs(owner_user_id);

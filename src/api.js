@@ -8,7 +8,7 @@ export const fetchAthletes = async () => {
   try {
     const { data: athletesData, error: aErr } = await supabase
       .from('athletes')
-      .select('id, name, role, primary_club_id, user_id, coach_user_id, email, athlete_team_memberships(active_pods), assignments(status, programs(name))');
+      .select('id, name, role, primary_club_id, user_id, coach_user_id, email, athlete_team_memberships(active_pods), assignments(status, expires_at, programs(name))');
 
     if (aErr) return { athletes: [], error: aErr.message };
 
@@ -37,7 +37,11 @@ export const fetchAthletes = async () => {
         row[11] = 'wellness, medical, schedule';
       }
       if (a.assignments && a.assignments.length > 0) {
-        row[12] = a.assignments.filter(asg => asg.status === 'active' && asg.programs).map(asg => asg.programs.name).join(', ');
+        row[12] = a.assignments
+          .filter(asg => asg.status === 'active' && asg.programs
+            && (!asg.expires_at || new Date(asg.expires_at).getTime() > Date.now()))
+          .map(asg => asg.programs.name)
+          .join(', ');
       }
       return row;
     });
@@ -257,7 +261,7 @@ export const fetchWellnessLogs = async () => {
 // (positional arrays, header first, r[0]..r[12])
 // so existing pages keep working unchanged.
 // ==========================================
-const SCHED_SHEET_HEADER = ['Date','Email','Athlete','Type','Proposed Mins','Proposed RPE','Proposed Load','Actual Mins','Actual RPE','Actual Load','Location','Notes','ID'];
+const SCHED_SHEET_HEADER = ['Date','Email','Athlete','Type','Proposed Mins','Proposed RPE','Proposed Load','Actual Mins','Actual RPE','Actual Load','Location','Notes','ID','Attached Program'];
 
 // Resolve an athlete UUID: signed-in user first, then lookup by name
 async function resolveAthleteRow(athleteName) {
@@ -346,7 +350,7 @@ export const saveScheduleSession = async (payload) => {
 
       const proposedMins = parseInt(payload.proposedMins) || 0;
       const proposedRpe = parseInt(payload.proposedRpe) || 0;
-      const { error } = await supabase.from('schedule_sessions').insert({
+      const insertData = {
         athlete_id: athleteId,
         date: payload.date || new Date().toISOString().split('T')[0],
         session_type: payload.type || 'Other',
@@ -355,8 +359,34 @@ export const saveScheduleSession = async (payload) => {
         proposed_load: proposedMins * proposedRpe,
         location: payload.location || '',
         notes: payload.notes || ''
-      });
+      };
+      if (payload.attachedProgramId) insertData.attached_program_id = payload.attachedProgramId;
+
+      const { data: insRow, error } = await supabase.from('schedule_sessions').insert(insertData).select('id').single();
       if (error) return { status: 'Error', message: error.message };
+
+      // --- TRANSIENT ASSIGNMENT ---
+      // Attaching a program to a proposed session is a temporary assignment:
+      // the athlete can open it in Program Viewer until the session expires
+      // (3-day Upcoming rule). expires_at = session date + 4 days mirrors that
+      // rule exactly under the RLS check (expires_at > now() with date semantics).
+      // Permanent assignments (Program Library) never set expires_at and are untouched.
+      if (payload.attachedProgramId) {
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          const expiry = new Date(insertData.date);
+          expiry.setDate(expiry.getDate() + 4);
+          const { error: asgErr } = await supabase.from('assignments').insert({
+            athlete_id: athleteId,
+            program_id: payload.attachedProgramId,
+            assigned_by: user ? user.id : null,
+            expires_at: expiry.toISOString().split('T')[0],
+            status: 'active',
+            source_session_id: insRow.id
+          });
+          if (asgErr) console.warn('Transient assignment warning:', asgErr.message);
+        } catch (asgE) { console.warn('Transient assignment warning:', asgE.message); }
+      }
       return { status: 'Success' };
     }
 
@@ -386,7 +416,7 @@ export const fetchSchedule = async (athleteName, email) => {
   try {
     const [sessRes, logRes] = await Promise.all([
       supabase.from('schedule_sessions')
-        .select('id, date, session_type, proposed_mins, proposed_rpe, proposed_load, location, notes, athletes(name, email)')
+        .select('id, date, session_type, proposed_mins, proposed_rpe, proposed_load, location, notes, attached_program_id, programs(name), athletes(name, email)')
         .order('date', { ascending: true }),
       supabase.from('session_logs')
         .select('id, session_id, date, session_type, actual_mins, actual_rpe, actual_load, location, notes, athletes(name, email)')
@@ -424,7 +454,8 @@ export const fetchSchedule = async (athleteName, email) => {
         r.actual_load ?? 0,
         r.location || '',
         r.notes || '',
-        r.row_id || ''
+        r.row_id || '',
+        r.programs ? (r.programs.name || '') : ''
       ]);
     };
 
@@ -456,6 +487,32 @@ export const fetchSchedule = async (athleteName, email) => {
 
     return { data: [SCHED_SHEET_HEADER, ...rows] };
   } catch { return { data: [] }; }
+};
+
+// Programs a coach may attach to a proposed session: the public library
+// plus their own private library. RLS already limits the visible set;
+// we additionally filter to public OR owned so a coach never attaches
+// someone else's private program (e.g. one assigned to them as an athlete).
+export const fetchAttachablePrograms = async () => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    const { data, error } = await supabase
+      .from('programs')
+      .select('id, name, category, privacy, owner_user_id')
+      .order('name', { ascending: true });
+    if (error) return { programs: [], error: error.message };
+
+    const seen = new Set();
+    const list = [];
+    (data || []).forEach(p => {
+      const name = String(p.name || '').trim();
+      if (!name || seen.has(name)) return;
+      if (p.privacy !== 'public' && p.owner_user_id !== (user ? user.id : null)) return;
+      seen.add(name);
+      list.push({ id: p.id, name, category: p.category || '', privacy: p.privacy || 'public' });
+    });
+    return { programs: list, error: null };
+  } catch (err) { return { programs: [], error: err.message }; }
 };
 
 // Maps medical_entries rows back into the legacy sheet row shape
@@ -576,6 +633,30 @@ export const getLatestMaxes = async (athleteName) => {
   } catch { return { status: "Error", maxes: {} }; }
 };
 
+// Manually save a 1RM value for an athlete/exercise (coach or athlete entry).
+// Inserts a new dated row — the newest row per exercise wins in getLatestMaxes,
+// so history is preserved. RLS already permits coach/athlete writes.
+export const saveAthleteMax = async (athleteName, exerciseName, oneRmKg, date) => {
+  try {
+    const athleteId = await resolveAthleteRow(athleteName);
+    if (!athleteId) return { status: 'Error', message: 'Athlete not found' };
+    const val = parseFloat(oneRmKg);
+    if (!Number.isFinite(val) || val <= 0) return { status: 'Error', message: 'Please enter a valid 1RM value.' };
+    const { data: exRow, error: exErr } = await supabase
+      .from('exercises').select('id').ilike('exercise_name', exerciseName).limit(1);
+    if (exErr) return { status: 'Error', message: exErr.message };
+    if (!exRow || exRow.length === 0) return { status: 'Error', message: 'Exercise not found.' };
+    const { error } = await supabase.from('athlete_maxes').insert({
+      athlete_id: athleteId,
+      exercise_id: exRow[0].id,
+      date: date || new Date().toISOString().split('T')[0],
+      one_rm_kg: Math.round(val * 10) / 10
+    });
+    if (error) return { status: 'Error', message: error.message };
+    return { status: 'Success' };
+  } catch (err) { return { status: 'Error', message: err.message }; }
+};
+
 export const getLastLoggedWeight = async (athleteName, exerciseName) => {
   try {
     const athleteId = await resolveAthleteRow(athleteName);
@@ -613,25 +694,12 @@ export const getAthleteByEmail = async (email) => {
     if (!email) return { status: 'NotFound' };
     const lowerEmail = String(email).toLowerCase().trim();
 
-    // 1. Admin Override (Bulletproof fallback)
-    if (lowerEmail === 'crusty@hotmail.com' || lowerEmail === 'processone@pm.me') {
-      return {
-        status: 'Success',
-        name: 'Crusty',
-        athleteName: 'Crusty',
-        role: 'coach',
-        coachEmail: '',
-        headers: ['Name', 'Role', 'PrimaryClub', 'CoachName', 'C4', 'C5', 'C6', 'C7', 'C8', 'Email', 'C10', 'Active Pods', 'Program Assignment'],
-        rowData: ['Crusty', 'coach', '', '', '', '', '', '', '', lowerEmail, '', 'wellness, medical, schedule', '']
-      };
-    }
-
-    // 2. Query public.athletes directly using auth.uid() OR matching email
+    // Query public.athletes directly using auth.uid() OR matching email
     const { data: { user } } = await supabase.auth.getUser();
-    
+
     let athQuery = supabase
       .from('athletes')
-      .select('id, name, role, email, user_id, coach_user_id');
+      .select('id, name, role, email, user_id, coach_user_id, athlete_team_memberships(active_pods), assignments(status, expires_at, programs(name))');
 
     if (user && user.id) {
       athQuery = athQuery.or(`user_id.eq.${user.id},email.ilike.${lowerEmail}`);
@@ -643,6 +711,8 @@ export const getAthleteByEmail = async (email) => {
 
     if (!athErr && athRow && athRow.length > 0) {
       const a = athRow[0];
+      const role = a.role || 'athlete';
+
       let coachEmail = '';
       if (a.coach_user_id) {
         const { data: coachRow } = await supabase
@@ -653,33 +723,35 @@ export const getAthleteByEmail = async (email) => {
         if (coachRow && coachRow.length > 0) coachEmail = coachRow[0].email || '';
       }
 
+      // Real pods from athlete_team_memberships
+      let pods = 'wellness, medical, schedule';
+      if (a.athlete_team_memberships && a.athlete_team_memberships.length > 0) {
+        const p = a.athlete_team_memberships[0].active_pods;
+        if (p && p.length > 0) pods = p.join(', ');
+      }
+
+      // Real program assignment from assignments relation
+      let programAssignment = '';
+      if (a.assignments && a.assignments.length > 0) {
+        programAssignment = a.assignments
+          .filter(asg => asg.status === 'active' && asg.programs
+            && (!asg.expires_at || new Date(asg.expires_at).getTime() > Date.now()))
+          .map(asg => asg.programs.name)
+          .join(', ');
+      }
+
       return {
         status: 'Success',
         name: a.name,
         athleteName: a.name,
-        role: a.role || 'athlete',
+        role,
         coachEmail,
         headers: ['Name', 'Role', 'PrimaryClub', 'CoachName', 'C4', 'C5', 'C6', 'C7', 'C8', 'Email', 'C10', 'Active Pods', 'Program Assignment'],
-        rowData: [a.name, a.role || 'athlete', '', coachEmail, '', '', '', '', '', a.email, '', 'wellness, medical, schedule', '']
+        rowData: [a.name, role, '', coachEmail, '', '', '', '', '', a.email, '', pods, programAssignment]
       };
     }
 
-    // 3. Fallback to full fetchAthletes list if direct query returned no rows
-    const { athletes } = await fetchAthletes();
-    if (!athletes || athletes.length < 2) return { status: 'NotFound' };
-    const row = athletes.slice(1).find(a => String(a[9]).toLowerCase().trim() === lowerEmail);
-    
-    if (!row) return { status: 'NotFound' };
-    
-    return {
-      status: 'Success',
-      name: row[0],
-      athleteName: row[0],
-      role: row[1],
-      coachEmail: row[3] || '',
-      headers: athletes[0],
-      rowData: row
-    };
+    return { status: 'NotFound' };
   } catch (err) {
     return { status: 'Error', message: err.message };
   }
@@ -729,6 +801,41 @@ export const saveSession = async (payload) => {
         const { error: lbErr } = await supabase.from('logbook_entries').insert(logbookInserts);
         if (lbErr) return { status: 'Error', message: lbErr.message };
       }
+
+      // === 1RM AUTO-CAPTURE (Epley, direction A) ===
+      // Only sets prescribed at 100% intensity may write a 1RM:
+      // est1RM = weight x (1 + 0.0333 x reps). Sub-max sets (80/90/95%)
+      // never touch the max. Saved only when it beats the athlete's
+      // current latest 1RM for that exercise (protects coach-entered maxes).
+      try {
+        const capSets = payload.sets.filter(s => {
+          const pct = parseFloat(String(s.intensity || '').replace('%', ''));
+          return pct === 100 && parseFloat(s.weight) > 0;
+        });
+        for (const s of capSets) {
+          const exRow = allExercises.find(e => e.exercise_name.toLowerCase() === (s.exercise || '').toLowerCase());
+          if (!exRow) continue;
+          const repsNum = parseFloat(String(s.reps)) || 0;
+          if (repsNum <= 0) continue;
+          const est1RM = parseFloat(s.weight) * (1 + 0.0333 * repsNum);
+          const { data: curMax } = await supabase
+            .from('athlete_maxes')
+            .select('one_rm_kg')
+            .eq('athlete_id', athleteId)
+            .eq('exercise_id', exRow.id)
+            .is('deleted_at', null)
+            .order('date', { ascending: false })
+            .limit(1);
+          const curVal = curMax && curMax.length > 0 ? Number(curMax[0].one_rm_kg) || 0 : 0;
+          if (est1RM <= curVal) continue;
+          await supabase.from('athlete_maxes').insert({
+            athlete_id: athleteId,
+            exercise_id: exRow.id,
+            date: payload.date || new Date().toISOString().split('T')[0],
+            one_rm_kg: Math.round(est1RM * 10) / 10
+          });
+        }
+      } catch (maxErr) { console.warn('1RM auto-capture skipped:', maxErr); }
     }
 
     return { status: 'Success' };

@@ -130,7 +130,7 @@ export default function AthleteWellness() {
           <span className="aw-card-value" style={{ color: '#ef4444' }}>{soreness}/10</span>
         </div>
         <input type="range" min="0" max="10" step="1" className="aw-slider slider-soreness" value={soreness} onChange={(e) => setSoreness(e.target.value)} />
-        <div className="aw-slider-labels"><span>0 (Extreme)</span><span>10 (None)</span></div>
+        <div className="aw-slider-labels"><span>0 (None)</span><span>10 (Extreme)</span></div>
       </div>
 
       <div className="aw-card">

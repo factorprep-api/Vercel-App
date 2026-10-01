@@ -10,7 +10,9 @@ import {
   fetchLibrary,
   fetchPrograms,
   getMediaType,
-  updateLogbookEntry
+  updateLogbookEntry,
+  getLatestMaxes,
+  saveAthleteMax
 } from '../api';
 import {
   ArrowLeft,
@@ -192,6 +194,13 @@ useEffect(() => {
   const [error, setError] = useState(null);
   const [athleteName, setAthleteName] = useState(authAthleteName || '');
   const [maxes, setMaxes] = useState([]);
+
+  // ADD 1RM MODAL STATE (athlete self-service)
+  const [showMaxModal, setShowMaxModal] = useState(false);
+  const [maxExerciseSel, setMaxExerciseSel] = useState('');
+  const [maxValueInput, setMaxValueInput] = useState('');
+  const [maxDateInput, setMaxDateInput] = useState(new Date().toISOString().split('T')[0]);
+  const [maxSaving, setMaxSaving] = useState(false);
   const [history, setHistory] = useState([]);
   const [programsData, setProgramsData] = useState([]);
   const [libraryData, setLibraryData] = useState([]);
@@ -298,6 +307,21 @@ useEffect(() => {
       }
       setMaxes(parsedMaxes);
 
+      // Refresh maxes from the real athlete_maxes table (source of truth).
+      // Legacy profile maxes are only kept for lifts the table doesn't have.
+      try {
+        const maxesResp = await getLatestMaxes(name);
+        if (maxesResp.status === 'Success' && maxesResp.maxes) {
+          const merged = [...parsedMaxes];
+          Object.entries(maxesResp.maxes).forEach(([n, w]) => {
+            const idx = merged.findIndex(m => normalizeString(m.name) === normalizeString(n));
+            const entry = { name: n, weight: w };
+            if (idx > -1) merged[idx] = entry; else merged.push(entry);
+          });
+          setMaxes(merged);
+        }
+      } catch {}
+
       // History, wellness (filtered server-side), library, programs — all in parallel
       const [logResult, wellnessRes, libRes, progRes] = await Promise.all([
         fetchLogbookByAthlete(name).catch(() => ({ data: [] })),
@@ -383,7 +407,16 @@ useEffect(() => {
     }
   }
 
-  // Build Media Map for exercise demos
+  // Epley-enabled exercises (weight/1RM formula in the library) — the only
+// exercises that can take a manually entered 1RM value.
+const epleyExercises = useMemo(() => {
+  return (Array.isArray(libraryData) ? libraryData : [])
+    .filter(r => Array.isArray(r) && ['yes', 'weight'].includes(String(r[3] || '').trim().toLowerCase()))
+    .map(r => String(r[0] || '').trim())
+    .filter(Boolean);
+}, [libraryData]);
+
+// Build Media Map for exercise demos
   const exerciseMediaMap = useMemo(() => {
     const map = {};
     if (Array.isArray(libraryData)) {
@@ -625,7 +658,7 @@ useEffect(() => {
     const key = selectedMetric.toLowerCase();
     const validValues = last7DaysWellness
       .map(d => d[key])
-      .filter(v => v !== null && !isNaN(v) && v > 0);
+      .filter(v => v !== null && !isNaN(v) && (key === 'soreness' ? v >= 0 : v > 0));
 
     if (!validValues.length) return { avg: null, min: null, max: null, latest: null };
 
@@ -644,6 +677,35 @@ useEffect(() => {
       [key]: !prev[key]
     }));
   };
+
+  // ===== ADD 1RM HANDLERS (athlete self-service) =====
+  async function handleSaveMax() {
+    if (!maxExerciseSel) { showToast('Please select an exercise.', true); return; }
+    const val = parseFloat(maxValueInput);
+    if (!Number.isFinite(val) || val <= 0) { showToast('Please enter a valid 1RM value.', true); return; }
+    setMaxSaving(true);
+    try {
+      const res = await saveAthleteMax(athleteName, maxExerciseSel, val, maxDateInput);
+      if (res.status === 'Success') {
+        setMaxes(prev => {
+          const next = [...prev];
+          const idx = next.findIndex(m => normalizeString(m.name) === normalizeString(maxExerciseSel));
+          const entry = { name: maxExerciseSel, weight: val };
+          if (idx > -1) next[idx] = entry; else next.push(entry);
+          return next;
+        });
+        setShowMaxModal(false);
+        setMaxExerciseSel('');
+        setMaxValueInput('');
+        showToast('1RM saved successfully.');
+      } else {
+        showToast('Save failed: ' + (res.message || 'Unknown error'), true);
+      }
+    } catch {
+      showToast('Network error. Please try again.', true);
+    }
+    setMaxSaving(false);
+  }
 
   // ===== STEP B: EDIT HANDLERS =====
   const openEditModal = (exerciseName, setNumber, field, currentValue, metricLabel) => {
@@ -949,7 +1011,10 @@ useEffect(() => {
             {/* TAB 2: METRICS (1RM) */}
             {activeTab === 'maxes' && (
               <div className="mp-maxes-card">
-                <div className="mp-maxes-header">Current Core Maxes</div>
+                <div className="mp-maxes-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>Current Core Maxes</span>
+                  <button onClick={() => setShowMaxModal(true)} style={{ background: '#008ed3', color: '#fff', border: 'none', borderRadius: '6px', padding: '6px 12px', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}>+ Add 1RM</button>
+                </div>
                 <div className="mp-maxes-grid">
                   {maxes.length === 0 ? (
                     <p className="mp-placeholder">No metrics recorded yet.</p>
@@ -1422,6 +1487,49 @@ useEffect(() => {
                 style={{ flex: 1, padding: '13px', borderRadius: '8px', border: 'none', background: '#008ed3', color: '#ffffff', fontWeight: '800', cursor: 'pointer' }}
               >
                 {editSaving ? 'Saving...' : 'Confirm Edit'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== ADD 1RM MODAL (athlete self-service) ===== */}
+      {showMaxModal && (
+        <div onClick={() => { if (!maxSaving) setShowMaxModal(false); }} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15,23,42,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '16px' }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: '#ffffff', borderRadius: '16px', width: '100%', maxWidth: '440px', padding: '24px', boxShadow: '0 20px 40px rgba(0,0,0,0.2)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+              <h3 style={{ fontSize: '18px', color: '#0f172a', fontWeight: '800', margin: 0 }}>Add 1RM</h3>
+              <button onClick={() => { if (!maxSaving) setShowMaxModal(false); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', padding: 0 }}>
+                <X size={20} />
+              </button>
+            </div>
+            <p style={{ margin: '0 0 16px 0', fontSize: '12px', color: '#d97706' }}>
+              The 1RM is used by the Epley formula to calculate loads in the Program Viewer for 1RM (weight) exercises.
+            </p>
+            <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#555', textTransform: 'uppercase', marginBottom: '6px' }}>
+              Exercise (1RM enabled)
+            </label>
+            <select value={maxExerciseSel} onChange={(e) => setMaxExerciseSel(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', marginBottom: '14px', fontSize: '14px' }}>
+              <option value="">Select an exercise…</option>
+              {epleyExercises.map((name) => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </select>
+            {maxExerciseSel && maxes.some(m => normalizeString(m.name) === normalizeString(maxExerciseSel)) && (
+              <p style={{ fontSize: '12px', color: '#16a34a', fontWeight: '700', margin: '-8px 0 14px 0' }}>
+                Current: {maxes.find(m => normalizeString(m.name) === normalizeString(maxExerciseSel)).weight} kg
+              </p>
+            )}
+            <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#555', textTransform: 'uppercase', marginBottom: '6px' }}>1RM (kg)</label>
+            <input type="number" min="0" step="0.5" value={maxValueInput} onChange={(e) => setMaxValueInput(e.target.value)} placeholder="e.g. 120" style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', marginBottom: '14px', fontSize: '14px' }} />
+            <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#555', textTransform: 'uppercase', marginBottom: '6px' }}>Date</label>
+            <input type="date" value={maxDateInput} onChange={(e) => setMaxDateInput(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', marginBottom: '20px', fontSize: '14px' }} />
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button onClick={() => { if (!maxSaving) setShowMaxModal(false); }} disabled={maxSaving} style={{ flex: 1, padding: '13px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#f8fafc', fontWeight: '700', color: '#475569', cursor: 'pointer' }}>
+                Cancel
+              </button>
+              <button onClick={handleSaveMax} disabled={maxSaving} style={{ flex: 1, padding: '13px', borderRadius: '8px', border: 'none', background: '#008ed3', color: '#ffffff', fontWeight: '800', cursor: maxSaving ? 'wait' : 'pointer' }}>
+                {maxSaving ? 'Saving...' : 'Save 1RM'}
               </button>
             </div>
           </div>

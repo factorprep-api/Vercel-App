@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Save, Calendar, Clock, Activity, CheckCircle, BarChart2, AlertTriangle, AlertCircle, Check, X, CalendarDays, List } from 'lucide-react';
+import { ArrowLeft, Save, Calendar, Clock, Activity, CheckCircle, BarChart2, AlertTriangle, AlertCircle, Check, X, CalendarDays, List, Paperclip } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
@@ -212,6 +212,7 @@ export default function AthleteSchedule() {
                 actualLoad: aLoad,
                 location: r[10] || '',
                 notes: rowNotes,
+                attachedProgram: String(r[13] || '').trim(),
                 status: sessionStatus
               });
             }
@@ -503,6 +504,20 @@ export default function AthleteSchedule() {
                   <div style={{ fontSize: '13px', color: '#475569', marginBottom: '8px' }}>
                     <strong>Target:</strong> {s.proposedMins} mins @ RPE {s.proposedRpe}
                   </div>
+                  {s.attachedProgram && (
+                    <div style={{ marginTop: '10px' }}>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(`/program-viewer?program=${encodeURIComponent(s.attachedProgram)}&session=${encodeURIComponent(s.id || '')}`);
+                        }}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 14px', borderRadius: '8px', border: '1px solid #008ed3', background: '#f0f9ff', color: '#008ed3', fontWeight: '800', fontSize: '13px', cursor: 'pointer' }}
+                        title="Open this attached exercise program in Program Viewer"
+                      >
+                        <Paperclip size={14} /> {s.attachedProgram}
+                      </button>
+                    </div>
+                  )}
                   <div style={{ marginTop: '12px', color: '#008ed3', fontWeight: '800', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <CheckCircle size={16} /> Tap to Log Result
                   </div>

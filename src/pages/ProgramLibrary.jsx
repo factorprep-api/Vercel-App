@@ -436,8 +436,10 @@ export default function ProgramLibrary() {
       {assignModalOpen && (
         <div className="pl-assign-modal" onClick={() => setAssignModalOpen(false)}>
           <div className="pl-assign-content" onClick={e => e.stopPropagation()}>
-            <button className="pl-assign-close" onClick={() => setAssignModalOpen(false)}><X size={20} /></button>
-            <h3 className="pl-assign-title">Assign Programs To Athletes</h3>
+            <div className="pl-assign-header">
+              <h3 className="pl-assign-title">Assign Programs To Athletes</h3>
+              <button className="pl-assign-close" onClick={() => setAssignModalOpen(false)}><X size={24} /></button>
+            </div>
             
             <div className="pl-assign-step">
               <h4>Step 1: Select Athlete(s)</h4>
