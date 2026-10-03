@@ -4,7 +4,7 @@ import { ArrowLeft, Save, Calendar, Clock, Activity, CheckCircle, BarChart2, Ale
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
-import { saveScheduleSession, fetchSchedule, getAthleteByEmail, fetchMedicalLogs } from '../api';
+import { saveScheduleSession, fetchSchedule, getAthleteByEmail, fetchMedicalLogs, fetchEntitledPods } from '../api';
 
 // ===== TRAINING WEEK HELPERS (Weeks start Monday) =====
 function getWeekMonday(date) {
@@ -140,8 +140,11 @@ export default function AthleteSchedule() {
       const nameToMatch = athRes.status === 'Success' ? (athRes.athleteName || athRes.name || athleteName || userEmail.split('@')[0]) : (athleteName || userEmail.split('@')[0]);
 
       if (athRes.status === 'Success' && Array.isArray(athRes.rowData)) {
-        const pods = String(athRes.rowData[11] || '').toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
-        setActivePods(pods.length > 0 ? pods : ['wellness', 'medical', 'schedule']);
+        const granted = String(athRes.rowData[11] || '').toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
+        // v1.5.0: union granted pods with purchased pods — no defaults
+        const entRes = await fetchEntitledPods().catch(() => ({ pods: [] }));
+        const pods = Array.from(new Set([...granted, ...(entRes.pods || [])]));
+        setActivePods(pods);
       }
 
       const [res, medRes] = await Promise.all([

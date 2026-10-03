@@ -58,6 +58,12 @@ as $function$
 begin
   if new.role is distinct from old.role
      or new.primary_club_id is distinct from old.primary_club_id then
+    -- v1.5.0: the paddle-webhook Edge Function runs as service_role (no
+    -- user JWT, auth.uid() is NULL). It must be able to elevate an athlete
+    -- to 'coach' on Coaching Kit subscribe and demote on cancel.
+    if coalesce(auth.role(), '') = 'service_role' then
+      return new;
+    end if;
     if not exists (
       select 1 from public.club_memberships
       where user_id = (select auth.uid()) and role = 'admin'
@@ -153,6 +159,7 @@ begin
   values (tg_table_name, new.id, (select auth.uid()), to_jsonb(old), to_jsonb(new));
   return new;
 end;
+$function$;
 
 -- (11) archive_session_assignment()
 -- Fires on session_logs insert (Branch 1: athlete completes a proposed
@@ -180,4 +187,65 @@ drop trigger if exists trg_archive_session_assignment on public.session_logs;
 create trigger trg_archive_session_assignment
   after insert on public.session_logs
   for each row execute function public.archive_session_assignment();
+
+-- =====================================================================
+-- SHOP HELPERS (v1.5.0) — Paddle entitlement checks
+-- =====================================================================
+
+-- (12) viewer_has_entitlement(p_product_id uuid)
+-- TRUE when the logged-in athlete holds an active or lifetime entitlement
+-- for the given shop product. SECURITY DEFINER so it can be called from
+-- other policies without RLS on user_entitlements blocking the check.
+create or replace function public.viewer_has_entitlement(p_product_id uuid)
+returns boolean
+language sql
+stable security definer
+set search_path to 'public'
+as $function$
+  select exists (
+    select 1 from user_entitlements e
+    join athletes a on a.id = e.athlete_id
+    where a.user_id = auth.uid()
+      and e.product_id = p_product_id
+      and e.status in ('active', 'lifetime')
+  );
+$function$;
+
+-- (13) viewer_has_program_entitlement(p_program_id uuid)
+-- TRUE when the logged-in athlete bought (or holds an active subscription
+-- covering) a shop product linked to the given program. Used by the
+-- prg_select / pe_select policies to unlock purchased rehab plans.
+create or replace function public.viewer_has_program_entitlement(p_program_id uuid)
+returns boolean
+language sql
+stable security definer
+set search_path to 'public'
+as $function$
+  select exists (
+    select 1 from user_entitlements e
+    join athletes a on a.id = e.athlete_id
+    join shop_products sp on sp.id = e.product_id
+    where a.user_id = auth.uid()
+      and sp.linked_program_id = p_program_id
+      and e.status in ('active', 'lifetime')
+  );
+$function$;
+
+-- (14) viewer_entitled_pods()
+-- Pod names ('wellness', 'medical', 'schedule') unlocked purely by
+-- purchase (active subscription or lifetime one-time). The frontend
+-- unions this with the admin-granted athlete_team_memberships.active_pods.
+create or replace function public.viewer_entitled_pods()
+returns setof text
+language sql
+stable security definer
+set search_path to 'public'
+as $function$
+  select unnest(sp.grants_pods)
+  from user_entitlements e
+  join athletes a on a.id = e.athlete_id
+  join shop_products sp on sp.id = e.product_id
+  where a.user_id = auth.uid()
+    and sp.grants_pods is not null
+    and e.status in ('active', 'lifetime')
 $function$;

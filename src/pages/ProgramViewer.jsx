@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Play, Video, Image as ImageIcon, Save, CheckCircle, MessageSquare, UserPlus, Globe, Timer, Pause, Plus, Minus, X, ArrowLeft } from 'lucide-react';
 import { getYouTubeId } from '../utils/helpers';
 import { useAuth } from '../hooks/useAuth';
-import { getAthleteByEmail, saveSession, getMediaType, getLatestMaxes, fetchLogbookByAthlete, saveScheduleSession, fetchPrograms, fetchLibrary } from '../api';
+import { getAthleteByEmail, saveSession, getMediaType, getLatestMaxes, fetchLogbookByAthlete, saveScheduleSession, fetchPrograms, fetchLibrary, fetchEntitledPods } from '../api';
 import HelpButton from '../components/HelpButton';
 import './program-viewer.css';
 
@@ -184,12 +184,22 @@ export default function ProgramViewer() {
   const linkedProgramParam = searchParams.get('program') || '';
   const linkedSessionId = searchParams.get('session') || '';
 
+  // v1.5.0: pods purchased via the shop (user_entitlements) are unioned
+  // with admin-granted pods from the roster row.
+  const [purchasedPods, setPurchasedPods] = useState([]);
+  useEffect(() => {
+    let mounted = true;
+    fetchEntitledPods().then(res => { if (mounted) setPurchasedPods(res.pods || []); }).catch(() => {});
+    return () => { mounted = false; };
+  }, []);
+
   const activePods = useMemo(() => {
     if (athleteRowIndex === null || !athletesData.length) return [];
     const row = athletesData[athleteRowIndex] || [];
     const podsString = String(row[11] || '').toLowerCase();
-    return podsString.split(',').map(s => s.trim());
-  }, [athletesData, athleteRowIndex]);
+    const granted = podsString.split(',').map(s => s.trim()).filter(Boolean);
+    return Array.from(new Set([...granted, ...purchasedPods]));
+  }, [athletesData, athleteRowIndex, purchasedPods]);
 
   useEffect(() => {
     if (!timerActive) return;

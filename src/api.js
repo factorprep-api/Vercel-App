@@ -29,11 +29,13 @@ export const fetchAthletes = async () => {
         row[3] = coachEmailByUserId[a.coach_user_id] || '';
       }
 
+      // v1.5.0: no default injection — actual granted pods only, so a lack
+      // of pods means the hub hides the pod cards (see fetchMyPods union).
       if (a.athlete_team_memberships && a.athlete_team_memberships.length > 0) {
         const pods = a.athlete_team_memberships[0].active_pods;
-        row[11] = (pods && pods.length > 0) ? pods.join(', ') : 'wellness, medical, schedule';
+        row[11] = (pods && pods.length > 0) ? pods.join(', ') : '';
       } else {
-        row[11] = 'wellness, medical, schedule';
+        row[11] = '';
       }
       if (a.assignments && a.assignments.length > 0) {
         row[12] = a.assignments
@@ -722,8 +724,9 @@ export const getAthleteByEmail = async (email) => {
         if (coachRow && coachRow.length > 0) coachEmail = coachRow[0].email || '';
       }
 
-      // Real pods from athlete_team_memberships
-      let pods = 'wellness, medical, schedule';
+      // Real pods from athlete_team_memberships. v1.5.0: no default —
+      // purchased pods are unioned separately via fetchMyPods().
+      let pods = '';
       if (a.athlete_team_memberships && a.athlete_team_memberships.length > 0) {
         const p = a.athlete_team_memberships[0].active_pods;
         if (p && p.length > 0) pods = p.join(', ');
@@ -1159,6 +1162,153 @@ export function parseProgramsFromRaw(rawPrograms, coachEmail) {
 }
 
 // ==========================================
+// SHOP PIPES (v1.5.0) — Paddle catalog + entitlements
+// ==========================================
+export const fetchShopProducts = async (includeInactive = false) => {
+  try {
+    let q = supabase
+      .from('shop_products')
+      .select('id, slug, name, blurb, product_type, fulfilment, paddle_price_id, linked_program_id, price_display, price_usd, grants_pods, grants_coach_role, is_active, sort_order')
+      .order('sort_order', { ascending: true });
+    if (!includeInactive) q = q.eq('is_active', true);
+    const { data, error } = await q;
+    if (error) return { products: [], error: error.message };
+    return { products: data || [], error: null };
+  } catch (err) { return { products: [], error: err.message }; }
+};
+
+// The signed-in athlete's entitlement rows (RLS: own rows only).
+export const fetchMyEntitlements = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('user_entitlements')
+      .select('id, product_id, status, purchased_at, canceled_at, shop_products(name, slug, product_type, grants_pods, grants_coach_role)')
+      .in('status', ['active', 'lifetime', 'past_due']);
+    if (error) return { entitlements: [], error: error.message };
+    return { entitlements: data || [], error: null };
+  } catch (err) { return { entitlements: [], error: err.message }; }
+};
+
+// Pod names unlocked purely by purchase (RPC, see functions.sql v1.5.0).
+export const fetchEntitledPods = async () => {
+  try {
+    const { data, error } = await supabase.rpc('viewer_entitled_pods');
+    if (error) return { pods: [], error: error.message };
+    return { pods: (data || []).map(p => String(p).toLowerCase().trim()).filter(Boolean), error: null };
+  } catch (err) { return { pods: [], error: err.message }; }
+};
+
+// FINAL pods for the signed-in athlete:
+//   granted   (admin-set athlete_team_memberships.active_pods)
+//   ∪ purchased (user_entitlements via viewer_entitled_pods)
+// No defaults anywhere — no access means no pod cards in the whole app.
+export const fetchMyPods = async () => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { pods: [], error: 'Not signed in' };
+
+    const [athRes, entRes] = await Promise.all([
+      supabase.from('athletes')
+        .select('id, athlete_team_memberships(active_pods)')
+        .eq('user_id', user.id)
+        .limit(1),
+      fetchEntitledPods()
+    ]);
+
+    if (athRes.error) return { pods: [], error: athRes.error.message };
+
+    const granted = ((athRes.data?.[0]?.athlete_team_memberships) || [])
+      .flatMap(m => m.active_pods || []);
+    const purchased = entRes.pods || [];
+
+    const pods = Array.from(new Set(
+      [...granted, ...purchased].map(p => String(p).toLowerCase().trim()).filter(Boolean)
+    ));
+    return { pods, error: null };
+  } catch (err) { return { pods: [], error: err.message }; }
+};
+
+// ---------- ADMIN PIPES (/manage-shop) — RLS: club admins only ----------
+export const isClubAdmin = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('club_memberships')
+      .select('id')
+      .eq('role', 'admin')
+      .limit(1);
+    if (error) return { isAdmin: false, error: error.message };
+    return { isAdmin: (data || []).length > 0, error: null };
+  } catch (err) { return { isAdmin: false, error: err.message }; }
+};
+
+export const adminListShopProducts = async () => fetchShopProducts(true);
+
+export const adminUpsertShopProduct = async (product) => {
+  try {
+    const { data, error } = await supabase
+      .from('shop_products')
+      .upsert(product, { onConflict: 'slug' })
+      .select()
+      .single();
+    if (error) return { product: null, error: error.message };
+    return { product: data, error: null };
+  } catch (err) { return { product: null, error: err.message }; }
+};
+
+export const adminDeleteShopProduct = async (productId) => {
+  try {
+    const { error } = await supabase.from('shop_products').delete().eq('id', productId);
+    return { error: error ? error.message : null };
+  } catch (err) { return { error: err.message }; }
+};
+
+export const adminListAthletes = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('athletes')
+      .select('id, name, email, role, primary_club_id')
+      .order('name', { ascending: true });
+    if (error) return { athletes: [], error: error.message };
+    return { athletes: data || [], error: null };
+  } catch (err) { return { athletes: [], error: err.message }; }
+};
+
+export const adminListEntitlements = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('user_entitlements')
+      .select('id, athlete_id, product_id, status, purchased_at, canceled_at, athletes(name, email), shop_products(name, slug, product_type)')
+      .order('purchased_at', { ascending: false });
+    if (error) return { entitlements: [], error: error.message };
+    return { entitlements: data || [], error: null };
+  } catch (err) { return { entitlements: [], error: err.message }; }
+};
+
+// Admin-granted entitlement (comp pods, manual Team/Club fulfilment).
+// Always 'lifetime' — admin grants are permanent until revoked.
+export const adminGrantEntitlement = async (athleteId, productId) => {
+  try {
+    const { data, error } = await supabase
+      .from('user_entitlements')
+      .upsert(
+        { athlete_id: athleteId, product_id: productId, status: 'lifetime' },
+        { onConflict: 'athlete_id,product_id' }
+      )
+      .select()
+      .single();
+    if (error) return { entitlement: null, error: error.message };
+    return { entitlement: data, error: null };
+  } catch (err) { return { entitlement: null, error: err.message }; }
+};
+
+export const adminRevokeEntitlement = async (entitlementId) => {
+  try {
+    const { error } = await supabase.from('user_entitlements').delete().eq('id', entitlementId);
+    return { error: error ? error.message : null };
+  } catch (err) { return { error: err.message }; }
+};
+
+// ==========================================
 // FAILSAFE DEFAULT EXPORT
 // ==========================================
 const api = {
@@ -1170,6 +1320,10 @@ const api = {
   assignProgramBulk, assignProgramToAthletes, addExerciseToLibrary, 
   deleteExerciseFromLibrary, updateExerciseInLibrary, fetchHelpVideos, 
   updateProgram, updateLogbookEntry, fetchAuditLog, getMediaType, 
-  parseProgramsFromRaw
+  parseProgramsFromRaw,
+  fetchShopProducts, fetchMyEntitlements, fetchEntitledPods, fetchMyPods,
+  isClubAdmin, adminListShopProducts, adminUpsertShopProduct, 
+  adminDeleteShopProduct, adminListAthletes, adminListEntitlements, 
+  adminGrantEntitlement, adminRevokeEntitlement
 };
 export default api;

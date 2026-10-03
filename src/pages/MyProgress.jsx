@@ -6,6 +6,8 @@ import HelpButton from '../components/HelpButton';
 import {
   fetchLogbookByAthlete,
   getAthleteByEmail,
+  fetchMyPods,
+  fetchEntitledPods,
   fetchWellnessLogs,
   fetchLibrary,
   fetchPrograms,
@@ -144,7 +146,8 @@ export default function MyProgress() {
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       }
     } catch {}
-    return ['wellness', 'medical', 'schedule'];
+    // v1.5.0: start empty — pods appear once confirmed (granted or bought)
+    return [];
   });
 
   // Corrected fix — looks up athlete_id from auth user
@@ -163,18 +166,13 @@ useEffect(() => {
 
       if (!athlete) return;
 
-      // Then get active pods
-      const { data, error } = await supabase
-        .from('athlete_team_memberships')
-        .select('active_pods')
-        .eq('athlete_id', athlete.id)
-        .eq('is_active', true)
-        .maybeSingle();
-
-      if (error || !data || !data.active_pods) return;
-
-      setActivePods(data.active_pods);
-            localStorage.setItem(`fp_athlete_pods_${user.email.toLowerCase()}`, JSON.stringify(data.active_pods));
+      // v1.5.0: final pods = granted (admin) ∪ purchased (entitlements)
+      const podsRes = await fetchMyPods().catch(() => ({ pods: [] }));
+      const pods = podsRes.pods || [];
+      setActivePods(pods);
+      try {
+        localStorage.setItem(`fp_athlete_pods_${user.email.toLowerCase()}`, JSON.stringify(pods));
+      } catch {}
     } catch (err) {
       console.error('Failed to refresh active_pods:', err);
     }
@@ -284,7 +282,10 @@ useEffect(() => {
       const athleteRow = (athleteResult.status === 'Success' && Array.isArray(athleteResult.rowData)) ? athleteResult.rowData : null;
 
       if (athleteRow) {
-        const pods = String(athleteRow[11] || '').toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
+        // v1.5.0: union granted pods with purchased pods — no defaults
+        const granted = String(athleteRow[11] || '').toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
+        const entRes = await fetchEntitledPods().catch(() => ({ pods: [] }));
+        const pods = Array.from(new Set([...granted, ...(entRes.pods || [])]));
         if (pods.length > 0) {
           setActivePods(pods);
           try {

@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { ClipboardList, TrendingUp, Timer, Activity, AlertCircle, Calendar } from 'lucide-react';
-import { fetchAthletes, fetchMedicalLogs } from '../api';
+import { fetchMedicalLogs, fetchMyPods } from '../api';
+import ShopPill from '../components/ShopPill';
 
 // Module-level in-memory cache for instantaneous route transitions (0ms navigation)
 const memoryCache = {
@@ -89,8 +90,9 @@ export default function AthleteHub() {
   // Instantaneous state initialization from memory or localStorage (0ms!)
   const [activePods, setActivePods] = useState(() => {
     const cached = resolveCachedPods(userEmail);
-    // If cached, return it. If not yet known, default to showing standard pods so cards don't flash
-    return cached !== null ? cached : ['wellness', 'medical', 'schedule'];
+    // v1.5.0: cached pods if known; otherwise start EMPTY — pod cards only
+    // appear once access is confirmed (granted or purchased). No defaults.
+    return cached !== null ? cached : [];
   });
 
   const [myMedicalStatus, setMyMedicalStatus] = useState(() => {
@@ -115,48 +117,29 @@ export default function AthleteHub() {
     if (!userEmail || authLoading) return;
     const lowerEmail = userEmail.toLowerCase();
     
-    // If fetched in the last 2 minutes, skip re-fetch to keep navigation instantaneous
+    // v1.5.0: after a shop purchase, Shop.jsx sets fp_pods_dirty so this
+    // 2-minute cache is bypassed and new pods appear on the next hub visit.
+    const podsDirty = sessionStorage.getItem('fp_pods_dirty') === '1';
     const now = Date.now();
     const lastFetch = memoryCache.lastFetchedByEmail[lowerEmail] || 0;
-    if (now - lastFetch < 120000 && memoryCache.podsByEmail[lowerEmail]) {
+    if (!podsDirty && now - lastFetch < 120000 && memoryCache.podsByEmail[lowerEmail]) {
       return;
+    }
+    if (podsDirty) {
+      try { sessionStorage.removeItem('fp_pods_dirty'); } catch {}
     }
 
     let isMounted = true;
 
     async function syncDataInBackground() {
       try {
-        // Fetch athlete roster to determine pod permissions
-        const athRes = await fetchAthletes().catch(() => ({ athletes: [] }));
-        if (!isMounted) return;
-
-        const athletes = athRes.athletes || [];
-        let userRow = null;
         let athleteNameToMatch = (authAthleteName || '').trim().toLowerCase();
 
-        for (let i = 1; i < athletes.length; i++) {
-          const row = athletes[i];
-          if (!row) continue;
-          const rowName = String(row[0] || '').trim().toLowerCase();
-          const rowEmail = String(row[9] || '').trim().toLowerCase();
-          
-          if (rowEmail === lowerEmail || (athleteNameToMatch && rowName === athleteNameToMatch)) {
-            userRow = row;
-            if (!athleteNameToMatch && rowName) {
-              athleteNameToMatch = rowName;
-            }
-            break;
-          }
-        }
-
-        let podsArray = [];
-        if (userRow) {
-          podsArray = String(userRow[11] || '').toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
-        }
-        if (!podsArray || podsArray.length === 0) {
-          // If athlete row not found or empty pods, default to all standard pods active
-          podsArray = ['wellness', 'medical', 'schedule'];
-        }
+        // v1.5.0: pods = granted (admin-set active_pods) ∪ purchased
+        // (user_entitlements). No defaults — no access means no pod cards.
+        const podsRes = await fetchMyPods().catch(() => ({ pods: [] }));
+        if (!isMounted) return;
+        const podsArray = podsRes.pods || [];
 
         // Update memory and localStorage
         memoryCache.podsByEmail[lowerEmail] = podsArray;
@@ -257,6 +240,7 @@ export default function AthleteHub() {
 
   return (
     <div style={{ fontFamily: '"Roboto Flex", sans-serif', padding: '4px', backgroundColor: '#f8fafc', minHeight: 'calc(100vh - 60px)' }}>
+      <ShopPill />
       <div className="hub-title-wrapper" style={{ textAlign: 'center', paddingTop: '4px' }}>
         <h1 className="hub-title-mobile" style={{ fontSize: '22px', color: '#333', marginBottom: '4px', margin: '0', marginTop: '0' }}>Athlete Hub</h1>
         {authAthleteName && <p className="hub-welcome" style={{ color: '#666', fontSize: '15px' }}>Welcome, {authAthleteName}</p>}

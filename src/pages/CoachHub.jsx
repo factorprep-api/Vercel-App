@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
+import ShopPill from '../components/ShopPill';
 import { Wrench, BookOpen, Dumbbell, Pencil, BarChart2, User, Activity } from 'lucide-react';
 
 export default function CoachHub() {
@@ -23,6 +24,7 @@ export default function CoachHub() {
 
   return (
     <div style={{ fontFamily: '"Roboto Flex", sans-serif', padding: '4px', backgroundColor: '#f8fafc' }}>
+      <ShopPill />
       <div className="hub-title-wrapper" style={{ textAlign: 'center', paddingTop: '4px' }}>
         <h1 style={{ fontSize: '28px', color: '#333', marginBottom: '4px' }}>Coach Hub</h1>
         <p className="hub-welcome" style={{ color: '#666', fontSize: '15px' }}>Welcome, {athleteName || 'Coach'}</p>

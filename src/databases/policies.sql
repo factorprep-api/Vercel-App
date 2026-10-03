@@ -373,7 +373,8 @@ create policy pe_select on public.program_exercises for select
             where p.id = program_exercises.program_id
               and (p.privacy = 'public'
                 or p.owner_user_id = auth.uid()
-                or viewer_has_active_assignment(p.id)))
+                or viewer_has_active_assignment(p.id)
+                or viewer_has_program_entitlement(p.id)))
   );
 
 create policy pe_write on public.program_exercises for all
@@ -393,6 +394,7 @@ create policy prg_select on public.programs for select
     privacy = 'public'
     or owner_user_id = auth.uid()
     or viewer_has_active_assignment(id)
+    or viewer_has_program_entitlement(id)
   );
 
 create policy prg_write on public.programs for all
@@ -511,3 +513,50 @@ create policy wl_select on public.wellness_logs for select
 create policy wl_update on public.wellness_logs for update
   using (athlete_id = current_athlete_id())
   with check (athlete_id = current_athlete_id());
+
+-- =====================================================================
+-- SHOP POLICIES (v1.5.0) — Paddle catalog + entitlement ledger
+-- =====================================================================
+
+-- shop_products: authenticated users see the active catalog
+create policy shop_select on public.shop_products for select
+  using (is_active);
+
+-- club admins manage the catalog (add rehab/prevention plans, set prices,
+-- attach Paddle price ids via /manage-shop)
+create policy shop_admin_write on public.shop_products for all
+  using (exists (select 1 from club_memberships
+                 where user_id = auth.uid() and role = 'admin'))
+  with check (exists (select 1 from club_memberships
+                 where user_id = auth.uid() and role = 'admin'));
+
+-- user_entitlements: athletes see their own purchases only
+create policy ent_select on public.user_entitlements for select
+  using (athlete_id = current_athlete_id());
+
+-- admins see and manage every athlete's entitlements (grant pods, revoke,
+-- debug billing). NOTE: regular athletes have NO insert/update/delete
+-- policies — the paddle-webhook Edge Function writes with the service
+-- role, which bypasses RLS. Purchases can never be self-granted.
+create policy ent_admin_select on public.user_entitlements for select
+  using (exists (select 1 from club_memberships
+                 where user_id = auth.uid() and role = 'admin'));
+
+create policy ent_admin_insert on public.user_entitlements for insert
+  with check (exists (select 1 from club_memberships
+                 where user_id = auth.uid() and role = 'admin'));
+
+create policy ent_admin_update on public.user_entitlements for update
+  using (exists (select 1 from club_memberships
+                 where user_id = auth.uid() and role = 'admin'))
+  with check (exists (select 1 from club_memberships
+                 where user_id = auth.uid() and role = 'admin'));
+
+create policy ent_admin_delete on public.user_entitlements for delete
+  using (exists (select 1 from club_memberships
+                 where user_id = auth.uid() and role = 'admin'));
+
+-- paddle_webhook_events: admins can inspect for debugging; no client writes
+create policy whk_admin_select on public.paddle_webhook_events for select
+  using (exists (select 1 from club_memberships
+                 where user_id = auth.uid() and role = 'admin'));
