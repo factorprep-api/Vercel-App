@@ -1228,16 +1228,15 @@ export const fetchMyPods = async () => {
   } catch (err) { return { pods: [], error: err.message }; }
 };
 
-// ---------- ADMIN PIPES (/manage-shop) — RLS: club admins only ----------
-export const isClubAdmin = async () => {
+// ---------- ADMIN PIPES (/manage-shop) — RLS: single shop admin ----------
+// Shop governance is locked to ONE account (crusty@hotmail.com) via the
+// is_shop_admin() DB function — see shop_admin_v1.5.1.sql. Club admins
+// (coach promotions) no longer imply shop powers.
+export const isShopAdmin = async () => {
   try {
-    const { data, error } = await supabase
-      .from('club_memberships')
-      .select('id')
-      .eq('role', 'admin')
-      .limit(1);
+    const { data, error } = await supabase.rpc('is_shop_admin');
     if (error) return { isAdmin: false, error: error.message };
-    return { isAdmin: (data || []).length > 0, error: null };
+    return { isAdmin: data === true, error: null };
   } catch (err) { return { isAdmin: false, error: err.message }; }
 };
 
@@ -1322,7 +1321,7 @@ const api = {
   updateProgram, updateLogbookEntry, fetchAuditLog, getMediaType, 
   parseProgramsFromRaw,
   fetchShopProducts, fetchMyEntitlements, fetchEntitledPods, fetchMyPods,
-  isClubAdmin, adminListShopProducts, adminUpsertShopProduct, 
+  isShopAdmin, adminListShopProducts, adminUpsertShopProduct, 
   adminDeleteShopProduct, adminListAthletes, adminListEntitlements, 
   adminGrantEntitlement, adminRevokeEntitlement
 };

@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Navigate } from 'react-router-dom';
 import { ArrowLeft, Trash2 } from 'lucide-react';
 import HelpButton from '../components/HelpButton';
 import { supabase } from '../supabase';
 import {
-  isClubAdmin, adminListShopProducts, adminUpsertShopProduct,
+  isShopAdmin, adminListShopProducts, adminUpsertShopProduct,
   adminDeleteShopProduct, adminListAthletes, adminListEntitlements,
   adminGrantEntitlement, adminRevokeEntitlement
 } from '../api';
@@ -42,7 +42,7 @@ export default function ManageShop() {
   }, []);
 
   useEffect(() => {
-    isClubAdmin().then(res => setIsAdmin(res.isAdmin)).catch(() => setIsAdmin(false));
+    isShopAdmin().then(res => setIsAdmin(res.isAdmin)).catch(() => setIsAdmin(false));
   }, []);
 
   useEffect(() => {
@@ -108,7 +108,10 @@ export default function ManageShop() {
   const setF = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   if (isAdmin === null) return <div style={{ padding: 40, fontFamily: 'system-ui' }}><p>Loading…</p></div>;
-  if (!isAdmin) return <div style={{ padding: 40, fontFamily: 'system-ui' }}><p>You are not a club admin.</p></div>;
+  // Shop management exists for exactly one account (crusty@hotmail.com).
+  // Anyone else — including other club admins — is silently sent home:
+  // no message, no trace. The page simply doesn't exist for them.
+  if (!isAdmin) return <Navigate to="/" replace />;
 
   return (
     <div className="ms-container">

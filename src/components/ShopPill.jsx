@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ShoppingBag, Settings2 } from 'lucide-react';
-import { isClubAdmin } from '../api';
+import { isShopAdmin } from '../api';
 
 // Discreet shop entry point, pinned below the app header on the hub pages.
 // Shows a "Manage" shortcut only for club admins.
@@ -27,7 +27,7 @@ export default function ShopPill() {
 
   useEffect(() => {
     let mounted = true;
-    isClubAdmin()
+    isShopAdmin()
       .then(res => { if (mounted && res.isAdmin) setIsAdmin(true); })
       .catch(() => {});
     return () => { mounted = false; };
