@@ -17,6 +17,7 @@ const Whiteboard = lazy(() => import('./pages/Whiteboard'));
 const CoachResults = lazy(() => import('./pages/CoachResults'));
 const AuditView = lazy(() => import('./pages/AuditView'));
 const IntervalTimer = lazy(() => import('./pages/IntervalTimer')); 
+const ManageShop = lazy(() => import('./pages/ManageShop')); 
 
 // THE NEW PODS
 const AthleteWellness = lazy(() => import('./pages/AthleteWellness'));
@@ -100,6 +101,12 @@ export default function App() {
         <Route path="/shop" element={
           <ProtectedRoute allowedRoles={['athlete', 'coach']}>
             <Suspense fallback={<LoadingFallback />}><Shop /></Suspense>
+          </ProtectedRoute>
+        } />
+
+        <Route path="/manage-shop" element={
+          <ProtectedRoute allowedRoles={['athlete', 'coach']}>
+            <Suspense fallback={<LoadingFallback />}><ManageShop /></Suspense>
           </ProtectedRoute>
         } />
         

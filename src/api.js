@@ -29,11 +29,13 @@ export const fetchAthletes = async () => {
         row[3] = coachEmailByUserId[a.coach_user_id] || '';
       }
 
+      // v1.5.0: no default injection — actual granted pods only, so a lack
+      // of pods means the hub hides the pod cards (see fetchMyPods union).
       if (a.athlete_team_memberships && a.athlete_team_memberships.length > 0) {
         const pods = a.athlete_team_memberships[0].active_pods;
-        row[11] = (pods && pods.length > 0) ? pods.join(', ') : 'wellness, medical, schedule';
+        row[11] = (pods && pods.length > 0) ? pods.join(', ') : '';
       } else {
-        row[11] = 'wellness, medical, schedule';
+        row[11] = '';
       }
       if (a.assignments && a.assignments.length > 0) {
         row[12] = a.assignments
@@ -250,6 +252,84 @@ export const fetchWellnessLogs = async () => {
     ]);
     return { data: [WELLNESS_SHEET_HEADER, ...rows] };
   } catch { return { data: [] }; }
+};
+
+// ==========================================
+// CYCLE TRACKING PIPE (v1.6.0) — opt-in
+// menstrual cycle logs (cycle_logs table).
+// Same adapter conventions as wellness: save
+// resolves the athlete, fetch emits legacy
+// sheet-row shape (header first).
+// ==========================================
+const CYCLE_SHEET_HEADER = ['Date','Email','Athlete','Kind','ID'];
+
+export const saveCycleLog = async (payload) => {
+  try {
+    let athleteId = null;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { data: mine } = await supabase.from('athletes').select('id').eq('user_id', user.id).maybeSingle();
+      if (mine) athleteId = mine.id;
+    }
+    if (!athleteId && payload.athlete) {
+      const { data: byName } = await supabase.from('athletes').select('id').ilike('name', payload.athlete).limit(1);
+      if (byName && byName.length > 0) athleteId = byName[0].id;
+    }
+    if (!athleteId) return { status: 'Error', message: 'Athlete not found' };
+
+    const entryKind = payload.entryKind === 'missed_cycle' ? 'missed_cycle' : 'period_start';
+    const entryDate = payload.date || new Date().toISOString().split('T')[0];
+
+    // Guard against double-logging the same kind on the same day
+    const { data: existing } = await supabase
+      .from('cycle_logs')
+      .select('id')
+      .eq('athlete_id', athleteId)
+      .eq('entry_kind', entryKind)
+      .eq('entry_date', entryDate)
+      .is('deleted_at', null)
+      .maybeSingle();
+    if (existing) return { status: 'Success', duplicate: true };
+
+    const { error } = await supabase
+      .from('cycle_logs')
+      .insert({ athlete_id: athleteId, entry_kind: entryKind, entry_date: entryDate });
+    if (error) return { status: 'Error', message: error.message };
+    return { status: 'Success' };
+  } catch (err) { return { status: 'Error', message: err.message }; }
+};
+
+export const fetchCycleLogs = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('cycle_logs')
+      .select('entry_date, entry_kind, athletes(name, email)')
+      .is('deleted_at', null)
+      .order('entry_date', { ascending: true });
+    if (error) return { data: [] };
+    const rows = (data || []).map(c => [
+      c.entry_date ? `${c.entry_date}T00:00:00` : '',
+      c.athletes ? c.athletes.email : '',
+      c.athletes ? c.athletes.name : '',
+      c.entry_kind || 'period_start',
+      c.id || ''
+    ]);
+    return { data: [CYCLE_SHEET_HEADER, ...rows] };
+  } catch { return { data: [] }; }
+};
+
+// Soft-delete a cycle entry (athlete fixing a wrong date). RLS: athlete
+// owns the row, admins may too.
+export const deleteCycleLog = async (id) => {
+  try {
+    if (!id) return { status: 'Error', message: 'Missing entry ID.' };
+    const { error } = await supabase
+      .from('cycle_logs')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', id);
+    if (error) return { status: 'Error', message: error.message };
+    return { status: 'Success' };
+  } catch (err) { return { status: 'Error', message: err.message }; }
 };
 
 // ==========================================
@@ -722,8 +802,9 @@ export const getAthleteByEmail = async (email) => {
         if (coachRow && coachRow.length > 0) coachEmail = coachRow[0].email || '';
       }
 
-      // Real pods from athlete_team_memberships
-      let pods = 'wellness, medical, schedule';
+      // Real pods from athlete_team_memberships. v1.5.0: no default —
+      // purchased pods are unioned separately via fetchMyPods().
+      let pods = '';
       if (a.athlete_team_memberships && a.athlete_team_memberships.length > 0) {
         const p = a.athlete_team_memberships[0].active_pods;
         if (p && p.length > 0) pods = p.join(', ');
@@ -1159,6 +1240,152 @@ export function parseProgramsFromRaw(rawPrograms, coachEmail) {
 }
 
 // ==========================================
+// SHOP PIPES (v1.5.0) — Paddle catalog + entitlements
+// ==========================================
+export const fetchShopProducts = async (includeInactive = false) => {
+  try {
+    let q = supabase
+      .from('shop_products')
+      .select('id, slug, name, blurb, product_type, fulfilment, paddle_price_id, linked_program_id, price_display, price_usd, grants_pods, grants_coach_role, is_active, sort_order')
+      .order('sort_order', { ascending: true });
+    if (!includeInactive) q = q.eq('is_active', true);
+    const { data, error } = await q;
+    if (error) return { products: [], error: error.message };
+    return { products: data || [], error: null };
+  } catch (err) { return { products: [], error: err.message }; }
+};
+
+// The signed-in athlete's entitlement rows (RLS: own rows only).
+export const fetchMyEntitlements = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('user_entitlements')
+      .select('id, product_id, status, purchased_at, canceled_at, shop_products(name, slug, product_type, grants_pods, grants_coach_role)')
+      .in('status', ['active', 'lifetime', 'past_due']);
+    if (error) return { entitlements: [], error: error.message };
+    return { entitlements: data || [], error: null };
+  } catch (err) { return { entitlements: [], error: err.message }; }
+};
+
+// Pod names unlocked purely by purchase (RPC, see functions.sql v1.5.0).
+export const fetchEntitledPods = async () => {
+  try {
+    const { data, error } = await supabase.rpc('viewer_entitled_pods');
+    if (error) return { pods: [], error: error.message };
+    return { pods: (data || []).map(p => String(p).toLowerCase().trim()).filter(Boolean), error: null };
+  } catch (err) { return { pods: [], error: err.message }; }
+};
+
+// FINAL pods for the signed-in athlete:
+//   granted   (admin-set athlete_team_memberships.active_pods)
+//   ∪ purchased (user_entitlements via viewer_entitled_pods)
+// No defaults anywhere — no access means no pod cards in the whole app.
+export const fetchMyPods = async () => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { pods: [], error: 'Not signed in' };
+
+    const [athRes, entRes] = await Promise.all([
+      supabase.from('athletes')
+        .select('id, athlete_team_memberships(active_pods)')
+        .eq('user_id', user.id)
+        .limit(1),
+      fetchEntitledPods()
+    ]);
+
+    if (athRes.error) return { pods: [], error: athRes.error.message };
+
+    const granted = ((athRes.data?.[0]?.athlete_team_memberships) || [])
+      .flatMap(m => m.active_pods || []);
+    const purchased = entRes.pods || [];
+
+    const pods = Array.from(new Set(
+      [...granted, ...purchased].map(p => String(p).toLowerCase().trim()).filter(Boolean)
+    ));
+    return { pods, error: null };
+  } catch (err) { return { pods: [], error: err.message }; }
+};
+
+// ---------- ADMIN PIPES (/manage-shop) — RLS: single shop admin ----------
+// Shop governance is locked to ONE account (crusty@hotmail.com) via the
+// is_shop_admin() DB function — see shop_admin_v1.5.1.sql. Club admins
+// (coach promotions) no longer imply shop powers.
+export const isShopAdmin = async () => {
+  try {
+    const { data, error } = await supabase.rpc('is_shop_admin');
+    if (error) return { isAdmin: false, error: error.message };
+    return { isAdmin: data === true, error: null };
+  } catch (err) { return { isAdmin: false, error: err.message }; }
+};
+
+export const adminListShopProducts = async () => fetchShopProducts(true);
+
+export const adminUpsertShopProduct = async (product) => {
+  try {
+    const { data, error } = await supabase
+      .from('shop_products')
+      .upsert(product, { onConflict: 'slug' })
+      .select()
+      .single();
+    if (error) return { product: null, error: error.message };
+    return { product: data, error: null };
+  } catch (err) { return { product: null, error: err.message }; }
+};
+
+export const adminDeleteShopProduct = async (productId) => {
+  try {
+    const { error } = await supabase.from('shop_products').delete().eq('id', productId);
+    return { error: error ? error.message : null };
+  } catch (err) { return { error: err.message }; }
+};
+
+export const adminListAthletes = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('athletes')
+      .select('id, name, email, role, primary_club_id')
+      .order('name', { ascending: true });
+    if (error) return { athletes: [], error: error.message };
+    return { athletes: data || [], error: null };
+  } catch (err) { return { athletes: [], error: err.message }; }
+};
+
+export const adminListEntitlements = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('user_entitlements')
+      .select('id, athlete_id, product_id, status, purchased_at, canceled_at, athletes(name, email), shop_products(name, slug, product_type)')
+      .order('purchased_at', { ascending: false });
+    if (error) return { entitlements: [], error: error.message };
+    return { entitlements: data || [], error: null };
+  } catch (err) { return { entitlements: [], error: err.message }; }
+};
+
+// Admin-granted entitlement (comp pods, manual Team/Club fulfilment).
+// Always 'lifetime' — admin grants are permanent until revoked.
+export const adminGrantEntitlement = async (athleteId, productId) => {
+  try {
+    const { data, error } = await supabase
+      .from('user_entitlements')
+      .upsert(
+        { athlete_id: athleteId, product_id: productId, status: 'lifetime' },
+        { onConflict: 'athlete_id,product_id' }
+      )
+      .select()
+      .single();
+    if (error) return { entitlement: null, error: error.message };
+    return { entitlement: data, error: null };
+  } catch (err) { return { entitlement: null, error: err.message }; }
+};
+
+export const adminRevokeEntitlement = async (entitlementId) => {
+  try {
+    const { error } = await supabase.from('user_entitlements').delete().eq('id', entitlementId);
+    return { error: error ? error.message : null };
+  } catch (err) { return { error: err.message }; }
+};
+
+// ==========================================
 // FAILSAFE DEFAULT EXPORT
 // ==========================================
 const api = {
@@ -1170,6 +1397,10 @@ const api = {
   assignProgramBulk, assignProgramToAthletes, addExerciseToLibrary, 
   deleteExerciseFromLibrary, updateExerciseInLibrary, fetchHelpVideos, 
   updateProgram, updateLogbookEntry, fetchAuditLog, getMediaType, 
-  parseProgramsFromRaw
+  parseProgramsFromRaw,
+  fetchShopProducts, fetchMyEntitlements, fetchEntitledPods, fetchMyPods,
+  isShopAdmin, adminListShopProducts, adminUpsertShopProduct, 
+  adminDeleteShopProduct, adminListAthletes, adminListEntitlements, 
+  adminGrantEntitlement, adminRevokeEntitlement
 };
 export default api;

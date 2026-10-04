@@ -211,8 +211,9 @@ export default function CoachSchedule() {
       for (let i = 1; i < athletes.length; i++) {
         if (!athletes[i]) continue;
         const name = String(athletes[i][0] || '').trim();
-        const pods = String(athletes[i][11] || '').toLowerCase();
-        if (name && pods.includes('schedule')) validRoster.push({ name, email: String(athletes[i][9] || '').trim().toLowerCase() });
+        // v1.5.1: no pod filter on coach rosters — pods gate the athlete's own
+        // UI (purchasable via the shop), never the coach's view of the team.
+        if (name) validRoster.push({ name, email: String(athletes[i][9] || '').trim().toLowerCase() });
       }
       setRoster(validRoster.sort((a, b) => a.name.localeCompare(b.name)));
 

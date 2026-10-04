@@ -1,176 +1,267 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Sparkles, Building, Lock, CheckCircle2, AlertCircle, ShieldCheck, Ticket } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, AlertCircle, Check, Info } from 'lucide-react';
 import HelpButton from '../components/HelpButton';
+import { supabase } from '../supabase';
+import { fetchShopProducts, fetchMyEntitlements } from '../api';
 
-const PLANS = [
-  { id: 'free', name: 'Lite', monthly: 0, annual: 0, tag: 'Free Forever', features: ['Core Logbook Access', 'Epley 1RM Engine', 'Program Viewer'] },
-  { id: 'pro', name: 'Pro Team', monthly: 49, annual: 490, tag: 'Most Popular', features: ['Wellness Pod Access', 'Injury Tracking', 'Advanced Analytics'], popular: true }
-];
+const PADDLE_TOKEN = import.meta.env.VITE_PADDLE_CLIENT_TOKEN || '';
+const PADDLE_ENV = import.meta.env.VITE_PADDLE_ENV || 'production';
+
+// ---------- Paddle.js (overlay checkout) ----------
+let paddleReady = null;
+function loadPaddle() {
+  if (paddleReady) return paddleReady;
+  paddleReady = new Promise((resolve, reject) => {
+    if (window.Paddle) return resolve(window.Paddle);
+    const s = document.createElement('script');
+    s.src = 'https://cdn.paddle.com/paddle/v2/paddle.js';
+    s.onload = () => resolve(window.Paddle);
+    s.onerror = () => reject(new Error('Could not load Paddle checkout'));
+    document.body.appendChild(s);
+  });
+  return paddleReady;
+}
+
+let paddleInitialized = false;
+async function initPaddle(onCompleted) {
+  const Paddle = await loadPaddle();
+  if (!paddleInitialized) {
+    if (PADDLE_ENV === 'sandbox') Paddle.Environment.set('sandbox');
+    Paddle.Initialize({
+      token: PADDLE_TOKEN,
+      eventCallback(ev) {
+        if (ev && ev.name === 'checkout.completed') onCompleted();
+      }
+    });
+    paddleInitialized = true;
+  }
+  return Paddle;
+}
 
 export default function Shop() {
   const navigate = useNavigate();
-  const [billingCycle, setBillingCycle] = useState('annual');
-  const [checkoutPlan, setCheckoutPlan] = useState(null);
-  const [isSuccess, setIsSuccess] = useState(false);
-  const [showCoupons, setShowCoupons] = useState(false);
+  const [products, setProducts] = useState([]);
+  const [ownedIds, setOwnedIds] = useState(new Set());
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [modal, setModal] = useState(null); // {title, body, tone}
+  const [busyId, setBusyId] = useState(null);
 
-  // Form State
-  const [poName, setPoName] = useState('');
-  const [poNumber, setPoNumber] = useState('');
-  const [promoCode, setPromoCode] = useState('');
-  const [promoMsg, setPromoMsg] = useState('');
+  const refresh = useCallback(async () => {
+    const [prodRes, entRes] = await Promise.all([
+      fetchShopProducts().catch(() => ({ products: [] })),
+      fetchMyEntitlements().catch(() => ({ entitlements: [] }))
+    ]);
+    setProducts(prodRes.products || []);
+    setOwnedIds(new Set((entRes.entitlements || [])
+      .filter(e => e.status === 'active' || e.status === 'lifetime')
+      .map(e => e.product_id)));
+    setLoadError(prodRes.error || entRes.error || '');
+    setLoading(false);
+  }, []);
 
-  const handleCheckout = (e) => {
-    e.preventDefault();
-    setIsSuccess(true);
+  useEffect(() => { refresh(); }, [refresh]);
+
+  const onCheckoutCompleted = useCallback(async () => {
+    try { sessionStorage.setItem('fp_pods_dirty', '1'); } catch {}
+    // Fulfilment happens server-side via the Paddle webhook — poll until
+    // the entitlement row lands (typically within seconds).
+    for (const delay of [3000, 6000, 12000]) {
+      await new Promise(r => setTimeout(r, delay));
+      await refresh();
+    }
+  }, [refresh]);
+
+  const buy = async (product) => {
+    if (ownedIds.has(product.id)) {
+      setModal({ title: 'Already active', body: `You already have access to ${product.name}.`, tone: 'info' });
+      return;
+    }
+    if (product.fulfilment === 'manual') {
+      setModal({
+        title: product.name,
+        body: 'This plan is set up personally by our team. Get in touch and we will onboard you within one business day.',
+        tone: 'info'
+      });
+      return;
+    }
+    if (!PADDLE_TOKEN || !product.paddle_price_id) {
+      setModal({
+        title: 'Coming soon',
+        body: 'Online billing is not switched on yet. This item is saved in the catalog and becomes purchasable as soon as Paddle is connected. Until then, your club admin can grant you access.',
+        tone: 'demo'
+      });
+      return;
+    }
+    setBusyId(product.id);
+    try {
+      const Paddle = await initPaddle(onCheckoutCompleted);
+      const { data: { user } } = await supabase.auth.getUser();
+      Paddle.Checkout.open({
+        items: [{ priceId: product.paddle_price_id, quantity: 1 }],
+        customer: user && user.email ? { email: user.email } : undefined,
+        customData: { product_slug: product.slug }
+      });
+    } catch (err) {
+      setModal({ title: 'Checkout unavailable', body: String((err && err.message) || err), tone: 'error' });
+    } finally {
+      setBusyId(null);
+    }
   };
 
-  const handleApplyPromo = (e) => {
-    e.preventDefault();
-    if (promoCode.toUpperCase() === 'COACH20') setPromoMsg('20% Discount Applied!');
-    else setPromoMsg('Invalid Code');
-  };
+  const subs = products.filter(p => p.product_type === 'subscription' && p.fulfilment === 'auto');
+  const manual = products.filter(p => p.product_type === 'subscription' && p.fulfilment === 'manual');
+  const plans = products.filter(p => p.product_type === 'one_time');
+  const demoMode = !PADDLE_TOKEN;
 
   return (
     <div className="shop-container">
       <style>{`
         .shop-container { padding: 20px; max-width: 1000px; margin: 0 auto; background-color: #f8fafc; min-height: 100vh; font-family: system-ui, -apple-system, sans-serif; }
-        .shop-header { display: flex; align-items: center; margin-bottom: 24px; gap: 12px; }
-        .shop-title { font-size: 24px; font-weight: 900; color: #0f172a; margin: 0; }
-        
-        .billing-toggle { display: inline-flex; background: #e2e8f0; padding: 4px; border-radius: 12px; margin: 0 auto 32px auto; }
-        .billing-btn { padding: 8px 16px; border-radius: 8px; border: none; font-weight: 700; font-size: 14px; cursor: pointer; transition: 0.2s; }
-        .billing-btn.active { background: #008ed3; color: white; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        .billing-btn.inactive { background: transparent; color: #64748b; }
-
-        .plans-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px; margin-bottom: 32px; }
-        .plan-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px; position: relative; display: flex; flex-direction: column; }
-        .plan-card.popular { border: 2px solid #008ed3; box-shadow: 0 8px 24px rgba(0,142,211,0.15); }
+        .shop-header { display: flex; align-items: center; margin-bottom: 8px; }
+        .shop-title { font-size: 24px; font-weight: 700; color: #0f172a; margin: 0; }
+        .shop-sub { color: #64748b; font-size: 14px; margin: 0 0 20px 0; }
+        .demo-banner { background: #fef9c3; border: 1px solid #fde047; color: #854d0e; font-size: 13px; font-weight: 600; padding: 10px 14px; border-radius: 10px; margin-bottom: 20px; }
+        .section-label { font-size: 13px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: #64748b; margin: 24px 0 12px 0; }
+        .plans-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; }
+        .plan-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 22px; position: relative; display: flex; flex-direction: column; }
         .plan-badge { position: absolute; top: -12px; left: 50%; transform: translateX(-50%); background: #008ed3; color: white; font-size: 12px; font-weight: 800; padding: 4px 12px; border-radius: 99px; }
-        
-        .plan-name { font-size: 20px; font-weight: 900; color: #0f172a; margin-bottom: 8px; }
-        .plan-price { font-size: 36px; font-weight: 900; color: #0f172a; margin-bottom: 24px; }
-        .plan-features { list-style: none; padding: 0; margin: 0 0 24px 0; flex-grow: 1; }
-        .plan-features li { display: flex; align-items: center; gap: 8px; font-size: 14px; color: #475569; margin-bottom: 12px; font-weight: 500; }
-        
+        .plan-badge.owned { background: #10b981; }
+        .plan-name { font-size: 19px; font-weight: 900; color: #0f172a; margin-bottom: 6px; }
+        .plan-price { font-size: 28px; font-weight: 900; color: #008ed3; margin-bottom: 10px; }
+        .plan-blurb { font-size: 13px; color: #475569; margin: 0 0 16px 0; flex-grow: 1; }
         .checkout-btn { width: 100%; padding: 12px; border-radius: 8px; font-weight: 800; border: none; cursor: pointer; transition: 0.2s; }
         .checkout-btn.primary { background: #008ed3; color: white; }
         .checkout-btn.secondary { background: #f1f5f9; color: #0f172a; }
-        .checkout-btn:hover { opacity: 0.9; }
-
-        /* Checkout Modal */
-        .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15,23,42,0.8); backdrop-filter: blur(4px); display: flex; justify-content: center; align-items: center; z-index: 1000; padding: 16px; }
-        .modal-content { background: white; border-radius: 24px; width: 100%; max-width: 500px; overflow: hidden; box-shadow: 0 20px 40px rgba(0,0,0,0.2); }
-        .modal-header { background: #0f172a; color: white; padding: 20px; display: flex; justify-content: space-between; align-items: center; }
-        .modal-body { padding: 24px; }
-        .input-group { margin-bottom: 16px; }
-        .input-group label { display: block; font-size: 12px; font-weight: 800; color: #475569; margin-bottom: 4px; text-transform: uppercase; }
-        .input-group input { width: 100%; padding: 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 14px; font-weight: 600; outline: none; }
-        .input-group input:focus { border-color: #008ed3; }
-        
-        .promo-box { display: flex; gap: 8px; margin-top: 16px; padding-top: 16px; border-top: 1px solid #e2e8f0; }
-        .promo-box input { flex: 1; padding: 10px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 12px; font-weight: 700; text-transform: uppercase; }
-        .promo-box button { padding: 10px 16px; background: #e2e8f0; border: none; border-radius: 8px; font-weight: 800; cursor: pointer; }
+        .checkout-btn:disabled { opacity: 0.6; cursor: wait; }
+        .free-list { list-style: none; padding: 0; margin: 0 0 16px 0; }
+        .free-list li { display: flex; align-items: center; gap: 8px; font-size: 14px; color: #475569; margin-bottom: 8px; font-weight: 500; }
+        .modal-overlay { position: fixed; inset: 0; background: rgba(15,23,42,0.5); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 20px; }
+        .modal-content { background: white; border-radius: 16px; padding: 28px; max-width: 420px; width: 100%; }
       `}</style>
 
       <div className="shop-header">
-        <button onClick={() => navigate(-1)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#008ed3', padding: 0 }}><ArrowLeft size={28} /></button>
-        <h1 className="shop-title">FactorPrep Plans & Billing</h1>
+        <button onClick={() => navigate(-1)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#008ed3', padding: 0, display: 'flex', marginRight: '12px' }}>
+          <ArrowLeft size={28} />
+        </button>
+        <h1 className="shop-title">Shop</h1>
       </div>
+      <p className="shop-sub">Plans, Pods and specialized rehab programs. Payments are handled securely by Paddle.</p>
 
-      <div style={{ textAlign: 'center' }}>
-        <div className="billing-toggle">
-          <button className={`billing-btn ${billingCycle === 'monthly' ? 'active' : 'inactive'}`} onClick={() => setBillingCycle('monthly')}>Monthly</button>
-          <button className={`billing-btn ${billingCycle === 'annual' ? 'active' : 'inactive'}`} onClick={() => setBillingCycle('annual')}>Annual (Save 20%)</button>
-        </div>
-      </div>
+      {demoMode && (
+        <div className="demo-banner">Demo mode — billing is not connected yet. The catalog is shown; checkouts go live once Paddle is linked.</div>
+      )}
+      {loadError && (
+        <div className="demo-banner" style={{ background: '#fee2e2', borderColor: '#fca5a5', color: '#991b1b' }}>Catalog error: {loadError}</div>
+      )}
 
+      <div className="section-label">Included Free</div>
       <div className="plans-grid">
-        {PLANS.map(plan => (
-          <div key={plan.id} className={`plan-card ${plan.popular ? 'popular' : ''}`}>
-            {plan.popular && <div className="plan-badge"><Sparkles size={12} style={{ display:'inline', marginRight:4 }}/> Most Popular</div>}
-            <div className="plan-name">{plan.name}</div>
-            <div className="plan-price">${billingCycle === 'annual' ? plan.annual : plan.monthly} <span style={{fontSize:14, color:'#64748b'}}>/ {billingCycle === 'annual' ? 'yr' : 'mo'}</span></div>
-            <ul className="plan-features">
-              {plan.features.map((f, i) => (
-                <li key={i}><ShieldCheck size={16} color="#008ed3"/> {f}</li>
-              ))}
-            </ul>
-            <button className={`checkout-btn ${plan.popular ? 'primary' : 'secondary'}`} onClick={() => setCheckoutPlan(plan)}>
-              {plan.id === 'free' ? 'Current Plan' : 'Select Plan'}
-            </button>
-          </div>
-        ))}
-      </div>
-
-      <div style={{ background: '#0f172a', borderRadius: '16px', padding: '24px', color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <h3 style={{ margin: '0 0 8px 0', fontSize: '18px', display: 'flex', gap: '8px', alignItems: 'center' }}><Ticket size={20} color="#008ed3"/> Have a Coupon Code?</h3>
-          <p style={{ margin: 0, fontSize: '14px', color: '#94a3b8' }}>Redeem promotional codes and vouchers granted by FactorPrep Admin.</p>
+        <div className="plan-card">
+          <div className="plan-name">Lite</div>
+          <div className="plan-price">Free Forever</div>
+          <ul className="free-list">
+            <li><Check size={16} color="#10b981" /> My Programs & Program Viewer</li>
+            <li><Check size={16} color="#10b981" /> My Progress tracking</li>
+            <li><Check size={16} color="#10b981" /> Interval Timer</li>
+            <li><Check size={16} color="#10b981" /> Epley 1RM engine</li>
+          </ul>
+          <button className="checkout-btn secondary" disabled>Current Plan</button>
         </div>
-        <button onClick={() => setShowCoupons(true)} style={{ background: '#008ed3', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '8px', fontWeight: '800', cursor: 'pointer' }}>Redeem</button>
       </div>
 
-      {checkoutPlan && (
-        <div className="modal-overlay">
-          <div className="modal-content">
-            <div className="modal-header">
-              <div style={{ fontWeight: 900, display: 'flex', alignItems: 'center', gap: 8 }}><Lock size={18} color="#008ed3"/> Secure Checkout</div>
-              <button onClick={() => setCheckoutPlan(null)} style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer', fontWeight: 900 }}>✕</button>
-            </div>
-            
-            <div className="modal-body">
-              {isSuccess ? (
-                <div style={{ textAlign: 'center', padding: '24px 0' }}>
-                  <CheckCircle2 size={64} color="#10b981" style={{ margin: '0 auto 16px auto' }} />
-                  <h2 style={{ margin: '0 0 8px 0', color: '#0f172a' }}>Payment Authorized</h2>
-                  <p style={{ color: '#64748b', fontSize: '14px' }}>Invoice has been generated. Your Pods will be unlocked by an Admin shortly.</p>
-                  <button className="checkout-btn secondary" style={{ marginTop: 24 }} onClick={() => { setCheckoutPlan(null); setIsSuccess(false); }}>Close</button>
+      {subs.length > 0 && (
+        <>
+          <div className="section-label">Subscriptions</div>
+          <div className="plans-grid">
+            {subs.map(p => {
+              const owned = ownedIds.has(p.id);
+              return (
+                <div key={p.id} className="plan-card" style={owned ? { borderColor: '#10b981' } : undefined}>
+                  {owned && <div className="plan-badge owned">Active</div>}
+                  <div className="plan-name">{p.name}</div>
+                  <div className="plan-price">{p.price_display}</div>
+                  <p className="plan-blurb">{p.blurb}</p>
+                  <button
+                    className={`checkout-btn ${owned ? 'secondary' : 'primary'}`}
+                    disabled={busyId === p.id}
+                    onClick={() => buy(p)}
+                    style={{ marginTop: 'auto' }}
+                  >
+                    {busyId === p.id ? 'Opening checkout…' : owned ? 'Owned' : 'Get Started'}
+                  </button>
                 </div>
-              ) : (
-                <form onSubmit={handleCheckout}>
-                  <div style={{ display: 'flex', gap: 12, marginBottom: 24 }}>
-                    <div style={{ flex: 1, padding: 12, border: '2px solid #008ed3', borderRadius: 8, background: '#eff6ff', color: '#008ed3', fontWeight: 800, fontSize: 12, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                      <Building size={20} /> Direct PO / Net-30
-                    </div>
-                  </div>
-
-                  <div className="input-group">
-                    <label>Athletic Department / School Name</label>
-                    <input type="text" required placeholder="e.g. Stanford Athletics" value={poName} onChange={e => setPoName(e.target.value)} />
-                  </div>
-                  <div className="input-group">
-                    <label>Purchase Order (PO) Number</label>
-                    <input type="text" required placeholder="PO-2026-99" value={poNumber} onChange={e => setPoNumber(e.target.value)} />
-                  </div>
-
-                  <div className="promo-box">
-                    <input type="text" placeholder="Promo Code" value={promoCode} onChange={e => setPromoCode(e.target.value)} />
-                    <button type="button" onClick={handleApplyPromo}>Apply</button>
-                  </div>
-                  {promoMsg && <p style={{ fontSize: 12, color: promoMsg.includes('Applied') ? '#10b981' : '#ef4444', marginTop: 8, fontWeight: 700 }}>{promoMsg}</p>}
-
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 24, paddingTop: 16, borderTop: '2px dashed #e2e8f0' }}>
-                    <span style={{ fontWeight: 800, color: '#0f172a' }}>Total Due:</span>
-                    <span style={{ fontSize: 24, fontWeight: 900, color: '#008ed3' }}>${billingCycle === 'annual' ? checkoutPlan.annual : checkoutPlan.monthly}</span>
-                  </div>
-
-                  <button type="submit" className="checkout-btn primary" style={{ marginTop: 24 }}>Generate Invoice</button>
-                </form>
-              )}
-            </div>
+              );
+            })}
           </div>
+        </>
+      )}
+
+      {manual.length > 0 && (
+        <>
+          <div className="section-label">Teams & Clubs</div>
+          <div className="plans-grid">
+            {manual.map(p => (
+              <div key={p.id} className="plan-card">
+                <div className="plan-name">{p.name}</div>
+                <div className="plan-price" style={{ fontSize: 22 }}>{p.price_display}</div>
+                <p className="plan-blurb">{p.blurb}</p>
+                <button className="checkout-btn primary" onClick={() => buy(p)} style={{ marginTop: 'auto' }}>Contact Us</button>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      <div className="section-label">Rehab & Injury Prevention Plans</div>
+      {plans.length > 0 ? (
+        <div className="plans-grid">
+          {plans.map(p => {
+            const owned = ownedIds.has(p.id);
+            return (
+              <div key={p.id} className="plan-card" style={owned ? { borderColor: '#10b981' } : undefined}>
+                {owned && <div className="plan-badge owned">Owned</div>}
+                <div className="plan-name">{p.name}</div>
+                <div className="plan-price">{p.price_display}</div>
+                <p className="plan-blurb">{p.blurb}</p>
+                <button
+                  className={`checkout-btn ${owned ? 'secondary' : 'primary'}`}
+                  disabled={busyId === p.id}
+                  onClick={() => buy(p)}
+                  style={{ marginTop: 'auto' }}
+                >
+                  {busyId === p.id ? 'Opening checkout…' : owned ? 'Owned' : 'Buy Once'}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="plan-card" style={{ borderStyle: 'dashed' }}>
+          <div className="plan-name" style={{ fontSize: 16 }}>No specialized programs yet</div>
+          <p className="plan-blurb" style={{ marginBottom: 0 }}>
+            Rehab and injury-prevention plans are added here by the shop admin
+            (Manage → Products & Plans → Type: "One-time purchase" → link the
+            program). Once listed, an athlete buys it once and it unlocks in
+            My Programs forever.
+          </p>
         </div>
       )}
 
-      {showCoupons && (
-        <div className="modal-overlay" onClick={() => setShowCoupons(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ padding: 32, textAlign: 'center' }}>
-            <AlertCircle size={48} color="#f59e0b" style={{ margin: '0 auto 16px auto' }} />
-            <h2 style={{ margin: '0 0 8px 0', color: '#0f172a' }}>Coupon Engine</h2>
-            <p style={{ color: '#64748b', fontSize: '14px', marginBottom: 24 }}>The admin Coupon Generator is restricted to Desktop view for security.</p>
-            <button className="checkout-btn secondary" onClick={() => setShowCoupons(false)}>Close</button>
+      {loading && <p style={{ color: '#64748b', fontSize: 14 }}>Loading catalog…</p>}
+
+      {modal && (
+        <div className="modal-overlay" onClick={() => setModal(null)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ textAlign: 'center' }}>
+            {modal.tone === 'error'
+              ? <AlertCircle size={48} color="#ef4444" style={{ margin: '0 auto 16px auto' }} />
+              : modal.tone === 'demo'
+                ? <Info size={48} color="#f59e0b" style={{ margin: '0 auto 16px auto' }} />
+                : <CheckCircle2 size={48} color="#10b981" style={{ margin: '0 auto 16px auto' }} />}
+            <h2 style={{ margin: '0 0 8px 0', color: '#0f172a' }}>{modal.title}</h2>
+            <p style={{ color: '#64748b', fontSize: 14, marginBottom: 20 }}>{modal.body}</p>
+            <button className="checkout-btn secondary" onClick={() => setModal(null)}>Close</button>
           </div>
         </div>
       )}

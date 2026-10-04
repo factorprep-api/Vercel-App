@@ -6,14 +6,20 @@ import HelpButton from '../components/HelpButton';
 import {
   fetchLogbookByAthlete,
   getAthleteByEmail,
+  fetchMyPods,
+  fetchEntitledPods,
   fetchWellnessLogs,
   fetchLibrary,
   fetchPrograms,
   getMediaType,
   updateLogbookEntry,
   getLatestMaxes,
-  saveAthleteMax
+  saveAthleteMax,
+  fetchCycleLogs,
+  saveCycleLog,
+  deleteCycleLog
 } from '../api';
+import { getCycleContext, PHASE_STATUS, buildCycleChartData, ymd } from '../utils/cycleMath';
 import {
   ArrowLeft,
   ChevronLeft,
@@ -29,7 +35,11 @@ import {
   Pencil,
   X,
   CheckCircle,
-  AlertCircle
+  AlertCircle,
+  Droplet,
+  ChevronDown,
+  ChevronUp,
+  Trash2
 } from 'lucide-react';
 import {
   LineChart,
@@ -144,7 +154,8 @@ export default function MyProgress() {
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       }
     } catch {}
-    return ['wellness', 'medical', 'schedule'];
+    // v1.5.0: start empty — pods appear once confirmed (granted or bought)
+    return [];
   });
 
   // Corrected fix — looks up athlete_id from auth user
@@ -163,18 +174,13 @@ useEffect(() => {
 
       if (!athlete) return;
 
-      // Then get active pods
-      const { data, error } = await supabase
-        .from('athlete_team_memberships')
-        .select('active_pods')
-        .eq('athlete_id', athlete.id)
-        .eq('is_active', true)
-        .maybeSingle();
-
-      if (error || !data || !data.active_pods) return;
-
-      setActivePods(data.active_pods);
-            localStorage.setItem(`fp_athlete_pods_${user.email.toLowerCase()}`, JSON.stringify(data.active_pods));
+      // v1.5.0: final pods = granted (admin) ∪ purchased (entitlements)
+      const podsRes = await fetchMyPods().catch(() => ({ pods: [] }));
+      const pods = podsRes.pods || [];
+      setActivePods(pods);
+      try {
+        localStorage.setItem(`fp_athlete_pods_${user.email.toLowerCase()}`, JSON.stringify(pods));
+      } catch {}
     } catch (err) {
       console.error('Failed to refresh active_pods:', err);
     }
@@ -205,6 +211,52 @@ useEffect(() => {
   const [programsData, setProgramsData] = useState([]);
   const [libraryData, setLibraryData] = useState([]);
   const [wellnessLogs, setWellnessLogs] = useState([]);
+
+  // ---- Cycle tracking (v1.6.0, opt-in) — full management lives here ----
+  const [cycleLogs, setCycleLogs] = useState([]); // [{ date, kind, id }]
+  const [cycleOpen, setCycleOpen] = useState(false);
+  const [cycleDate, setCycleDate] = useState(ymd(new Date()));
+  const [cycleSaving, setCycleSaving] = useState(false);
+  const [cycleMsg, setCycleMsg] = useState(null);
+
+  const loadCycleLogs = async () => {
+    try {
+      const res = await fetchCycleLogs();
+      const rows = (res.data || []).slice(1).filter(r =>
+        String(r[1] || '').trim().toLowerCase() === userEmail.toLowerCase() ||
+        String(r[2] || '').trim().toLowerCase() === (athleteName || '').toLowerCase()
+      );
+      setCycleLogs(rows.map(r => ({ date: String(r[0]).split('T')[0], kind: r[3] || 'period_start', id: r[4] })));
+    } catch { setCycleLogs([]); }
+  };
+
+  useEffect(() => { if (userEmail) loadCycleLogs(); }, [userEmail]);
+
+  const cycleCtx = getCycleContext(cycleLogs.map(c => ({ entryKind: c.kind, entryDate: c.date })));
+  const cycleStatusInfo = cycleCtx ? PHASE_STATUS[cycleCtx.status] : null;
+
+  const handleCycleLog = async (entryKind) => {
+    if (!cycleDate) { setCycleMsg({ ok: false, text: 'Pick a date first.' }); return; }
+    setCycleSaving(true);
+    setCycleMsg(null);
+    try {
+      const res = await saveCycleLog({ entryKind, date: cycleDate, athlete: athleteName, email: userEmail });
+      if (res.status === 'Success') {
+        setCycleMsg({ ok: true, text: entryKind === 'missed_cycle' ? 'Marked as delayed/absent.' : 'Period start logged.' });
+        await loadCycleLogs();
+      } else {
+        setCycleMsg({ ok: false, text: 'Could not save: ' + (res.message || 'unknown error') });
+      }
+    } catch { setCycleMsg({ ok: false, text: 'Network error. Please try again.' }); }
+    setCycleSaving(false);
+  };
+
+  const handleCycleDelete = async (id) => {
+    setCycleSaving(true);
+    try { await deleteCycleLog(id); await loadCycleLogs(); } catch {}
+    setCycleSaving(false);
+  };
+
   const [selectedSession, setSelectedSession] = useState(null);
   const [exerciseFilter, setExerciseFilter] = useState('All');
   const [historyLoaded, setHistoryLoaded] = useState(false);
@@ -284,7 +336,10 @@ useEffect(() => {
       const athleteRow = (athleteResult.status === 'Success' && Array.isArray(athleteResult.rowData)) ? athleteResult.rowData : null;
 
       if (athleteRow) {
-        const pods = String(athleteRow[11] || '').toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
+        // v1.5.0: union granted pods with purchased pods — no defaults
+        const granted = String(athleteRow[11] || '').toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
+        const entRes = await fetchEntitledPods().catch(() => ({ pods: [] }));
+        const pods = Array.from(new Set([...granted, ...(entRes.pods || [])]));
         if (pods.length > 0) {
           setActivePods(pods);
           try {
@@ -1003,6 +1058,130 @@ const epleyExercises = useMemo(() => {
                     <p style={{ fontSize: '14px', color: '#64748b', textAlign: 'center', padding: '20px 0', margin: 0 }}>
                       No recent wellness entries found.
                     </p>
+                  )}
+                </div>
+
+                {/* ---- CYCLE TRACKING (v1.6.0) — collapsed & discreet by default ---- */}
+                <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '20px', boxShadow: '0 2px 6px rgba(0,0,0,0.04)' }}>
+                  <div onClick={() => setCycleOpen(!cycleOpen)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Droplet size={18} color="#8b5cf6" />
+                      <h3 style={{ fontSize: '16px', fontWeight: '800', color: '#0f172a', margin: 0 }}>Cycle Tracking</h3>
+                    </div>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      {cycleCtx && cycleStatusInfo ? (
+                        <span style={{ fontSize: 12, fontWeight: 700, color: cycleStatusInfo.color, background: cycleStatusInfo.bg, padding: '4px 10px', borderRadius: 999 }}>
+                          Day {cycleCtx.cycleDay} · {cycleStatusInfo.label.split(' — ')[0]}
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: 12, fontWeight: 600, color: '#94a3b8' }}>Optional</span>
+                      )}
+                      {cycleOpen ? <ChevronUp size={18} color="#94a3b8" /> : <ChevronDown size={18} color="#94a3b8" />}
+                    </span>
+                  </div>
+
+                  {cycleOpen && (
+                    <div style={{ marginTop: 16 }}>
+                      <p style={{ fontSize: 13, color: '#64748b', margin: '0 0 12px 0', lineHeight: 1.5 }}>
+                        {cycleCtx
+                          ? 'Log each period start date — the cycle re-bases to it automatically. Edit or delete entries below anytime.'
+                          : 'Optional. Log a period start date and your training guidance adapts to your cycle phases. One date is all we need to begin.'}
+                      </p>
+
+                      {cycleCtx && (
+                        <div style={{ marginBottom: 14 }}>
+                          <div style={{ height: 200, width: '100%' }}>
+                            <ResponsiveContainer width="100%" height="100%">
+                              <LineChart data={buildCycleChartData(cycleCtx)} margin={{ top: 8, right: 8, left: -28, bottom: 0 }}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                                <XAxis dataKey="day" stroke="#94a3b8" fontSize={11} tickLine={false} />
+                                <YAxis domain={[0, 110]} hide />
+                                <Tooltip
+                                  contentStyle={{ background: '#0f172a', border: 'none', borderRadius: '8px', color: '#fff', fontSize: '12px' }}
+                                  labelFormatter={(d) => `Day ${d}`}
+                                  formatter={(val, name) => [val, { estrogen: 'Estrogen', progesterone: 'Progesterone', testosterone: 'Testosterone' }[name] || name]}
+                                />
+                                <ReferenceLine x={cycleCtx.cycleDay} stroke="#0f172a" strokeDasharray="4 4" label={{ value: 'You', position: 'top', fill: '#0f172a', fontSize: 11, fontWeight: 700 }} />
+                                <Line type="monotone" dataKey="estrogen" stroke="#ec4899" strokeWidth={2.5} dot={false} name="estrogen" />
+                                <Line type="monotone" dataKey="progesterone" stroke="#8b5cf6" strokeWidth={2.5} dot={false} name="progesterone" />
+                                <Line type="monotone" dataKey="testosterone" stroke="#f97316" strokeWidth={2} dot={false} name="testosterone" />
+                              </LineChart>
+                            </ResponsiveContainer>
+                          </div>
+                          <p style={{ fontSize: 11, color: '#94a3b8', margin: '4px 0 0 0', textAlign: 'center' }}>
+                            Estrogen <span style={{ color: '#ec4899' }}>—</span> · Progesterone <span style={{ color: '#8b5cf6' }}>—</span> · Testosterone <span style={{ color: '#f97316' }}>—</span> · population-average curves for orientation
+                          </p>
+                        </div>
+                      )}
+
+                      {cycleCtx && cycleStatusInfo && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', background: cycleStatusInfo.bg, border: `1px solid ${cycleStatusInfo.border}`, borderRadius: 10, padding: '10px 12px', marginBottom: 12 }}>
+                          <span style={{ fontWeight: 800, fontSize: 14, color: cycleStatusInfo.color }}>Day {cycleCtx.cycleDay} of ~{Math.round(cycleCtx.cycleLength)} · {cycleStatusInfo.label}</span>
+                          {!cycleCtx.overdue && !cycleCtx.noCycle && !cycleCtx.missedFlagged && cycleCtx.daysUntilNext != null && (
+                            <span style={{ fontSize: 12, color: '#64748b' }}>Next predicted start in ~{cycleCtx.daysUntilNext} day{cycleCtx.daysUntilNext === 1 ? '' : 's'}</span>
+                          )}
+                        </div>
+                      )}
+
+                      {(cycleCtx?.missedFlagged || cycleCtx?.noCycle || cycleCtx?.irregular) && (
+                        <div style={{ background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 10, padding: '10px 12px', marginBottom: 12 }}>
+                          {cycleCtx.missedFlagged && <p style={{ fontSize: 13, color: '#92400e', margin: '0 0 6px 0' }}><b>Cycle marked as delayed/absent.</b> In training athletes, missed cycles can signal over-training or low energy availability — worth raising with your coach or a medical professional.</p>}
+                          {!cycleCtx.missedFlagged && cycleCtx.noCycle && <p style={{ fontSize: 13, color: '#92400e', margin: '0 0 6px 0' }}><b>No period logged in {cycleCtx.cycleDay} days.</b> In training athletes, this can signal over-training or low energy availability — worth raising with your coach or a medical professional.</p>}
+                          {cycleCtx.irregular && <p style={{ fontSize: 13, color: '#92400e', margin: 0 }}>Your logged intervals vary quite a bit — phase estimates are rough. Regular logging makes them sharper.</p>}
+                        </div>
+                      )}
+
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
+                        <input
+                          type="date"
+                          value={cycleDate}
+                          max={ymd(new Date())}
+                          onChange={(e) => setCycleDate(e.target.value)}
+                          style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 14, color: '#0f172a', flex: '1 1 150px' }}
+                        />
+                        <button
+                          onClick={() => handleCycleLog('period_start')}
+                          disabled={cycleSaving}
+                          style={{ padding: '8px 14px', borderRadius: 8, border: 'none', background: '#8b5cf6', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
+                        >
+                          Period started
+                        </button>
+                        <button
+                          onClick={() => handleCycleLog('missed_cycle')}
+                          disabled={cycleSaving}
+                          style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', color: '#64748b', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
+                        >
+                          Didn&apos;t come / late
+                        </button>
+                      </div>
+
+                      {cycleMsg && (
+                        <p style={{ fontSize: 13, margin: '0 0 12px 0', color: cycleMsg.ok ? '#16a34a' : '#dc2626', fontWeight: 600 }}>{cycleMsg.text}</p>
+                      )}
+
+                      {cycleLogs.length > 0 && (
+                        <div style={{ marginBottom: 12 }}>
+                          <p style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.5, margin: '0 0 6px 0' }}>History</p>
+                          {[...cycleLogs].reverse().slice(0, 8).map((c) => (
+                            <div key={c.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 0' }}>
+                              <span style={{ fontSize: 13, color: '#475569' }}>
+                                {c.date} — {c.kind === 'missed_cycle' ? <span style={{ color: '#d97706', fontWeight: 700 }}>marked delayed/absent</span> : 'period start'}
+                              </span>
+                              <button onClick={() => handleCycleDelete(c.id)} disabled={cycleSaving} title="Delete entry" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#cbd5e1', padding: 2 }}>
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, background: '#f8fafc', borderRadius: 8, padding: '8px 10px' }}>
+                        <AlertCircle size={14} color="#94a3b8" style={{ flexShrink: 0, marginTop: 1 }} />
+                        <p style={{ fontSize: 12, color: '#94a3b8', margin: 0, lineHeight: 1.45 }}>
+                          Private by design: your coach sees your current phase and a low-hormone indicator — never your dates or notes. Hormone curves are population averages for orientation, not individual measurements. Growth hormone isn&apos;t charted because it follows sleep and training, not cycle day.
+                        </p>
+                      </div>
+                    </div>
                   )}
                 </div>
               </div>
