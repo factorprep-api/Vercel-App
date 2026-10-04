@@ -214,31 +214,39 @@ export default function Shop() {
         </>
       )}
 
-      {plans.length > 0 && (
-        <>
-          <div className="section-label">Rehab & Injury Prevention Plans</div>
-          <div className="plans-grid">
-            {plans.map(p => {
-              const owned = ownedIds.has(p.id);
-              return (
-                <div key={p.id} className="plan-card" style={owned ? { borderColor: '#10b981' } : undefined}>
-                  {owned && <div className="plan-badge owned">Owned</div>}
-                  <div className="plan-name">{p.name}</div>
-                  <div className="plan-price">{p.price_display}</div>
-                  <p className="plan-blurb">{p.blurb}</p>
-                  <button
-                    className={`checkout-btn ${owned ? 'secondary' : 'primary'}`}
-                    disabled={busyId === p.id}
-                    onClick={() => buy(p)}
-                    style={{ marginTop: 'auto' }}
-                  >
-                    {busyId === p.id ? 'Opening checkout…' : owned ? 'Owned' : 'Buy Once'}
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        </>
+      <div className="section-label">Rehab & Injury Prevention Plans</div>
+      {plans.length > 0 ? (
+        <div className="plans-grid">
+          {plans.map(p => {
+            const owned = ownedIds.has(p.id);
+            return (
+              <div key={p.id} className="plan-card" style={owned ? { borderColor: '#10b981' } : undefined}>
+                {owned && <div className="plan-badge owned">Owned</div>}
+                <div className="plan-name">{p.name}</div>
+                <div className="plan-price">{p.price_display}</div>
+                <p className="plan-blurb">{p.blurb}</p>
+                <button
+                  className={`checkout-btn ${owned ? 'secondary' : 'primary'}`}
+                  disabled={busyId === p.id}
+                  onClick={() => buy(p)}
+                  style={{ marginTop: 'auto' }}
+                >
+                  {busyId === p.id ? 'Opening checkout…' : owned ? 'Owned' : 'Buy Once'}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="plan-card" style={{ borderStyle: 'dashed' }}>
+          <div className="plan-name" style={{ fontSize: 16 }}>No specialized programs yet</div>
+          <p className="plan-blurb" style={{ marginBottom: 0 }}>
+            Rehab and injury-prevention plans are added here by the shop admin
+            (Manage → Products & Plans → Type: "One-time purchase" → link the
+            program). Once listed, an athlete buys it once and it unlocks in
+            My Programs forever.
+          </p>
+        </div>
       )}
 
       {loading && <p style={{ color: '#64748b', fontSize: 14 }}>Loading catalog…</p>}
