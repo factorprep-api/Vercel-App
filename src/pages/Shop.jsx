@@ -119,8 +119,8 @@ export default function Shop() {
     <div className="shop-container">
       <style>{`
         .shop-container { padding: 20px; max-width: 1000px; margin: 0 auto; background-color: #f8fafc; min-height: 100vh; font-family: system-ui, -apple-system, sans-serif; }
-        .shop-header { display: flex; align-items: center; margin-bottom: 8px; gap: 12px; }
-        .shop-title { font-size: 24px; font-weight: 900; color: #0f172a; margin: 0; }
+        .shop-header { display: flex; align-items: center; margin-bottom: 8px; }
+        .shop-title { font-size: 24px; font-weight: 700; color: #0f172a; margin: 0; }
         .shop-sub { color: #64748b; font-size: 14px; margin: 0 0 20px 0; }
         .demo-banner { background: #fef9c3; border: 1px solid #fde047; color: #854d0e; font-size: 13px; font-weight: 600; padding: 10px 14px; border-radius: 10px; margin-bottom: 20px; }
         .section-label { font-size: 13px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: #64748b; margin: 24px 0 12px 0; }
@@ -142,8 +142,8 @@ export default function Shop() {
       `}</style>
 
       <div className="shop-header">
-        <button className="checkout-btn secondary" style={{ width: 'auto', padding: '8px 12px', display: 'inline-flex', alignItems: 'center', gap: 6 }} onClick={() => navigate(-1)}>
-          <ArrowLeft size={16} /> Back
+        <button onClick={() => navigate(-1)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#008ed3', padding: 0, display: 'flex', marginRight: '12px' }}>
+          <ArrowLeft size={28} />
         </button>
         <h1 className="shop-title">Shop</h1>
       </div>

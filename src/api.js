@@ -255,6 +255,84 @@ export const fetchWellnessLogs = async () => {
 };
 
 // ==========================================
+// CYCLE TRACKING PIPE (v1.6.0) — opt-in
+// menstrual cycle logs (cycle_logs table).
+// Same adapter conventions as wellness: save
+// resolves the athlete, fetch emits legacy
+// sheet-row shape (header first).
+// ==========================================
+const CYCLE_SHEET_HEADER = ['Date','Email','Athlete','Kind','ID'];
+
+export const saveCycleLog = async (payload) => {
+  try {
+    let athleteId = null;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { data: mine } = await supabase.from('athletes').select('id').eq('user_id', user.id).maybeSingle();
+      if (mine) athleteId = mine.id;
+    }
+    if (!athleteId && payload.athlete) {
+      const { data: byName } = await supabase.from('athletes').select('id').ilike('name', payload.athlete).limit(1);
+      if (byName && byName.length > 0) athleteId = byName[0].id;
+    }
+    if (!athleteId) return { status: 'Error', message: 'Athlete not found' };
+
+    const entryKind = payload.entryKind === 'missed_cycle' ? 'missed_cycle' : 'period_start';
+    const entryDate = payload.date || new Date().toISOString().split('T')[0];
+
+    // Guard against double-logging the same kind on the same day
+    const { data: existing } = await supabase
+      .from('cycle_logs')
+      .select('id')
+      .eq('athlete_id', athleteId)
+      .eq('entry_kind', entryKind)
+      .eq('entry_date', entryDate)
+      .is('deleted_at', null)
+      .maybeSingle();
+    if (existing) return { status: 'Success', duplicate: true };
+
+    const { error } = await supabase
+      .from('cycle_logs')
+      .insert({ athlete_id: athleteId, entry_kind: entryKind, entry_date: entryDate });
+    if (error) return { status: 'Error', message: error.message };
+    return { status: 'Success' };
+  } catch (err) { return { status: 'Error', message: err.message }; }
+};
+
+export const fetchCycleLogs = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('cycle_logs')
+      .select('entry_date, entry_kind, athletes(name, email)')
+      .is('deleted_at', null)
+      .order('entry_date', { ascending: true });
+    if (error) return { data: [] };
+    const rows = (data || []).map(c => [
+      c.entry_date ? `${c.entry_date}T00:00:00` : '',
+      c.athletes ? c.athletes.email : '',
+      c.athletes ? c.athletes.name : '',
+      c.entry_kind || 'period_start',
+      c.id || ''
+    ]);
+    return { data: [CYCLE_SHEET_HEADER, ...rows] };
+  } catch { return { data: [] }; }
+};
+
+// Soft-delete a cycle entry (athlete fixing a wrong date). RLS: athlete
+// owns the row, admins may too.
+export const deleteCycleLog = async (id) => {
+  try {
+    if (!id) return { status: 'Error', message: 'Missing entry ID.' };
+    const { error } = await supabase
+      .from('cycle_logs')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', id);
+    if (error) return { status: 'Error', message: error.message };
+    return { status: 'Success' };
+  } catch (err) { return { status: 'Error', message: err.message }; }
+};
+
+// ==========================================
 // SCHEDULE PIPE (Supabase) — proposals in
 // schedule_sessions, completions/manual logs in
 // session_logs, linked by session_id.

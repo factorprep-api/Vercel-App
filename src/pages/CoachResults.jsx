@@ -2,9 +2,10 @@ import { useState, useEffect, useMemo, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
-import { fetchAthletes, fetchLogbookByAthlete, fetchWellnessLogs, fetchMedicalLogs, saveMedicalLog, fetchExerciseLibrary, getLatestMaxes, saveAthleteMax } from '../api';
-import { ArrowLeft, Search, AlertCircle, Heart, Moon, Utensils, HandMetal, Smile, BarChart2, LayoutGrid, Dumbbell, Activity, ShieldAlert, X, Plus } from 'lucide-react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { fetchAthletes, fetchLogbookByAthlete, fetchWellnessLogs, fetchMedicalLogs, fetchCycleLogs, saveMedicalLog, fetchExerciseLibrary, getLatestMaxes, saveAthleteMax } from '../api';
+import { getCycleContext, PHASE_STATUS, compositeLevel, buildCycleChartData, getForwardWindow, getTrainingGuidance, getPhase } from '../utils/cycleMath';
+import { ArrowLeft, Search, AlertCircle, Heart, Moon, Utensils, HandMetal, Smile, BarChart2, LayoutGrid, Dumbbell, Activity, ShieldAlert, X, Plus, Droplet, TrendingDown, TrendingUp, MoveHorizontal } from 'lucide-react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, ReferenceArea, ComposedChart, Area } from 'recharts';
 
 const COLORS = {
   primaryBlue: '#008ed3', darkText: '#333', bodyGray: '#666', lightBg: '#f5f5f5', cardBg: '#f8fafc',
@@ -133,6 +134,10 @@ export default function CoachResults() {
   const [medFormNotes, setMedFormNotes] = useState('');
   const [medSaving, setMedSaving] = useState(false);
 
+  // CYCLE TRACKING STATE (v1.6.0) — per-athlete context arrives attached
+  // to each wellnessRoster row as `cycle` (null when not tracking).
+  const [cycleModalAthlete, setCycleModalAthlete] = useState(null);
+
   useEffect(() => {
     if (!coachEmail) return;
     loadData();
@@ -237,10 +242,20 @@ export default function CoachResults() {
     setWellnessLoading(true);
     try {
       const athRes = athletes.length > 0 ? { athletes } : await fetchAthletes();
-      const [wellnessData, medicalData] = await Promise.all([ fetchWellnessLogs(), fetchMedicalLogs() ]);
+      const [wellnessData, medicalData, cycleData] = await Promise.all([ fetchWellnessLogs(), fetchMedicalLogs(), fetchCycleLogs() ]);
       const rawAthletes = athRes.athletes || [];
       const logs = wellnessData.data || [];
       const medLogs = medicalData.data || [];
+
+      // Group cycle entries per athlete (opt-in menstrual cycle tracking)
+      const cyclesByAthlete = {};
+      (cycleData.data || []).slice(1).forEach(r => {
+        if (!r || !r[0]) return;
+        const athName = String(r[2] || '').trim();
+        if (!athName) return;
+        if (!cyclesByAthlete[athName]) cyclesByAthlete[athName] = [];
+        cyclesByAthlete[athName].push({ entryDate: String(r[0]).split('T')[0], entryKind: r[3] || 'period_start' });
+      });
       
       const medByAthlete = {};
       if (medLogs.length > 1) {
@@ -331,7 +346,9 @@ export default function CoachResults() {
             medicalStatus, 
             activeInjury, 
             medicalHistory: athMed, 
-            history: athLogs
+            history: athLogs,
+            // v1.6.0: opt-in cycle context (null when the athlete isn't tracking)
+            cycle: getCycleContext(cyclesByAthlete[name] || [])
           });
         }
       }
@@ -533,6 +550,10 @@ export default function CoachResults() {
   const avgSoreness = wellnessChartData.length ? (wellnessChartData.reduce((acc, curr) => acc + curr.soreness, 0) / wellnessChartData.length).toFixed(1) : 0;
   const avgSleep = wellnessChartData.length ? (wellnessChartData.reduce((acc, curr) => acc + curr.sleep, 0) / wellnessChartData.length).toFixed(1) : 0;
   const avgNutrition = wellnessChartData.length ? (wellnessChartData.reduce((acc, curr) => acc + curr.nutrition, 0) / wellnessChartData.length).toFixed(1) : 0;
+
+  // v1.6.0: the Cycle column only renders when at least one tracked athlete exists —
+  // otherwise the Readiness Grid is identical to pre-cycle-tracking.
+  const hasCycleData = filteredWellnessRoster.some(p => p.cycle);
 
   const openMedicalModal = (athlete) => {
     setSelectedMedicalAthlete(athlete);
@@ -833,6 +854,7 @@ export default function CoachResults() {
                     <th><div style={{display:'flex', alignItems:'center', justifyContent:'center', gap:6}}><Heart size={14}/> Soreness</div></th>
                     <th><div style={{display:'flex', alignItems:'center', justifyContent:'center', gap:6}}><Moon size={14}/> Sleep</div></th>
                     <th><div style={{display:'flex', alignItems:'center', justifyContent:'center', gap:6}}><Utensils size={14}/> Nutrition</div></th>
+                    {hasCycleData && <th><div style={{display:'flex', alignItems:'center', justifyContent:'center', gap:6}}><Droplet size={14}/> Cycle</div></th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -852,6 +874,16 @@ export default function CoachResults() {
                             <div className="cr-avatar">{athlete.name.charAt(0)}</div>
                             {athlete.name}
                             {medBadge}
+                            {athlete.cycle && athlete.cycle.isLowHormone && (
+                              <span title="Low hormone window (menstrual phase) — estrogen and progesterone at their lowest. Consider lighter loading today; capacity typically returns within days." style={{ fontSize:'10px', background:'#fef3c7', color:'#d97706', padding:'2px 6px', borderRadius:'4px', border:'1px solid #fcd34d', marginLeft:'8px', display:'inline-flex', alignItems:'center', gap:'4px', whiteSpace:'nowrap' }}>
+                                <TrendingDown size={10}/> LOW-H
+                              </span>
+                            )}
+                            {athlete.cycle && (athlete.cycle.missedFlagged || athlete.cycle.noCycle) && (
+                              <span title="No recent period logged — in training athletes this can signal over-training or low energy availability. Worth a supportive check-in." style={{ fontSize:'10px', background:'#fffbeb', color:'#b45309', padding:'2px 6px', borderRadius:'4px', border:'1px solid #fcd34d', marginLeft:'8px', display:'inline-flex', alignItems:'center', gap:'4px', whiteSpace:'nowrap' }}>
+                                <ShieldAlert size={10}/> CHECK IN
+                              </span>
+                            )}
                             {isAlert && !medBadge && <AlertCircle size={16} color="#dc2626" title="Fatigue Warning" style={{marginLeft:'8px'}} />}
                           </div>
                         </td>
@@ -860,10 +892,17 @@ export default function CoachResults() {
                         <td><span className={`status-badge ${athlete.soreness != null ? getColorClass(athlete.soreness, 'soreness') : ''}`}>{athlete.soreness != null ? athlete.soreness + '/10' : '--'}</span></td>
                         <td><span className={`status-badge ${athlete.sleep != null ? getColorClass(athlete.sleep, 'sleep') : ''}`}>{athlete.sleep != null ? athlete.sleep.toFixed(1) + 'h' : '--'}</span></td>
                         <td><span className={`status-badge ${athlete.nutrition != null ? getColorClass(athlete.nutrition, 'nutrition') : ''}`}>{athlete.nutrition != null ? athlete.nutrition + '/10' : '--'}</span></td>
+                        {hasCycleData && (
+                          <td>
+                            {athlete.cycle
+                              ? <CycleCell athlete={athlete} onOpen={() => setCycleModalAthlete(athlete)} />
+                              : <span style={{ color: '#cbd5e1' }}>–</span>}
+                          </td>
+                        )}
                       </tr>
                     );
                   })}
-                  {filteredWellnessRoster.length === 0 && <tr><td colSpan="6" style={{ padding: '32px', color: '#64748b' }}>No athletes found in active roster.</td></tr>}
+                  {filteredWellnessRoster.length === 0 && <tr><td colSpan={hasCycleData ? 7 : 6} style={{ padding: '32px', color: '#64748b' }}>No athletes found in active roster.</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -958,6 +997,12 @@ export default function CoachResults() {
           </div>
         </div>
       )}
+
+      {/* CYCLE INSIGHTS MODAL (v1.6.0) — opened from the Readiness Grid cycle pill */}
+      {cycleModalAthlete && cycleModalAthlete.cycle && (
+        <CycleInsightsModal athlete={cycleModalAthlete} onClose={() => setCycleModalAthlete(null)} />
+      )}
+
       {showMaxModal && (
         <div className="modal-overlay" onClick={() => { if (!maxSaving) setShowMaxModal(false); }}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
@@ -1050,6 +1095,159 @@ const ProgressionChart = memo(function ProgressionChart({ data, weeklyData }) {
         <rect x={padding.left + 360} y={3} width={12} height={10} fill={COLORS.zone1} opacity="0.5" rx="2" />
         <text x={padding.left + 378} y={12} fontSize="11" fill={COLORS.darkText}>Weekly Volume</text>
       </svg>
+    </div>
+  );
+});
+
+// =====================================================================
+// CYCLE TRACKING (v1.6.0) — Readiness Grid cell + Cycle Insights modal.
+// Rendered only for athletes who opted in to cycle tracking. Coach sees
+// phase-level context and forward outlook — never raw logged dates.
+// =====================================================================
+const CYCLE_BAND_COLORS = { menstrual: '#fef3c7', follicular: '#dcfce7', ovulatory: '#e0f2fe', luteal: '#ede9fe', 'late-luteal': '#fef3c7' };
+
+const CycleSparkline = memo(function CycleSparkline({ ctx }) {
+  const lastDay = Math.max(28, ctx.cycleDay);
+  const data = [];
+  for (let d = 1; d <= lastDay; d++) {
+    const v = compositeLevel(d, ctx.cycleLength);
+    data.push({ day: d, v, mark: d === ctx.cycleDay ? v : null });
+  }
+  const status = PHASE_STATUS[ctx.status] || {};
+  const color = status.color || '#8b5cf6';
+  return (
+    <div style={{ width: 96, height: 38 }} title="Composite hormone curve (population average) — dot marks today">
+      <ResponsiveContainer width="100%" height="100%">
+        <ComposedChart data={data} margin={{ top: 4, right: 2, bottom: 0, left: 2 }}>
+          <XAxis dataKey="day" hide />
+          <YAxis domain={[0, 100]} hide />
+          <Area type="monotone" dataKey="v" stroke={color} fill={color} fillOpacity={0.15} strokeWidth={1.5} isAnimationActive={false} />
+          <Line type="monotone" dataKey="mark" stroke="transparent" strokeWidth={0} dot={{ r: 3, fill: '#0f172a', stroke: '#ffffff', strokeWidth: 1 }} connectNulls={false} isAnimationActive={false} />
+        </ComposedChart>
+      </ResponsiveContainer>
+    </div>
+  );
+});
+
+const CycleCell = memo(function CycleCell({ athlete, onOpen }) {
+  const ctx = athlete.cycle;
+  const status = PHASE_STATUS[ctx.status] || {};
+  const ArrowIcon = status.arrow === 'down' ? TrendingDown : status.arrow === 'up' ? TrendingUp : MoveHorizontal;
+  const welfare = ctx.missedFlagged || ctx.noCycle;
+  return (
+    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+      <button
+        onClick={onOpen}
+        title={welfare
+          ? 'No recent cycle logged — tap for details'
+          : `${status.label} — tap for cycle insights`}
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 4, border: `1px solid ${welfare ? '#fcd34d' : (status.border || '#e2e8f0')}`, background: welfare ? '#fffbeb' : (status.bg || '#f8fafc'), color: welfare ? '#b45309' : (status.color || '#64748b'), padding: '4px 10px', borderRadius: 999, fontWeight: 700, fontSize: 11, cursor: 'pointer', whiteSpace: 'nowrap' }}
+      >
+        {welfare ? <><ShieldAlert size={11} /> CHECK IN</> : <>D{ctx.cycleDay} <ArrowIcon size={12} /></>}
+      </button>
+      <CycleSparkline ctx={ctx} />
+    </div>
+  );
+});
+
+const CycleInsightsModal = memo(function CycleInsightsModal({ athlete, onClose }) {
+  const ctx = athlete.cycle;
+  if (!ctx) return null;
+  const status = PHASE_STATUS[ctx.status] || {};
+  const data = buildCycleChartData(ctx, 4);
+  const guidance = getTrainingGuidance(ctx);
+  const forward = getForwardWindow(ctx, 7);
+
+  // Group consecutive days into phase bands for the background shading.
+  const bands = [];
+  let bandStart = null, bandPhase = null;
+  data.forEach(row => {
+    const ph = getPhase(row.day, ctx.cycleLength);
+    if (ph !== bandPhase) {
+      if (bandPhase) bands.push({ from: bandStart, to: row.day - 1, phase: bandPhase });
+      bandPhase = ph; bandStart = row.day;
+    }
+  });
+  if (bandPhase) bands.push({ from: bandStart, to: data[data.length - 1].day, phase: bandPhase });
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 660 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', paddingBottom: '16px', borderBottom: '1px solid #e2e8f0' }}>
+          <div>
+            <h2 style={{ margin: 0, fontSize: '20px', color: '#0f172a' }}>{athlete.name} — Cycle Insights</h2>
+            <span style={{ fontSize: '12px', fontWeight: 700, color: status.color, background: status.bg, padding: '3px 10px', borderRadius: 999, display: 'inline-block', marginTop: 6 }}>
+              Day {ctx.cycleDay} of ~{Math.round(ctx.cycleLength)} · {status.label}
+            </span>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}><X size={24}/></button>
+        </div>
+
+        <div style={{ height: 260, width: '100%', marginBottom: 8 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <ComposedChart data={data} margin={{ top: 14, right: 10, bottom: 0, left: -20 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+              <XAxis dataKey="day" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#94a3b8' }} />
+              <YAxis domain={[0, 110]} hide />
+              <Tooltip
+                labelFormatter={(d) => `Cycle day ${d}`}
+                contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+                itemStyle={{ fontWeight: 'bold' }}
+              />
+              {bands.map((b, i) => (
+                <ReferenceArea key={i} x1={b.from} x2={b.to} fill={CYCLE_BAND_COLORS[b.phase] || '#f8fafc'} fillOpacity={0.45} stroke="none" />
+              ))}
+              <ReferenceLine x={ctx.cycleDay} stroke="#0f172a" strokeDasharray="4 4" label={{ value: 'Today', position: 'top', fill: '#0f172a', fontSize: 11, fontWeight: 700 }} />
+              <Line type="monotone" dataKey="estrogen" stroke="#ec4899" strokeWidth={2.5} dot={false} name="Estrogen" />
+              <Line type="monotone" dataKey="progesterone" stroke="#8b5cf6" strokeWidth={2.5} dot={false} name="Progesterone" />
+              <Line type="monotone" dataKey="testosterone" stroke="#f97316" strokeWidth={2} dot={false} name="Testosterone" />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
+        <p style={{ fontSize: 11, color: '#94a3b8', margin: '0 0 16px 0', textAlign: 'center' }}>
+          <span style={{ color: '#ec4899', fontWeight: 700 }}>Estrogen</span> · <span style={{ color: '#8b5cf6', fontWeight: 700 }}>Progesterone</span> · <span style={{ color: '#f97316', fontWeight: 700 }}>Testosterone</span> — shaded bands are cycle phases
+        </p>
+
+        {/* 7-day forward outlook — "low today, peaking Wednesday" */}
+        <p style={{ fontSize: 12, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.5, margin: '0 0 8px 0' }}>Next 7 Days</p>
+        <div style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
+          {forward.map((f, i) => {
+            const st = PHASE_STATUS[f.status] || {};
+            const label = i === 0 ? 'Today' : i === 1 ? 'Tmrw' : new Date(f.dateYmd + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short' });
+            return (
+              <div key={i} style={{ flex: 1, textAlign: 'center', background: st.bg || '#f8fafc', border: `1px solid ${st.border || '#e2e8f0'}`, borderRadius: 8, padding: '8px 2px' }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase' }}>{label}</div>
+                <div style={{ fontSize: 14, fontWeight: 800, color: st.color || '#64748b' }}>D{f.cycleDay}</div>
+                <div style={{ fontSize: 9.5, color: '#64748b', whiteSpace: 'nowrap' }}>{f.phase === 'menstrual' ? 'Low' : f.phase === 'follicular' ? 'Rising' : f.phase === 'ovulatory' ? 'Peak' : f.phase === 'luteal' ? 'Luteal' : 'Falling'}</div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Training guidance */}
+        {guidance && (
+          <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10, padding: '12px 14px', marginBottom: 12 }}>
+            <p style={{ fontSize: 14, fontWeight: 800, color: '#0f172a', margin: '0 0 6px 0' }}>{guidance.headline}</p>
+            <p style={{ fontSize: 13, color: '#475569', margin: 0, lineHeight: 1.5 }}>{guidance.detail}</p>
+            {guidance.flags && guidance.flags.length > 0 && (
+              <div style={{ marginTop: 10, borderTop: '1px dashed #e2e8f0', paddingTop: 10 }}>
+                {guidance.flags.map((flag, i) => (
+                  <p key={i} style={{ fontSize: 13, color: '#b45309', margin: i > 0 ? '6px 0 0 0' : 0, display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+                    <ShieldAlert size={14} style={{ flexShrink: 0, marginTop: 2 }} /> {flag}
+                  </p>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, background: '#f8fafc', borderRadius: 8, padding: '8px 10px' }}>
+          <AlertCircle size={14} color="#94a3b8" style={{ flexShrink: 0, marginTop: 1 }} />
+          <p style={{ fontSize: 12, color: '#94a3b8', margin: 0, lineHeight: 1.45 }}>
+            Curves are population averages for orientation, not individual measurements or medical advice. Growth hormone isn&apos;t charted because it follows sleep and training, not cycle day. Dates stay private to the athlete — coaches see phase context only.
+          </p>
+        </div>
+      </div>
     </div>
   );
 });

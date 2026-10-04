@@ -15,6 +15,8 @@
 -- program_exercises (phase); wellness_logs (numeric sliders);
 -- logbook_entries (weight_kg → metric_value); history_summaries
 -- (date → timestamptz, 21.09.2026).
+-- v1.6.0 changes: cycle_logs (opt-in menstrual cycle tracking; see
+-- cycle_tracking_v1.6.0.sql for the live-deployment migration).
 -- =====================================================================
 
 -- ---------- CLUB / TEAM STRUCTURE ----------
@@ -138,6 +140,21 @@ create table public.medical_entries (
   is_resolved boolean not null default false,
   date_resolved date,
   injury_grade text,
+  deleted_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+create table public.cycle_logs (
+  id uuid primary key default gen_random_uuid(),
+  athlete_id uuid not null references public.athletes(id) on delete cascade,
+  entry_kind text not null default 'period_start'
+    check (entry_kind in ('period_start', 'missed_cycle')),
+                                              -- 'period_start' = a period began
+                                              -- on entry_date; 'missed_cycle' =
+                                              -- athlete flagged a cycle as
+                                              -- delayed/absent on entry_date
+                                              -- (over-training signal)
+  entry_date date not null,
   deleted_at timestamptz,
   created_at timestamptz not null default now()
 );
@@ -282,6 +299,7 @@ create index idx_sl_athlete_team     on public.session_logs(athlete_id, team_id)
 -- Athlete-data tier
 create unique index uq_wl_athlete_date on public.wellness_logs(athlete_id, date) where deleted_at is null;
 create index idx_me_athlete_date     on public.medical_entries(athlete_id, date_logged);
+create index idx_cl_athlete_date     on public.cycle_logs(athlete_id, entry_date);
 create index idx_lb_athlete_date     on public.logbook_entries(athlete_id, date);
 create index idx_att_athlete_ts      on public.attendance(athlete_id, attended_at);
 create index idx_hs_athlete_date     on public.history_summaries(athlete_id, date);
@@ -420,6 +438,7 @@ alter table public.schedule_sessions        enable row level security;
 alter table public.session_logs             enable row level security;
 alter table public.wellness_logs            enable row level security;
 alter table public.medical_entries          enable row level security;
+alter table public.cycle_logs               enable row level security;
 alter table public.programs                 enable row level security;
 alter table public.assignments             enable row level security;
 alter table public.logbook_entries          enable row level security;

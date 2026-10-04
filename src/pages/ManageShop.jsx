@@ -134,11 +134,11 @@ export default function ManageShop() {
         .ms-section-title { font-size: 14px; font-weight: 900; color: #0f172a; margin: 8px 0 10px 0; }
       `}</style>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-        <button className="ms-btn ghost" onClick={() => navigate(-1)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-          <ArrowLeft size={16} /> Back
+      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
+        <button onClick={() => navigate(-1)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#008ed3', padding: 0, display: 'flex', marginRight: 12 }}>
+          <ArrowLeft size={28} />
         </button>
-        <h1 style={{ fontSize: 24, fontWeight: 900, color: '#0f172a', margin: 0 }}>Manage Shop</h1>
+        <h1 style={{ fontSize: 24, fontWeight: 700, color: '#0f172a', margin: 0, fontFamily: 'system-ui, -apple-system, sans-serif' }}>Manage Shop</h1>
       </div>
 
       <div className="ms-tabs">

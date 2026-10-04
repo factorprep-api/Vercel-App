@@ -514,6 +514,35 @@ create policy wl_update on public.wellness_logs for update
   using (athlete_id = current_athlete_id())
   with check (athlete_id = current_athlete_id());
 
+-- cycle_logs (v1.6.0 — opt-in menstrual cycle tracking; same access
+-- shape as wellness_logs: athlete owns the rows, coaches of teams the
+-- athlete is a member of can read, club admins can read/delete)
+create policy cy_delete on public.cycle_logs for delete
+  using (
+    (athlete_id = current_athlete_id())
+    or exists (select 1 from club_memberships
+               where user_id = auth.uid() and role = 'admin')
+  );
+
+create policy cy_insert on public.cycle_logs for insert
+  with check (athlete_id = current_athlete_id());
+
+create policy cy_select on public.cycle_logs for select
+  using (
+    (athlete_id = current_athlete_id())
+    or exists (select 1 from athlete_team_memberships m
+               where m.athlete_id = cycle_logs.athlete_id
+                 and m.is_active and user_is_team_coach(m.team_id))
+    or exists (select 1 from athlete_team_memberships m
+               join teams t on t.id = m.team_id
+               where m.athlete_id = cycle_logs.athlete_id
+                 and t.club_id in (select get_user_admin_club_ids()))
+  );
+
+create policy cy_update on public.cycle_logs for update
+  using (athlete_id = current_athlete_id())
+  with check (athlete_id = current_athlete_id());
+
 -- =====================================================================
 -- SHOP POLICIES (v1.5.0) — Paddle catalog + entitlement ledger
 -- =====================================================================
