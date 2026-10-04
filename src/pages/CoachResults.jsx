@@ -295,19 +295,17 @@ export default function CoachResults() {
         const s = String(h).toLowerCase();
         return s.includes('name') || s.includes('athlete');
       });
-      const podsIdx = headers.findIndex(h => String(h).toLowerCase().includes('pod'));
-      
       const nameCol = nameIdx > -1 ? nameIdx : 0;
-      const podsCol = podsIdx > -1 ? podsIdx : 11;
 
       const roster = [];
       for (let i = 1; i < rawAthletes.length; i++) {
         const row = rawAthletes[i];
         if (!row) continue;
         const name = String(row[nameCol] || '').trim();
-        const pods = String(row[podsCol] || '').toLowerCase();
-        
-        if (name && pods.includes('wellness')) {
+        // v1.5.1: no pod filter on coach rosters — pods now gate the ATHLETE's
+        // own UI (purchasable via the shop), never the coach's view of their
+        // athletes. Wellness fields are simply null when not logged.
+        if (name) {
           const athLogs = logsByAthlete[name] || [];
           const latest = athLogs.length > 0 ? athLogs[athLogs.length - 1] : null;
 
