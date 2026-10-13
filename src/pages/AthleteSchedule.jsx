@@ -229,7 +229,7 @@ export default function AthleteSchedule() {
                 id: r[12],                    // ← DB UUID for linking completions
                 logId: String(r[14] || '') || null, // ← completion session_logs id (col 15)
                 logDate: String(r[15] || ''), // ← the log's own performed date (col 16)
-                logType: String(r[16] || '')  // ← the log's own type (col 17)
+                logType: String(r[16] || ''), // ← the log's own type (col 17)
                 rawDate: d,
                 dateStr: d.toLocaleDateString('en-US', {weekday: 'short', month: 'short', day: 'numeric'}),
                 type: r[3],
