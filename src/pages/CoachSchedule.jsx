@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useMemo, memo } from 'react';
+import React, { useState, useEffect, useMemo, memo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
-import { fetchAthletes, fetchSchedule, fetchWellnessLogs, saveScheduleSession, deleteScheduleSession, fetchAttachablePrograms } from '../api';
+import { fetchAthletes, fetchSchedule, fetchWellnessLogs, saveScheduleSession, deleteScheduleSession, fetchAttachablePrograms, updateSessionLog, updateScheduleProposal } from '../api';
 import { ArrowLeft, Calendar, BarChart2, Plus, AlertCircle, CheckCircle, Clock, X, AlertTriangle, Users, Layers, CalendarDays, List, Trash2, ChevronLeft, ChevronRight, Paperclip } from 'lucide-react';
 import { BarChart, Bar, Cell, LineChart, Line, ComposedChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer } from 'recharts';
 
@@ -100,6 +100,11 @@ function getWeekColor(monday) {
   return WEEK_COLORS[((weekIndex % 4) + 4) % 4];
 }
 
+function toYMD(date) {
+  const d = new Date(date);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 export default function CoachSchedule() {
   const { userEmail, role, isLoading: authLoading } = useAuth();
   const navigate = useNavigate();
@@ -193,6 +198,102 @@ export default function CoachSchedule() {
   // Audit Modal
   const [selectedAuditSession, setSelectedAuditSession] = useState(null);
 
+  // ===== DISCREET SESSION EDIT (long-press / right-click on audit cards) =====
+  // Mirrors the athlete-side gesture: invisible until used. Editing a grouped
+  // card follows the same model as delete: planned values apply to EVERY
+  // proposal row in the group; each completed athlete's actual log is edited
+  // individually. RLS (ss_update / sl_update) enforces coach rights.
+  const [editingSession, setEditingSession] = useState(null);
+  const [editDate, setEditDate] = useState('');
+  const [editType, setEditType] = useState('Field Session');
+  const [editMins, setEditMins] = useState('');
+  const [editRpe, setEditRpe] = useState('');
+  const [editActuals, setEditActuals] = useState([]); // [{ name, logId, mins, rpe }]
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState(null);
+  const editPressTimer = useRef(null);
+  const suppressClickRef = useRef(false);
+
+  function openEditSession(s) {
+    setEditingSession(s);
+    setEditDate(s.rawDate ? toYMD(s.rawDate) : '');
+    setEditType(s.type || 'Other');
+    setEditMins(s.proposedMins ? String(s.proposedMins) : '');
+    setEditRpe(s.proposedRpe ? String(s.proposedRpe) : '');
+    setEditActuals((s.athletes || [])
+      .filter(a => a.status !== 'Proposed' && a.logId)
+      .map(a => ({ name: a.athlete, logId: a.logId, mins: String(a.actualMins || ''), rpe: String(a.actualRpe || '') })));
+    setEditError(null);
+  }
+
+  function beginEditPress(s) {
+    suppressClickRef.current = false; // a fresh press clears any stale guard
+    clearTimeout(editPressTimer.current);
+    editPressTimer.current = setTimeout(() => {
+      suppressClickRef.current = true; // eat the click that trails the long-press
+      openEditSession(s);
+    }, 500);
+  }
+  function cancelEditPress() { clearTimeout(editPressTimer.current); }
+  function editClickGuard() {
+    if (suppressClickRef.current) { suppressClickRef.current = false; return true; }
+    return false;
+  }
+
+  async function handleSaveEdit() {
+    if (editSaving || !editingSession) return;
+    const s = editingSession;
+    const mins = parseInt(editMins, 10);
+    const rpeVal = parseInt(editRpe, 10);
+    const hasPlan = s.proposedMins > 0;
+    if (hasPlan && (!(mins >= 1) || !(rpeVal >= 1 && rpeVal <= 10))) {
+      setEditError('Planned duration must be at least 1 minute and RPE between 1 and 10.');
+      return;
+    }
+    for (const a of editActuals) {
+      const am = parseInt(a.mins, 10);
+      const ar = parseInt(a.rpe, 10);
+      if (!(am >= 1) || !(ar >= 1 && ar <= 10)) {
+        setEditError(`Actual values for ${a.name} must be at least 1 minute and RPE between 1 and 10.`);
+        return;
+      }
+    }
+    setEditSaving(true);
+    setEditError(null);
+    try {
+      const jobs = [];
+      // Planned values: every proposal row in the group (a.id is the proposal
+      // id except for manual logs, where id === logId — skip those).
+      if (hasPlan) {
+        s.athletes.forEach(a => {
+          if (a.id && a.id !== a.logId) {
+            jobs.push(() => updateScheduleProposal(a.id, {
+              date: editDate, type: editType, proposedMins: mins, proposedRpe: rpeVal
+            }));
+          }
+        });
+      }
+      // Actual values: each completed athlete's own completion log.
+      editActuals.forEach(a => {
+        jobs.push(() => updateSessionLog(a.logId, {
+          actualMins: a.mins, actualRpe: a.rpe, auditNotes: 'Edited by coach'
+        }));
+      });
+      const results = await Promise.all(jobs.map(j => j()));
+      const failed = results.filter(r => r.status !== 'Success');
+      if (failed.length > 0) {
+        setEditError(`Failed to update ${failed.length} of ${results.length} changes: ${failed[0].message || 'unknown error'}`);
+      } else {
+        setEditingSession(null);
+        showToast('Session updated.');
+        await loadData();
+      }
+    } catch (e) {
+      setEditError('Network error. Please try again.');
+    }
+    setEditSaving(false);
+  }
+
   const coachEmail = userEmail;
 
   useEffect(() => {
@@ -262,7 +363,8 @@ export default function CoachSchedule() {
             notes: rowNotes,
             attachedProgram: String(r[13] || '').trim(),
             status: sessionStatus,
-            id: r[12] || null
+            id: r[12] || null,
+            logId: String(r[14] || '') || null
           });
         });
 setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
@@ -1042,6 +1144,7 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
 
         .audit-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin-bottom: 12px; cursor: pointer; transition: 0.2s; display: flex; justify-content: space-between; align-items: center; }
         .audit-card:hover { border-color: #008ed3; box-shadow: 0 4px 12px rgba(0,142,211,0.05); }
+        .cs-tap-card { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; touch-action: manipulation; }
         .audit-status { display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 6px; font-size: 13px; font-weight: 700; }
       `}</style>
 
@@ -1727,7 +1830,15 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
                               return (
                                 <div
                                   key={sIdx}
-                                  onClick={() => setSelectedAuditSession(session)}
+                                  className="cs-tap-card"
+                                  onClick={() => { if (editClickGuard()) return; setSelectedAuditSession(session); }}
+                                  onTouchStart={() => beginEditPress(session)}
+                                  onTouchEnd={cancelEditPress}
+                                  onTouchMove={cancelEditPress}
+                                  onMouseDown={() => beginEditPress(session)}
+                                  onMouseUp={cancelEditPress}
+                                  onMouseLeave={cancelEditPress}
+                                  onContextMenu={(e) => { e.preventDefault(); openEditSession(session); }}
                                   style={{
                                     backgroundColor: typeColor + '18',
                                     borderLeft: `4px solid ${typeColor}`,
@@ -1780,8 +1891,15 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
                       return (
                         <div
                           key={i}
-                          className="audit-card"
-                          onClick={() => setSelectedAuditSession(session)}
+                          className="audit-card cs-tap-card"
+                          onClick={() => { if (editClickGuard()) return; setSelectedAuditSession(session); }}
+                          onTouchStart={() => beginEditPress(session)}
+                          onTouchEnd={cancelEditPress}
+                          onTouchMove={cancelEditPress}
+                          onMouseDown={() => beginEditPress(session)}
+                          onMouseUp={cancelEditPress}
+                          onMouseLeave={cancelEditPress}
+                          onContextMenu={(e) => { e.preventDefault(); openEditSession(session); }}
                           style={{ borderLeft: `6px solid ${typeColor}` }}
                         >
                           <div>
@@ -2064,6 +2182,79 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
                 );
               }
             })()}
+          </div>
+        </div>
+      )}
+      {editingSession && (
+        <div className="modal-overlay" onClick={() => !editSaving && setEditingSession(null)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+              <h2 style={{ margin: 0, fontSize: '20px' }}>Edit Session</h2>
+              <button onClick={() => setEditingSession(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}><X size={24} /></button>
+            </div>
+            <p style={{ margin: '0 0 16px 0', fontSize: '12px', color: '#94a3b8', fontWeight: '600' }}>
+              {editingSession.dateStr} · {editingSession.athletes.length} athlete(s) — plan changes apply to every athlete in this session.
+            </p>
+
+            {editingSession.proposedMins > 0 && (
+              <>
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={{ fontSize: '12px', fontWeight: '700', color: '#64748b', display: 'block', marginBottom: '4px' }}>Date (all athletes)</label>
+                  <input type="date" className="modal-input" style={{ marginBottom: 0 }} value={editDate} onChange={(e) => setEditDate(e.target.value)} />
+                </div>
+
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={{ fontSize: '12px', fontWeight: '700', color: '#64748b', display: 'block', marginBottom: '4px' }}>Session Type (all athletes)</label>
+                  <select className="modal-input" style={{ marginBottom: 0 }} value={editType} onChange={(e) => setEditType(e.target.value)}>
+                    <option value="Field Session">Field Session</option>
+                    <option value="Competition">Competition</option>
+                    <option value="Conditioning">Conditioning</option>
+                    <option value="Rehabilitation">Rehabilitation</option>
+                    <option value="Recovery">Recovery</option>
+                    <option value="Speed / Agility">Speed / Agility</option>
+                    <option value="Prehabilitation">Prehabilitation</option>
+                    <option value="Gym Workout">Gym Workout</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+
+                <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: '12px', fontWeight: '700', color: '#64748b' }}>Planned Mins (all)</label>
+                    <input type="number" min="1" className="modal-input" style={{ marginBottom: 0 }} value={editMins} onChange={e => setEditMins(e.target.value)} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: '12px', fontWeight: '700', color: '#64748b' }}>Planned RPE (all)</label>
+                    <input type="number" min="1" max="10" className="modal-input" style={{ marginBottom: 0 }} value={editRpe} onChange={e => setEditRpe(e.target.value)} />
+                  </div>
+                </div>
+              </>
+            )}
+
+            {editActuals.length > 0 && (
+              <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '16px' }}>
+                <p style={{ margin: '0 0 10px 0', fontSize: '12px', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>Logged Actuals</p>
+                {editActuals.map((a, idx) => (
+                  <div key={a.logId} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                    <span style={{ flex: 1, fontSize: '13px', fontWeight: '700', color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</span>
+                    <input type="number" min="1" placeholder="Mins" className="modal-input" style={{ width: '84px', marginBottom: 0 }} value={a.mins} onChange={e => setEditActuals(editActuals.map((x, xi) => xi === idx ? { ...x, mins: e.target.value } : x))} />
+                    <input type="number" min="1" max="10" placeholder="RPE" className="modal-input" style={{ width: '72px', marginBottom: 0 }} value={a.rpe} onChange={e => setEditActuals(editActuals.map((x, xi) => xi === idx ? { ...x, rpe: e.target.value } : x))} />
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {editError && (
+              <div style={{ marginBottom: '12px', padding: '10px', background: '#fef2f2', color: '#dc2626', borderRadius: '8px', fontSize: '13px', fontWeight: '700' }}>{editError}</div>
+            )}
+
+            <button
+              onClick={handleSaveEdit}
+              disabled={editSaving}
+              style={{ width: '100%', padding: '14px', background: '#008ed3', color: '#ffffff', border: 'none', borderRadius: '8px', fontWeight: '800', fontSize: '14px', cursor: editSaving ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+            >
+              {editSaving ? 'SAVING...' : 'SAVE CHANGES'}
+            </button>
           </div>
         </div>
       )}

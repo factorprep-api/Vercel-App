@@ -505,7 +505,7 @@ export const updateSessionLog = async (logId, fields) => {
     if (!logId) return { status: 'Error', message: 'Missing log ID.' };
     const patch = {
       audit_mode: 'modified',
-      audit_notes: 'Edited by athlete'
+      audit_notes: fields.auditNotes || 'Edited by athlete'
     };
     if (fields.date) patch.date = fields.date;
     if (fields.type) patch.session_type = fields.type;
