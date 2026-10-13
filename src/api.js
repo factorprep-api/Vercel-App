@@ -337,10 +337,10 @@ export const deleteCycleLog = async (id) => {
 // schedule_sessions, completions/manual logs in
 // session_logs, linked by session_id.
 // Read adapter emits the legacy sheet row shape
-// (positional arrays, header first, r[0]..r[12])
+// (positional arrays, header first, r[0]..r[14])
 // so existing pages keep working unchanged.
 // ==========================================
-const SCHED_SHEET_HEADER = ['Date','Email','Athlete','Type','Proposed Mins','Proposed RPE','Proposed Load','Actual Mins','Actual RPE','Actual Load','Location','Notes','ID','Attached Program'];
+const SCHED_SHEET_HEADER = ['Date','Email','Athlete','Type','Proposed Mins','Proposed RPE','Proposed Load','Actual Mins','Actual RPE','Actual Load','Location','Notes','ID','Attached Program','Log ID'];
 
 // Resolve an athlete UUID: signed-in user first, then lookup by name
 async function resolveAthleteRow(athleteName) {
@@ -491,6 +491,62 @@ export const saveScheduleSession = async (payload) => {
   } catch (err) { return { status: 'Error', message: err.message }; }
 };
 
+// ==========================================
+// DISCREET SESSION EDIT — long-press / right-click on a session card.
+// RLS does the ownership check (sl_update / ss_update); the DB audit
+// triggers record exactly WHAT changed. actual_load is a GENERATED
+// column on session_logs — never written here.
+// ==========================================
+
+// Edit an athlete's own completion log (manual logs AND completions of
+// proposed sessions — pass the session_logs id, not the proposal id).
+export const updateSessionLog = async (logId, fields) => {
+  try {
+    if (!logId) return { status: 'Error', message: 'Missing log ID.' };
+    const patch = {
+      audit_mode: 'modified',
+      audit_notes: 'Edited by athlete'
+    };
+    if (fields.date) patch.date = fields.date;
+    if (fields.type) patch.session_type = fields.type;
+    if (fields.actualMins !== undefined && fields.actualMins !== '') patch.actual_mins = parseInt(fields.actualMins) || 0;
+    if (fields.actualRpe !== undefined && fields.actualRpe !== '') patch.actual_rpe = parseInt(fields.actualRpe) || 0;
+    if (fields.notes !== undefined) patch.notes = fields.notes;
+
+    const { error } = await supabase.from('session_logs').update(patch).eq('id', logId);
+    if (error) return { status: 'Error', message: error.message };
+    return { status: 'Success' };
+  } catch (err) { return { status: 'Error', message: err.message }; }
+};
+
+// Edit a proposed session's planned details (date/type/planned load).
+// Works for both coach-authored proposals (athlete correcting what was
+// planned) and athlete-authored ones. proposed_load is stored denormalised
+// (not generated), so it is recomputed alongside mins × rpe.
+export const updateScheduleProposal = async (sessionId, fields) => {
+  try {
+    if (!sessionId) return { status: 'Error', message: 'Missing session ID.' };
+    const patch = {};
+    if (fields.date) patch.date = fields.date;
+    if (fields.type) patch.session_type = fields.type;
+    if (fields.proposedMins !== undefined && fields.proposedMins !== '') {
+      patch.proposed_mins = parseInt(fields.proposedMins) || 0;
+    }
+    if (fields.proposedRpe !== undefined && fields.proposedRpe !== '') {
+      patch.proposed_rpe = parseInt(fields.proposedRpe) || 0;
+    }
+    if (patch.proposed_mins !== undefined || patch.proposed_rpe !== undefined) {
+      patch.proposed_load = (patch.proposed_mins !== undefined ? patch.proposed_mins : parseInt(fields.proposedMins) || 0)
+        * (patch.proposed_rpe !== undefined ? patch.proposed_rpe : parseInt(fields.proposedRpe) || 0);
+    }
+    if (fields.notes !== undefined) patch.notes = fields.notes;
+
+    const { error } = await supabase.from('schedule_sessions').update(patch).eq('id', sessionId);
+    if (error) return { status: 'Error', message: error.message };
+    return { status: 'Success' };
+  } catch (err) { return { status: 'Error', message: err.message }; }
+};
+
 export const fetchSchedule = async (athleteName, email) => {
   try {
     const [sessRes, logRes] = await Promise.all([
@@ -534,17 +590,21 @@ export const fetchSchedule = async (athleteName, email) => {
         r.location || '',
         r.notes || '',
         r.row_id || '',
-        r.programs ? (r.programs.name || '') : ''
+        r.programs ? (r.programs.name || '') : '',
+        r.log_id || ''
       ]);
     };
 
     // Proposals — merged with linked completion log if one exists.
     // The proposal row itself is never mutated; the merge is display-only.
+    // log_id (col 15) exposes the linked session_logs id for the athlete's
+    // discreet edit; r[12] stays the proposal id for the coach tooling.
     proposals.forEach(p => {
       const linked = logs.find(l => l.session_id === p.id) || null;
       emit({
         ...p,
         row_id: p.id,
+        log_id: linked ? linked.id : '',
         actual_mins: linked ? linked.actual_mins : null,
         actual_rpe: linked ? linked.actual_rpe : null,
         actual_load: linked ? linked.actual_load : null,
@@ -559,6 +619,7 @@ export const fetchSchedule = async (athleteName, email) => {
       .forEach(l => emit({
         ...l,
         row_id: l.id,
+        log_id: l.id,
         proposed_mins: null,
         proposed_rpe: null,
         proposed_load: null
@@ -1386,6 +1447,290 @@ export const adminRevokeEntitlement = async (entitlementId) => {
 };
 
 // ==========================================
+// TREATMENT POD (v1.7.0) — club therapists,
+// availability slots and bookings.
+// Therapists = athletes with role 'therapist' + a club_therapists
+// profile row. Bookings link to injuries via medical_entries.injury_id.
+// ==========================================
+
+// Signed-in user's athletes row (id / role / primary club anchor).
+export const fetchCurrentAthlete = async () => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { athlete: null, error: 'Not signed in' };
+    const { data, error } = await supabase
+      .from('athletes')
+      .select('id, name, role, primary_club_id')
+      .eq('user_id', user.id)
+      .maybeSingle();
+    if (error) return { athlete: null, error: error.message };
+    return { athlete: data || null, error: null };
+  } catch (err) { return { athlete: null, error: err.message }; }
+};
+
+// My therapist profile (club_therapists row), if any.
+export const fetchMyTherapistProfile = async () => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { profile: null, error: 'Not signed in' };
+    const { data: mine } = await supabase.from('athletes').select('id').eq('user_id', user.id).maybeSingle();
+    if (!mine) return { profile: null, error: null };
+    const { data, error } = await supabase
+      .from('club_therapists')
+      .select('id, specialty, default_duration_mins, bio, is_active')
+      .eq('athlete_id', mine.id)
+      .maybeSingle();
+    if (error) return { profile: null, error: error.message };
+    return { profile: data || null, error: null };
+  } catch (err) { return { profile: null, error: err.message }; }
+};
+
+// Create/update my own therapist profile (self-setup after role promotion).
+export const upsertMyTherapistProfile = async ({ specialty, defaultDurationMins, bio }) => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { status: 'Error', message: 'Not signed in' };
+    const { data: mine } = await supabase.from('athletes').select('id').eq('user_id', user.id).maybeSingle();
+    if (!mine) return { status: 'Error', message: 'Athlete record not found — ask your club admin.' };
+    const payload = {
+      athlete_id: mine.id,
+      specialty: specialty || 'Physiotherapist',
+      default_duration_mins: parseInt(defaultDurationMins) || 45,
+      bio: bio || '',
+      is_active: true
+    };
+    const { error } = await supabase.from('club_therapists').upsert(payload, { onConflict: 'athlete_id' });
+    if (error) return { status: 'Error', message: error.message };
+    return { status: 'Success' };
+  } catch (err) { return { status: 'Error', message: err.message }; }
+};
+
+// Active therapists at a club (for the booking picker + staff lists).
+export const fetchClubTherapists = async (clubId, includeInactive = false) => {
+  try {
+    if (!clubId) return { data: [], error: 'No club selected.' };
+    let q = supabase
+      .from('club_therapists')
+      .select('id, specialty, default_duration_mins, bio, is_active, athletes(id, name, email, primary_club_id)')
+      .eq('athletes.primary_club_id', clubId);
+    if (!includeInactive) q = q.eq('is_active', true);
+    const { data, error } = await q;
+    if (error) return { data: [], error: error.message };
+    const rows = (data || []).sort((a, b) => String(a.athletes?.name || '').localeCompare(String(b.athletes?.name || '')));
+    return { data: rows, error: null };
+  } catch (err) { return { data: [], error: err.message }; }
+};
+
+// CLUB ADMIN: add a therapist by email (they must have signed up first).
+// Also promotes their role to 'therapist' when the caller has the rights;
+// role promotion failure is non-fatal (the profile is what unlocks
+// availability management — see treatment_pod_v1.7.0.sql).
+export const adminAddTherapist = async ({ email, specialty, defaultDurationMins }) => {
+  try {
+    if (!email) return { status: 'Error', message: 'Email is required.' };
+    const { data: ath, error: athErr } = await supabase
+      .from('athletes')
+      .select('id, name, primary_club_id, role')
+      .ilike('email', String(email).toLowerCase().trim())
+      .maybeSingle();
+    if (athErr) return { status: 'Error', message: athErr.message };
+    if (!ath) return { status: 'Error', message: 'No signed-up member with that email. Ask them to sign up first.' };
+    if (!ath.primary_club_id) return { status: 'Error', message: 'That member has no primary club set — set it in the admin panel first.' };
+
+    const { error: insErr } = await supabase.from('club_therapists').upsert({
+      athlete_id: ath.id,
+      specialty: specialty || 'Physiotherapist',
+      default_duration_mins: parseInt(defaultDurationMins) || 45,
+      is_active: true
+    }, { onConflict: 'athlete_id' });
+    if (insErr) return { status: 'Error', message: insErr.message };
+
+    if (ath.role !== 'therapist') {
+      const { error: roleErr } = await supabase.from('athletes').update({ role: 'therapist' }).eq('id', ath.id);
+      if (roleErr) console.warn('Role promotion skipped:', roleErr.message);
+    }
+    return { status: 'Success' };
+  } catch (err) { return { status: 'Error', message: err.message }; }
+};
+
+// CLUB ADMIN: deactivate/reactivate a therapist (keeps history).
+export const adminSetTherapistActive = async (therapistId, isActive) => {
+  try {
+    const { error } = await supabase.from('club_therapists').update({ is_active: !!isActive }).eq('id', therapistId);
+    return { error: error ? error.message : null };
+  } catch (err) { return { error: err.message }; }
+};
+
+// Availability slots. therapistId filters to one therapist; clubId shows
+// the whole club (staff view). fromDate defaults to today.
+export const fetchTherapistSlots = async ({ therapistId, clubId, fromDate, toDate } = {}) => {
+  try {
+    const from = fromDate || new Date().toISOString().split('T')[0];
+    let q = supabase
+      .from('therapist_slots')
+      .select('id, date, start_time, duration_mins, status, club_id, club_therapists(specialty, athletes(name))')
+      .gte('date', from)
+      .order('date', { ascending: true })
+      .order('start_time', { ascending: true });
+    if (therapistId) q = q.eq('therapist_id', therapistId);
+    if (clubId) q = q.eq('club_id', clubId);
+    if (toDate) q = q.lte('date', toDate);
+    const { data, error } = await q;
+    if (error) return { data: [], error: error.message };
+    return { data: data || [], error: null };
+  } catch (err) { return { data: [], error: err.message }; }
+};
+
+// Therapist (or club admin) publishes/updates an availability slot.
+// The DURATION is set here — this is the "treatment session length".
+export const saveTherapistSlot = async ({ id, therapistId, clubId, date, startTime, durationMins }) => {
+  try {
+    if (!date || !startTime) return { status: 'Error', message: 'Date and start time are required.' };
+    const dur = parseInt(durationMins);
+    if (!dur || dur <= 0) return { status: 'Error', message: 'Duration must be greater than zero minutes.' };
+    const payload = {
+      therapist_id: therapistId,
+      club_id: clubId,
+      date,
+      start_time: startTime,
+      duration_mins: dur
+    };
+    const q = id
+      ? supabase.from('therapist_slots').update(payload).eq('id', id)
+      : supabase.from('therapist_slots').insert(payload);
+    const { error } = await q;
+    if (error) return { status: 'Error', message: error.message };
+    return { status: 'Success' };
+  } catch (err) { return { status: 'Error', message: err.message }; }
+};
+
+export const deleteTherapistSlot = async (slotId) => {
+  try {
+    const { error } = await supabase.from('therapist_slots').delete().eq('id', slotId);
+    return { error: error ? error.message : null };
+  } catch (err) { return { error: err.message }; }
+};
+
+// Athlete books an open slot (atomic RPC — see treatment_pod_v1.7.0.sql).
+export const bookTreatmentSlot = async ({ slotId, treatmentType, injuryId, notes }) => {
+  try {
+    const { data, error } = await supabase.rpc('book_treatment_slot', {
+      p_slot_id: slotId,
+      p_treatment_type: treatmentType || 'Physiotherapy',
+      p_injury_id: injuryId || null,
+      p_notes: notes || null
+    });
+    if (error) return { status: 'Error', message: error.message };
+    return { status: 'Success', bookingId: data };
+  } catch (err) { return { status: 'Error', message: err.message }; }
+};
+
+export const cancelTreatmentBooking = async (bookingId) => {
+  try {
+    const { error } = await supabase.rpc('cancel_treatment_booking', { p_booking_id: bookingId });
+    if (error) return { status: 'Error', message: error.message };
+    return { status: 'Success' };
+  } catch (err) { return { status: 'Error', message: err.message }; }
+};
+
+export const completeTreatmentBooking = async (bookingId) => {
+  try {
+    const { error } = await supabase.rpc('complete_treatment_booking', { p_booking_id: bookingId });
+    if (error) return { status: 'Error', message: error.message };
+    return { status: 'Success' };
+  } catch (err) { return { status: 'Error', message: err.message }; }
+};
+
+// Booking read shape — slot (date/time/duration/therapist) + injury link.
+const TREATMENT_BOOKING_SELECT = 'id, treatment_type, notes, status, created_at, injury_id, medical_entries(body_part), therapist_slots(date, start_time, duration_mins, status, club_therapists(specialty, athletes(name)))';
+
+const shapeBooking = (b) => ({
+  id: b.id,
+  treatmentType: b.treatment_type,
+  notes: b.notes || '',
+  status: b.status,
+  injuryBodyPart: b.medical_entries ? (b.medical_entries.body_part || null) : null,
+  date: b.therapist_slots ? b.therapist_slots.date : null,
+  startTime: b.therapist_slots ? String(b.therapist_slots.start_time).slice(0, 5) : null,
+  durationMins: b.therapist_slots ? b.therapist_slots.duration_mins : null,
+  therapistName: (b.therapist_slots && b.therapist_slots.club_therapists && b.therapist_slots.club_therapists.athletes)
+    ? b.therapist_slots.club_therapists.athletes.name : '',
+  therapistSpecialty: (b.therapist_slots && b.therapist_slots.club_therapists)
+    ? b.therapist_slots.club_therapists.specialty : ''
+});
+
+const sortBookingsByDateTime = (rows) => rows.sort((a, b) =>
+  String(a.date || '').localeCompare(String(b.date || '')) ||
+  String(a.startTime || '').localeCompare(String(b.startTime || '')));
+
+// Athlete: my bookings.
+export const fetchMyTreatmentBookings = async () => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { data: [], error: 'Not signed in' };
+    const { data: mine } = await supabase.from('athletes').select('id').eq('user_id', user.id).maybeSingle();
+    if (!mine) return { data: [], error: null };
+    const { data, error } = await supabase
+      .from('treatment_bookings')
+      .select(TREATMENT_BOOKING_SELECT)
+      .eq('athlete_id', mine.id)
+      .order('created_at', { ascending: false });
+    if (error) return { data: [], error: error.message };
+    return { data: sortBookingsByDateTime((data || []).map(shapeBooking)), error: null };
+  } catch (err) { return { data: [], error: err.message }; }
+};
+
+// Therapist: bookings for my slots.
+export const fetchTherapistBookings = async () => {
+  try {
+    const profRes = await fetchMyTherapistProfile();
+    if (!profRes.profile) return { data: [], error: null };
+    const { data, error } = await supabase
+      .from('treatment_bookings')
+      .select(TREATMENT_BOOKING_SELECT + ', athletes(name)')
+      .eq('therapist_slots.therapist_id', profRes.profile.id)
+      .order('created_at', { ascending: false });
+    if (error) return { data: [], error: error.message };
+    const rows = (data || []).map(b => ({ ...shapeBooking(b), athleteName: b.athletes ? b.athletes.name : '' }));
+    return { data: sortBookingsByDateTime(rows), error: null };
+  } catch (err) { return { data: [], error: err.message }; }
+};
+
+// Coach / club admin: every booking in the club.
+export const fetchClubTreatmentBookings = async (clubId) => {
+  try {
+    if (!clubId) return { data: [], error: 'No club selected.' };
+    const { data, error } = await supabase
+      .from('treatment_bookings')
+      .select(TREATMENT_BOOKING_SELECT + ', athletes(name)')
+      .eq('club_id', clubId)
+      .order('created_at', { ascending: false });
+    if (error) return { data: [], error: error.message };
+    const rows = (data || []).map(b => ({ ...shapeBooking(b), athleteName: b.athletes ? b.athletes.name : '' }));
+    return { data: sortBookingsByDateTime(rows), error: null };
+  } catch (err) { return { data: [], error: err.message }; }
+};
+
+// Open (unresolved) injuries for the booking → injury link.
+export const fetchMyOpenInjuries = async () => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { data: [], error: 'Not signed in' };
+    const { data: mine } = await supabase.from('athletes').select('id').eq('user_id', user.id).maybeSingle();
+    if (!mine) return { data: [], error: null };
+    const { data, error } = await supabase
+      .from('medical_entries')
+      .select('id, date_logged, body_part, pain_level, injury_grade, training_status')
+      .eq('athlete_id', mine.id)
+      .eq('is_resolved', false)
+      .is('deleted_at', null)
+      .order('date_logged', { ascending: false });
+    if (error) return { data: [], error: error.message };
+    return { data: data || [], error: null };
+  } catch (err) { return { data: [], error: err.message }; }
+};
+
+// ==========================================
 // FAILSAFE DEFAULT EXPORT
 // ==========================================
 const api = {
@@ -1401,6 +1746,12 @@ const api = {
   fetchShopProducts, fetchMyEntitlements, fetchEntitledPods, fetchMyPods,
   isShopAdmin, adminListShopProducts, adminUpsertShopProduct, 
   adminDeleteShopProduct, adminListAthletes, adminListEntitlements, 
-  adminGrantEntitlement, adminRevokeEntitlement
+  adminGrantEntitlement, adminRevokeEntitlement,
+  fetchCurrentAthlete, fetchMyTherapistProfile, upsertMyTherapistProfile,
+  fetchClubTherapists, adminAddTherapist, adminSetTherapistActive,
+  fetchTherapistSlots, saveTherapistSlot, deleteTherapistSlot,
+  bookTreatmentSlot, cancelTreatmentBooking, completeTreatmentBooking,
+  fetchMyTreatmentBookings, fetchTherapistBookings, fetchClubTreatmentBookings,
+  fetchMyOpenInjuries
 };
 export default api;
