@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, CheckCircle, Activity, X, FileText } from 'lucide-react';
+import { ArrowLeft, CheckCircle, Activity, X, FileText, Clock } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
 import { saveMedicalLog, fetchMedicalLogs } from '../api';

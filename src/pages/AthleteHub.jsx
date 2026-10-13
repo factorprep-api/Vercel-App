@@ -85,7 +85,7 @@ function resolveCachedMedStatus(email) {
 
 export default function AthleteHub() {
   const navigate = useNavigate();
-  const { userEmail, athleteName: authAthleteName, isLoading: authLoading } = useAuth();
+  const { userEmail, athleteName: authAthleteName, isLoading: authLoading, role } = useAuth();
   
   // Instantaneous state initialization from memory or localStorage (0ms!)
   const [activePods, setActivePods] = useState(() => {
@@ -207,7 +207,9 @@ export default function AthleteHub() {
     { title: 'Interval Timer', desc: 'Custom work/rest intervals', icon: Timer, path: '/interval-timer', color: '#ef4444', bgImage: '/interval-timer-card.png', podId: null }
   ];
 
-  const visibleCards = allCards.filter(card => !card.podId || activePods.includes(card.podId.toLowerCase()));
+  const visibleCards = allCards.filter(card => {
+    return !card.podId || activePods.includes(card.podId.toLowerCase());
+  });
 
   const getCardStyle = (card) => {
     let style = {

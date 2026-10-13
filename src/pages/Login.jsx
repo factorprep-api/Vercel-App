@@ -3,6 +3,18 @@ import { supabase } from '../supabase';
 import { createAthlete } from '../api';
 import { Eye, EyeOff } from 'lucide-react';
 
+const WAIVER_TEXT = `Assumption of Risk & Liability Waiver
+
+1. Inherent Risks of Exercise. I understand that physical exercise, strength training and athletic conditioning involve inherent risks, including muscle strains, joint injuries, falls, equipment failure and other injuries that may be serious or permanent. I knowingly and voluntarily accept all such risks.
+
+2. Calculated Load Values. I understand that this app calculates load values, training recommendations and prescribed weights based solely on the data I enter. Inaccurate, incomplete or outdated inputs will produce inaccurate — and potentially unsafe — calculated loads. I agree that the accuracy of all data I enter is my responsibility, and I must verify any calculated value against my own ability before use.
+
+3. Responsibility for Loads. I accept full and sole responsibility for any load or weight I choose to put on, attach to or lift with any machine or equipment, and for checking that machines and equipment are set up correctly and in safe working order before use. The app and its operators are not responsible for how I load or operate any equipment.
+
+4. Health. I confirm I am physically fit to train, have no medical condition that makes training unsafe, and have consulted a doctor where appropriate. I will stop immediately if I experience pain, dizziness, shortness of breath or discomfort.
+
+I have read this waiver carefully and voluntarily agree to it.`;
+
 export default function Login() {
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
@@ -12,6 +24,7 @@ export default function Login() {
   const [error, setError] = useState('');
   const [showForgot, setShowForgot] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [waiverAccepted, setWaiverAccepted] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -20,10 +33,22 @@ export default function Login() {
 
     try {
       if (isSignUp) {
+        if (!waiverAccepted) {
+          setError('You must read and accept the Waiver & Assumption of Risk before creating an account.');
+          setLoading(false);
+          return;
+        }
+
         const { error: signUpError } = await supabase.auth.signUp({
           email,
           password,
-          options: { data: { name } }
+          options: {
+            data: {
+              name,
+              waiver_accepted: true,
+              waiver_accepted_at: new Date().toISOString()
+            }
+          }
         });
 
         if (signUpError) throw signUpError;
@@ -162,7 +187,41 @@ export default function Login() {
                 </div>
               </div>
 
-              <button type="submit" disabled={loading} style={{ width: '100%', padding: '14px', background: loading ? '#9ca3af' : '#008ed3', color: 'white', border: 'none', borderRadius: '6px', fontSize: '16px', fontWeight: 'bold', cursor: loading ? 'not-allowed' : 'pointer', marginBottom: '20px' }}>
+              {isSignUp && (
+                <div style={{ marginBottom: '20px' }}>
+                  <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold', color: '#555', fontSize: '14px' }}>
+                    Waiver &amp; Assumption of Risk
+                  </label>
+                  <div style={{
+                    maxHeight: '160px',
+                    overflowY: 'auto',
+                    border: '2px solid #ddd',
+                    borderRadius: '6px',
+                    padding: '12px',
+                    fontSize: '12px',
+                    lineHeight: '1.5',
+                    color: '#555',
+                    whiteSpace: 'pre-wrap',
+                    marginBottom: '10px'
+                  }}>
+                    {WAIVER_TEXT}
+                  </div>
+                  <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', fontSize: '13px', color: '#555', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={waiverAccepted}
+                      onChange={(e) => setWaiverAccepted(e.target.checked)}
+                      style={{ marginTop: '2px', width: '16px', height: '16px', flexShrink: 0 }}
+                    />
+                    <span>I have read and agree to the above Waiver &amp; Assumption of Risk, including that I accept full responsibility for the load I put on machines.</span>
+                  </label>
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={loading || (isSignUp && !waiverAccepted)}
+                style={{ width: '100%', padding: '14px', background: (loading || (isSignUp && !waiverAccepted)) ? '#9ca3af' : '#008ed3', color: 'white', border: 'none', borderRadius: '6px', fontSize: '16px', fontWeight: 'bold', cursor: (loading || (isSignUp && !waiverAccepted)) ? 'not-allowed' : 'pointer', marginBottom: '20px' }}>
                 {loading ? (isSignUp ? 'Creating Account...' : 'Signing In...') : (isSignUp ? 'Sign Up' : 'Sign In')}
               </button>
             </form>

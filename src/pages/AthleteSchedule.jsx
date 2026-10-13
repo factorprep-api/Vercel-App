@@ -1,10 +1,10 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Save, Calendar, Clock, Activity, CheckCircle, BarChart2, AlertTriangle, AlertCircle, Check, X, CalendarDays, List, Paperclip } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
-import { saveScheduleSession, fetchSchedule, getAthleteByEmail, fetchMedicalLogs, fetchEntitledPods } from '../api';
+import { saveScheduleSession, updateSessionLog, fetchSchedule, getAthleteByEmail, fetchMedicalLogs, fetchEntitledPods } from '../api';
 
 // ===== TRAINING WEEK HELPERS (Weeks start Monday) =====
 function getWeekMonday(date) {
@@ -28,6 +28,14 @@ function getTodayYMD() {
   return `${y}-${m}-${day}`;
 }
 
+function toYMD(date) {
+  const d = new Date(date);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 // ===== SESSION TYPE COLOR CODING & ABBREVIATIONS =====
 const TYPE_COLORS = {
   'Field Session': '#10b981',
@@ -38,6 +46,7 @@ const TYPE_COLORS = {
   'Speed / Agility': '#3b82f6',
   'Prehabilitation': '#f43f5e',
   'Gym Workout': '#8b5cf6',
+  'Treatment': '#a855f7',
   'Other': '#64748b'
 };
 
@@ -55,6 +64,7 @@ function getTypeAbbreviation(type) {
     'Speed / Agility': 'Spd',
     'Prehabilitation': 'Pre',
     'Gym Workout': 'Gym',
+    'Treatment': 'Trt',
     'Other': 'Oth'
   };
   return map[String(type || '').trim()] || String(type || '').substring(0, 3);
@@ -119,6 +129,18 @@ export default function AthleteSchedule() {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [error, setError] = useState(null);
 
+  // ===== DISCREET SESSION EDIT (long-press / right-click on any card) =====
+  const [editingSession, setEditingSession] = useState(null);
+  const [editDate, setEditDate] = useState('');
+  const [editType, setEditType] = useState('Field Session');
+  const [editMins, setEditMins] = useState('');
+  const [editRpe, setEditRpe] = useState('');
+  const [editNotes, setEditNotes] = useState('');
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState(null);
+  const editPressTimer = useRef(null);
+  const suppressClickRef = useRef(false);
+
   // FIX 1: Add strict check for userEmail before firing
   useEffect(() => {
     if (userEmail) {
@@ -173,6 +195,7 @@ export default function AthleteSchedule() {
       setMedicalInjuries(myInjuries);
 
       const logs = res.data || [];
+
       if (logs.length > 1) {
         const myLogs = [];
         logs.slice(1).forEach(r => {
@@ -204,6 +227,9 @@ export default function AthleteSchedule() {
 
               myLogs.push({
                 id: r[12],                    // ← DB UUID for linking completions
+                logId: String(r[14] || '') || null, // ← completion session_logs id (col 15)
+                logDate: String(r[15] || ''), // ← the log's own performed date (col 16)
+                logType: String(r[16] || ''), // ← the log's own type (col 17)
                 rawDate: d,
                 dateStr: d.toLocaleDateString('en-US', {weekday: 'short', month: 'short', day: 'numeric'}),
                 type: r[3],
@@ -339,6 +365,66 @@ export default function AthleteSchedule() {
     setSaving(false);
   }
 
+  // ===== DISCREET EDIT HANDLERS =====
+  // Long-press (mobile, ~500ms) or right-click (desktop) on any training
+  // session card opens a quiet edit sheet. Cards look identical either way;
+  // Treatment cards keep their own room and are left alone.
+  function openEditSession(s) {
+    // Planned/proposed details belong to the coach. Athletes only ever edit
+    // their OWN log (date performed, type, mins, RPE, notes). Un-completed
+    // proposals have no log yet, so the gesture does nothing on them.
+    if (!s || s.isTreatment || s.status === 'Proposed') return;
+    setEditingSession(s);
+    setEditDate(s.logDate || (s.rawDate ? toYMD(s.rawDate) : getTodayYMD()));
+    setEditType(s.logType || s.type || 'Other');
+    setEditMins(String(s.actualMins || ''));
+    setEditRpe(String(s.actualRpe || ''));
+    setEditNotes(s.notes || '');
+    setEditError(null);
+  }
+
+  function beginEditPress(s) {
+    suppressClickRef.current = false; // a fresh press clears any stale guard
+    clearTimeout(editPressTimer.current);
+    editPressTimer.current = setTimeout(() => {
+      suppressClickRef.current = true; // eat the click that trails the long-press
+      openEditSession(s);
+    }, 500);
+  }
+  function cancelEditPress() { clearTimeout(editPressTimer.current); }
+  function editClickGuard() {
+    if (suppressClickRef.current) { suppressClickRef.current = false; return true; }
+    return false;
+  }
+
+  async function handleSaveEdit() {
+    if (editSaving || !editingSession) return;
+    const s = editingSession;
+    const mins = parseInt(editMins, 10);
+    const rpeVal = parseInt(editRpe, 10);
+    if (!(mins >= 1) || !(rpeVal >= 1 && rpeVal <= 10)) {
+      setEditError('Duration must be at least 1 minute and RPE between 1 and 10.');
+      return;
+    }
+    setEditSaving(true); setEditError(null);
+    try {
+      // Athletes never touch the proposal row — only their own log.
+      const res = await updateSessionLog(s.logId || s.id, {
+        date: editDate, type: editType,
+        actualMins: mins, actualRpe: rpeVal, notes: editNotes
+      });
+      if (res.status === 'Success') {
+        setEditingSession(null);
+        await loadData(); // silent refresh — no full-screen success page
+      } else {
+        setEditError(res.message || 'Failed to save changes.');
+      }
+    } catch (e) {
+      setEditError('Network error. Please try again.');
+    }
+    setEditSaving(false);
+  }
+
   const loadChartData = useMemo(() => {
     if (completedSessions.length === 0) return [];
     
@@ -418,13 +504,22 @@ export default function AthleteSchedule() {
     const tColor = getTypeColor(s.type);
     const injury = getInjuryMarker(s);
     return (
-      <div key={i} style={{ background: '#f8fafc', border: `1px solid ${tColor}55`, borderLeft: `3px solid ${tColor}`, borderRadius: '6px', padding: '6px', marginBottom: '4px' }}>
+      <div key={i} className="as-tap-card" style={{ background: '#f8fafc', border: `1px solid ${tColor}55`, borderLeft: `3px solid ${tColor}`, borderRadius: '6px', padding: '6px', marginBottom: '4px' }}
+        onTouchStart={() => beginEditPress(s)}
+        onTouchEnd={cancelEditPress}
+        onTouchMove={cancelEditPress}
+        onMouseDown={() => beginEditPress(s)}
+        onMouseUp={cancelEditPress}
+        onMouseLeave={cancelEditPress}
+        onContextMenu={(e) => { e.preventDefault(); openEditSession(s); }}>
         <div style={{ fontSize: '11px', fontWeight: 800, color: tColor, display: 'flex', alignItems: 'center', gap: '4px', lineHeight: 1.2 }}>
           {injury && <span title={injury.bodyPart ? `Injury${injury.grade !== null ? ` (Grade ${injury.grade})` : ''}: ${injury.bodyPart}` : 'Injury logged'} style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: injury.color, flexShrink: 0, boxShadow: `0 0 0 1px #fff` }}></span>}
           {getTypeAbbreviation(s.type)}
         </div>
-        <div style={{ fontSize: '10px', color: '#475569', fontWeight: 700, marginTop: '2px' }}>{s.actualMins}m @ RPE {s.actualRpe}</div>
-        <div style={{ fontSize: '10px', color: '#008ed3', fontWeight: 800 }}>{s.actualLoad} AU</div>
+        <div style={{ fontSize: '10px', color: '#475569', fontWeight: 700, marginTop: '2px' }}>
+          {s.isTreatment ? `${(s.actualMins ?? s.proposedMins)}m` : `${s.actualMins}m @ RPE ${s.actualRpe}`}
+        </div>
+        {!s.isTreatment && <div style={{ fontSize: '10px', color: '#008ed3', fontWeight: 800 }}>{s.actualLoad} AU</div>}
       </div>
     );
   };
@@ -465,6 +560,7 @@ export default function AthleteSchedule() {
         .cal-cell:nth-child(7n) { border-right: none; }
         .cal-day-label { font-size: 9px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; padding: 4px 4px 2px; }
         .cal-day-num { font-size: 12px; font-weight: 800; color: #0f172a; padding: 0 4px 4px; }
+        .as-tap-card { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; touch-action: manipulation; }
       `}</style>
 
       <div className="as-header">
@@ -491,21 +587,37 @@ export default function AthleteSchedule() {
             proposedSessions.map((s, i) => {
               const typeColor = getTypeColor(s.type);
               return (
-                <div key={i} className="ghost-card" style={{ borderLeft: `6px solid ${typeColor}` }} onClick={() => { setSelectedProposed(s); setAuditMode(null); setAuditDate(getTodayYMD()); setActualMins(s.proposedMins); setActualRpe(s.proposedRpe); setNotes(''); }}>
+                <div key={i} className="ghost-card as-tap-card" style={{ borderLeft: `6px solid ${typeColor}` }}
+                  onClick={() => {
+                    if (editClickGuard()) return;
+                    if (s.isTreatment) { navigate('/athlete-treatment'); return; }
+                    setSelectedProposed(s); setAuditMode(null); setAuditDate(getTodayYMD()); setActualMins(s.proposedMins); setActualRpe(s.proposedRpe); setNotes('');
+                  }}
+                  onTouchStart={() => beginEditPress(s)}
+                  onTouchEnd={cancelEditPress}
+                  onTouchMove={cancelEditPress}
+                  onMouseDown={() => beginEditPress(s)}
+                  onMouseUp={cancelEditPress}
+                  onMouseLeave={cancelEditPress}
+                  onContextMenu={(e) => { e.preventDefault(); openEditSession(s); }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
                     <div>
                       <div style={{ fontWeight: '800', color: '#0f172a', fontSize: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                         {s.type}
-                        <span style={{ fontSize: '11px', fontWeight: '800', backgroundColor: typeColor + '20', color: typeColor, padding: '2px 8px', borderRadius: '4px' }}>
-                          {s.proposedLoad} AU Target
-                        </span>
+                        {!s.isTreatment && (
+                          <span style={{ fontSize: '11px', fontWeight: '800', backgroundColor: typeColor + '20', color: typeColor, padding: '2px 8px', borderRadius: '4px' }}>
+                            {s.proposedLoad} AU Target
+                          </span>
+                        )}
                       </div>
                       {s.location && <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>📍 {s.location}</div>}
                     </div>
                     <div style={{ fontSize: '13px', color: '#64748b', fontWeight: '700' }}>{s.dateStr}</div>
                   </div>
                   <div style={{ fontSize: '13px', color: '#475569', marginBottom: '8px' }}>
-                    <strong>Target:</strong> {s.proposedMins} mins @ RPE {s.proposedRpe}
+                    {s.isTreatment
+                      ? <><strong>Booked treatment:</strong> {s.proposedMins} mins with {s.location || 'your therapist'}</>
+                      : <><strong>Target:</strong> {s.proposedMins} mins @ RPE {s.proposedRpe}</>}
                   </div>
                   {s.attachedProgram && (
                     <div style={{ marginTop: '10px' }}>
@@ -521,9 +633,15 @@ export default function AthleteSchedule() {
                       </button>
                     </div>
                   )}
-                  <div style={{ marginTop: '12px', color: '#008ed3', fontWeight: '800', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <CheckCircle size={16} /> Tap to Log Result
-                  </div>
+                  {s.isTreatment ? (
+                    <div style={{ marginTop: '12px', color: '#a855f7', fontWeight: '800', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Calendar size={16} /> Open Treatment Room
+                    </div>
+                  ) : (
+                    <div style={{ marginTop: '12px', color: '#008ed3', fontWeight: '800', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <CheckCircle size={16} /> Tap to Log Result
+                    </div>
+                  )}
                 </div>
               );
             })
@@ -613,6 +731,62 @@ export default function AthleteSchedule() {
                 {saving ? 'SAVING...' : 'SAVE RESULT'}
               </button>
             )}
+          </div>
+        </div>
+      )}
+
+      {editingSession && (
+        <div className="modal-overlay" onClick={() => !editSaving && setEditingSession(null)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+              <h2 style={{ margin: 0, fontSize: '20px' }}>Edit Session</h2>
+              <button onClick={() => setEditingSession(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}><X size={24}/></button>
+            </div>
+            <p style={{ margin: '0 0 16px 0', fontSize: '12px', color: '#94a3b8', fontWeight: '600' }}>
+              {editingSession.dateStr} · changes are recorded and visible to your coach.
+            </p>
+
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ fontSize: '12px', fontWeight: '700', color: '#64748b', display: 'block', marginBottom: '4px' }}>Date</label>
+              <input type="date" className="as-select" value={editDate} max={getTodayYMD()} onChange={(e) => setEditDate(e.target.value)} />
+            </div>
+
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ fontSize: '12px', fontWeight: '700', color: '#64748b', display: 'block', marginBottom: '4px' }}>Session Type</label>
+              <select className="as-select" value={editType} onChange={(e) => setEditType(e.target.value)}>
+                <option value="Field Session">Field Session</option>
+                <option value="Competition">Competition</option>
+                <option value="Conditioning">Conditioning</option>
+                <option value="Rehabilitation">Rehabilitation</option>
+                <option value="Recovery">Recovery</option>
+                <option value="Speed / Agility">Speed / Agility</option>
+                <option value="Prehabilitation">Prehabilitation</option>
+                <option value="Gym Workout">Gym Workout</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: '12px', fontWeight: '700', color: '#64748b' }}>Actual Mins</label>
+                <input type="number" min="1" className="as-input-num" style={{ fontSize: '18px', padding: '8px' }} value={editMins} onChange={e => setEditMins(e.target.value)} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: '12px', fontWeight: '700', color: '#64748b' }}>Actual RPE</label>
+                <input type="number" min="1" max="10" className="as-input-num" style={{ fontSize: '18px', padding: '8px' }} value={editRpe} onChange={e => setEditRpe(e.target.value)} />
+              </div>
+            </div>
+
+            <label style={{ fontSize: '12px', fontWeight: '700', color: '#64748b' }}>Notes (Optional)</label>
+            <textarea className="notes-input" placeholder="Any context for your coach" value={editNotes} onChange={e => setEditNotes(e.target.value)} style={{ minHeight: '60px' }} />
+
+            {editError && (
+              <div style={{ marginTop: '12px', padding: '10px', background: '#fef2f2', color: '#dc2626', borderRadius: '8px', fontSize: '13px', fontWeight: '700' }}>{editError}</div>
+            )}
+
+            <button className="save-btn" onClick={handleSaveEdit} disabled={editSaving}>
+              <Save size={18} /> {editSaving ? 'SAVING...' : 'SAVE CHANGES'}
+            </button>
           </div>
         </div>
       )}
@@ -754,7 +928,14 @@ export default function AthleteSchedule() {
                       if (s.status === 'Injury') { statusColor = '#dc2626'; StatusIcon = AlertCircle; }
 
                       return (
-                        <div key={i} style={{ padding: '12px 16px', background: '#fff', border: '1px solid #e2e8f0', borderLeft: `4px solid ${tColor}`, borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div key={i} className="as-tap-card" style={{ padding: '12px 16px', background: '#fff', border: '1px solid #e2e8f0', borderLeft: `4px solid ${tColor}`, borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                          onTouchStart={() => beginEditPress(s)}
+                          onTouchEnd={cancelEditPress}
+                          onTouchMove={cancelEditPress}
+                          onMouseDown={() => beginEditPress(s)}
+                          onMouseUp={cancelEditPress}
+                          onMouseLeave={cancelEditPress}
+                          onContextMenu={(e) => { e.preventDefault(); openEditSession(s); }}>
                           <div>
                             <div style={{ fontWeight: '700', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
                                  {injury && <span title={injury.bodyPart ? `Injury${injury.grade !== null ? ` (Grade ${injury.grade})` : ''}: ${injury.bodyPart}` : 'Injury logged'} style={{ width: '9px', height: '9px', borderRadius: '50%', backgroundColor: injury.color, flexShrink: 0, boxShadow: '0 0 0 1.5px #fff' }}></span>}
@@ -762,12 +943,20 @@ export default function AthleteSchedule() {
                               {s.type}
                             </div>
                             <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>{s.dateStr}</div>
-                            {s.proposedMins > 0 && (
-                              <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 700, marginTop: '2px' }}>Planned: {s.proposedMins}m @ RPE {Number(s.proposedRpe).toFixed(1)} ({s.proposedLoad} AU)</div>
+                            {s.isTreatment ? (
+                              <div style={{ fontSize: '12px', color: '#475569', fontWeight: 700, marginTop: '2px' }}>
+                                with {s.location || 'therapist'} · {s.actualMins ?? s.proposedMins} min
+                              </div>
+                            ) : (
+                              <>
+                                {s.proposedMins > 0 && (
+                                  <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 700, marginTop: '2px' }}>Planned: {s.proposedMins}m @ RPE {Number(s.proposedRpe).toFixed(1)} ({s.proposedLoad} AU)</div>
+                                )}
+                                <div style={{ fontSize: '12px', color: '#475569', fontWeight: 700, marginTop: '2px' }}>Actual: {s.actualMins}m @ RPE {s.actualRpe} ({s.actualLoad} AU)</div>
+                              </>
                             )}
-                            <div style={{ fontSize: '12px', color: '#475569', fontWeight: 700, marginTop: '2px' }}>Actual: {s.actualMins}m @ RPE {s.actualRpe} ({s.actualLoad} AU)</div>
                           </div>
-                          <div style={{ fontWeight: '900', color: '#008ed3' }}>{s.actualLoad} AU</div>
+                          {!s.isTreatment && <div style={{ fontWeight: '900', color: '#008ed3' }}>{s.actualLoad} AU</div>}
                         </div>
                       );
                     })}

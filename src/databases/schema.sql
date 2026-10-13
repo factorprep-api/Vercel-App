@@ -383,6 +383,36 @@ create trigger trg_protect_session_log_team
 before update on public.session_logs
 for each row execute function public.protect_session_log_retagging();
 
+-- (3b) schedule_sessions retagging guard: athletes may discreetly correct
+--      their own proposed sessions (ss_update in policies.sql), but never
+--      who the session belongs to, who wrote it, or which team it sits in.
+--      Coaches and admins may still retag as before.
+create or replace function public.protect_schedule_session_retagging()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  if new.team_id is distinct from old.team_id
+     or new.created_by is distinct from old.created_by
+     or new.athlete_id is distinct from old.athlete_id then
+    if exists (select 1 from public.team_memberships
+               where user_id = (select auth.uid()) and team_id = new.team_id)
+       or exists (select 1 from public.teams t
+                  join public.club_memberships cm
+                    on cm.club_id = t.club_id and cm.role = 'admin'
+                  where t.id = new.team_id
+                    and cm.user_id = (select auth.uid()))
+    then
+      return new;
+    end if;
+    raise exception 'schedule_sessions ownership fields can only be changed by a coach or admin.';
+  end if;
+  return new;
+end;
+$$;
+
+create trigger trg_protect_schedule_session_team
+before update on public.schedule_sessions
+for each row execute function public.protect_schedule_session_retagging();
+
 -- (4) Record fingerprints (D14): athlete_id and created_at are immutable
 --     on all athlete-data tables. Blocks backdating and re-attribution
 --     in every policy branch, including the coach branch.
