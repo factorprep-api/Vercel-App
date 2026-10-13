@@ -24,6 +24,7 @@ const AthleteWellness = lazy(() => import('./pages/AthleteWellness'));
 const AthleteMedical = lazy(() => import('./pages/AthleteMedical'));
 const AthleteSchedule = lazy(() => import('./pages/AthleteSchedule'));
 const CoachSchedule = lazy(() => import('./pages/CoachSchedule'));
+const AthleteTreatment = lazy(() => import('./pages/AthleteTreatment'));
 
 
 const LoadingFallback = () => (
@@ -72,7 +73,7 @@ export default function App() {
           isAuthenticated ? (
             <AppShell>
               <Suspense fallback={<LoadingFallback />}>
-                {role === 'coach' ? <CoachHub /> : <AthleteHub />}
+                {role === 'coach' ? <CoachHub /> : role === 'therapist' ? <AthleteTreatment /> : <AthleteHub />}
               </Suspense>
             </AppShell>
           ) : (
@@ -174,6 +175,12 @@ export default function App() {
         <Route path="/athlete-schedule" element={
           <ProtectedRoute allowedRoles={['athlete', 'coach']}>
             <Suspense fallback={<LoadingFallback />}><AthleteSchedule /></Suspense>
+          </ProtectedRoute>
+        } />
+
+        <Route path="/athlete-treatment" element={
+          <ProtectedRoute allowedRoles={['athlete', 'coach', 'therapist']}>
+            <Suspense fallback={<LoadingFallback />}><AthleteTreatment /></Suspense>
           </ProtectedRoute>
         } />
       </Routes>

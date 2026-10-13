@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, CheckCircle, Activity, X, FileText } from 'lucide-react';
+import { ArrowLeft, CheckCircle, Activity, X, FileText, Clock } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
-import { saveMedicalLog, fetchMedicalLogs } from '../api';
+import { saveMedicalLog, fetchMedicalLogs, fetchMyTreatmentBookings } from '../api';
 
 const BODY_PARTS = [
   'Head / Concussion', 'Neck', 'Left Shoulder', 'Right Shoulder', 'Left Elbow / Arm', 'Right Elbow / Arm',
@@ -25,6 +25,7 @@ export default function AthleteMedical() {
 
   const [activeTab, setActiveTab] = useState('log'); // 'log' or 'history'
   const [medicalHistory, setMedicalHistory] = useState([]);
+  const [treatmentBookings, setTreatmentBookings] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
   const [selectedPart, setSelectedPart] = useState('');
@@ -53,6 +54,9 @@ export default function AthleteMedical() {
         const myLogs = logs.slice(1).filter(r => String(r[1]).trim().toLowerCase() === userEmail.toLowerCase() || String(r[2]).trim().toLowerCase() === (athleteName||'').toLowerCase());
         setMedicalHistory(myLogs.reverse());
       }
+      // v1.7.0 Treatment Pod: show treatment appointments linked to injuries
+      const tbRes = await fetchMyTreatmentBookings().catch(() => ({ data: [] }));
+      setTreatmentBookings(tbRes.data || []);
     } catch { setError("Failed to load history."); }
     setLoadingHistory(false);
   }
@@ -165,6 +169,33 @@ export default function AthleteMedical() {
         </div>
       ) : (
         <div>
+          {treatmentBookings.length > 0 && (
+            <div style={{ marginBottom: '24px' }}>
+              <h3 style={{ fontSize: '15px', color: '#0f172a', margin: '0 0 10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Clock size={15} color="#a855f7" /> Treatment Appointments
+              </h3>
+              {treatmentBookings.map(b => (
+                <div key={b.id} style={{ background: '#fff', border: '1px solid #e2e8f0', borderLeft: '4px solid #a855f7', borderRadius: '10px', padding: '12px 14px', marginBottom: '8px', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ fontWeight: 800, fontSize: '13px', color: '#0f172a' }}>
+                      {b.treatmentType} · {b.durationMins} min
+                    </div>
+                    <span style={{ fontSize: '10px', fontWeight: 800, padding: '2px 8px', borderRadius: '99px', background: b.status === 'booked' ? '#fef9c3' : b.status === 'completed' ? '#dcfce7' : '#fee2e2', color: b.status === 'booked' ? '#a16207' : b.status === 'completed' ? '#15803d' : '#b91c1c', textTransform: 'uppercase' }}>
+                      {b.status}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>
+                    {b.date} · {b.startTime} with {b.therapistName}
+                  </div>
+                  {b.injuryBodyPart && (
+                    <div style={{ fontSize: '11px', color: '#b91c1c', fontWeight: 700, marginTop: '2px' }}>
+                      For injury: {b.injuryBodyPart}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
           {loadingHistory ? <p style={{ textAlign: 'center', color: '#64748b' }}>Loading clinical file...</p> : medicalHistory.length === 0 ? <p style={{ textAlign: 'center', color: '#64748b' }}>No medical history recorded.</p> : (
             medicalHistory.map((log, i) => {
               const logGrade = (log[10] !== '' && log[10] !== null && log[10] !== undefined) ? Number(log[10]) : null;

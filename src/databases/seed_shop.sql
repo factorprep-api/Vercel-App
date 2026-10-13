@@ -11,15 +11,15 @@
 -- runs in demo mode while any purchasable row lacks a price id.
 -- =====================================================================
 
--- Subscription: All-In Pods — $10/month, unlocks wellness/medical/schedule
+-- Subscription: All-In Pods — $10/month, unlocks wellness/medical/schedule/treatment
 insert into public.shop_products
   (slug, name, blurb, product_type, fulfilment, price_display, price_usd, grants_pods, grants_coach_role, sort_order)
 values
   ('pods',
    'All-In Pods',
-   'Unlock Wellness, Medical and Schedule tracking for your training.',
+   'Unlock Wellness, Medical, Schedule and Treatment Room tracking for your training.',
    'subscription', 'auto', '$10 / month', 10,
-   array['wellness', 'medical', 'schedule'], false, 10)
+   array['wellness', 'medical', 'schedule', 'treatment'], false, 10)
 on conflict (slug) do update set
   name = excluded.name,
   blurb = excluded.blurb,
@@ -37,9 +37,9 @@ insert into public.shop_products
 values
   ('coaching-kit',
    'Coaching Kit',
-   'Program builder, own exercise library, assignments, sessions, Drill Designer and full analytics. Includes all three Pods.',
+   'Program builder, own exercise library, assignments, sessions, Drill Designer and full analytics. Includes all four Pods.',
    'subscription', 'auto', '$15 / month', 15,
-   array['wellness', 'medical', 'schedule'], true, 20)
+   array['wellness', 'medical', 'schedule', 'treatment'], true, 20)
 on conflict (slug) do update set
   name = excluded.name,
   blurb = excluded.blurb,
