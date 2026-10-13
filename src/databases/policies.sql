@@ -418,19 +418,11 @@ create policy ss_write on public.schedule_sessions for all
   using (user_is_team_coach(team_id))
   with check (user_is_team_coach(team_id));
 
--- ss_update: athletes may discreetly correct the details of their own
--- proposed sessions (long-press / right-click edit on the athlete
--- schedule). Ownership fields (team_id, athlete_id, created_by) are
--- protected by the retagging trigger in schema.sql, and every change is
--- recorded in audit_logs by trg_audit_schedule_sessions automatically.
-create policy ss_update on public.schedule_sessions for update
-  using (
-    user_is_team_coach(team_id)
-    or (athlete_id = current_athlete_id())
-  ) with check (
-    user_is_team_coach(team_id)
-    or (athlete_id = current_athlete_id())
-  );
+-- ss_update (withdrawn): athletes may NO LONGER edit proposed sessions —
+-- the plan belongs to the coach. Athletes correct their own session_logs
+-- via sl_update only; coaches edit proposals via ss_write. The former
+-- athlete branch of this policy has been removed. On live deployments run:
+--   drop policy if exists ss_update on public.schedule_sessions;
 
 -- session_logs
 create policy sl_delete on public.session_logs for delete

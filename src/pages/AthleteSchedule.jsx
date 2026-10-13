@@ -4,7 +4,7 @@ import { ArrowLeft, Save, Calendar, Clock, Activity, CheckCircle, BarChart2, Ale
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
-import { saveScheduleSession, updateSessionLog, updateScheduleProposal, fetchSchedule, getAthleteByEmail, fetchMedicalLogs, fetchEntitledPods } from '../api';
+import { saveScheduleSession, updateSessionLog, fetchSchedule, getAthleteByEmail, fetchMedicalLogs, fetchEntitledPods } from '../api';
 
 // ===== TRAINING WEEK HELPERS (Weeks start Monday) =====
 function getWeekMonday(date) {
@@ -136,8 +136,6 @@ export default function AthleteSchedule() {
   const [editMins, setEditMins] = useState('');
   const [editRpe, setEditRpe] = useState('');
   const [editNotes, setEditNotes] = useState('');
-  const [editPlannedMins, setEditPlannedMins] = useState('');
-  const [editPlannedRpe, setEditPlannedRpe] = useState('');
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState(null);
   const editPressTimer = useRef(null);
@@ -230,6 +228,8 @@ export default function AthleteSchedule() {
               myLogs.push({
                 id: r[12],                    // ← DB UUID for linking completions
                 logId: String(r[14] || '') || null, // ← completion session_logs id (col 15)
+                logDate: String(r[15] || ''), // ← the log's own performed date (col 16)
+                logType: String(r[16] || '')  // ← the log's own type (col 17)
                 rawDate: d,
                 dateStr: d.toLocaleDateString('en-US', {weekday: 'short', month: 'short', day: 'numeric'}),
                 type: r[3],
@@ -370,16 +370,16 @@ export default function AthleteSchedule() {
   // session card opens a quiet edit sheet. Cards look identical either way;
   // Treatment cards keep their own room and are left alone.
   function openEditSession(s) {
-    if (!s || s.isTreatment) return;
-    const isProposed = s.status === 'Proposed';
+    // Planned/proposed details belong to the coach. Athletes only ever edit
+    // their OWN log (date performed, type, mins, RPE, notes). Un-completed
+    // proposals have no log yet, so the gesture does nothing on them.
+    if (!s || s.isTreatment || s.status === 'Proposed') return;
     setEditingSession(s);
-    setEditDate(s.rawDate ? toYMD(s.rawDate) : getTodayYMD());
-    setEditType(s.type || 'Other');
-    setEditMins(String(isProposed ? (s.proposedMins || '') : (s.actualMins || '')));
-    setEditRpe(String(isProposed ? (s.proposedRpe || '') : (s.actualRpe || '')));
+    setEditDate(s.logDate || (s.rawDate ? toYMD(s.rawDate) : getTodayYMD()));
+    setEditType(s.logType || s.type || 'Other');
+    setEditMins(String(s.actualMins || ''));
+    setEditRpe(String(s.actualRpe || ''));
     setEditNotes(s.notes || '');
-    setEditPlannedMins(s.proposedMins > 0 ? String(s.proposedMins) : '');
-    setEditPlannedRpe(s.proposedMins > 0 ? String(s.proposedRpe) : '');
     setEditError(null);
   }
 
@@ -408,34 +408,11 @@ export default function AthleteSchedule() {
     }
     setEditSaving(true); setEditError(null);
     try {
-      let res;
-      if (s.status === 'Proposed') {
-        // Not completed yet — the card IS the proposal; edit its plan.
-        res = await updateScheduleProposal(s.id, {
-          date: editDate, type: editType,
-          proposedMins: mins, proposedRpe: rpeVal, notes: editNotes
-        });
-      } else if (s.proposedMins > 0) {
-        // Proposed + completed: actuals live on the completion log (logId),
-        // the displayed date/type/plan live on the proposal itself.
-        res = await updateSessionLog(s.logId || s.id, {
-          type: editType, actualMins: mins, actualRpe: rpeVal, notes: editNotes
-        });
-        const pMins = parseInt(editPlannedMins, 10);
-        const pRpe = parseInt(editPlannedRpe, 10);
-        if (res.status === 'Success' && pMins >= 1 && pRpe >= 1 && pRpe <= 10) {
-          const pRes = await updateScheduleProposal(s.id, {
-            date: editDate, type: editType, proposedMins: pMins, proposedRpe: pRpe
-          });
-          if (pRes.status !== 'Success') res = pRes;
-        }
-      } else {
-        // Manual / unplanned log — everything lives on the log row.
-        res = await updateSessionLog(s.logId || s.id, {
-          date: editDate, type: editType,
-          actualMins: mins, actualRpe: rpeVal, notes: editNotes
-        });
-      }
+      // Athletes never touch the proposal row — only their own log.
+      const res = await updateSessionLog(s.logId || s.id, {
+        date: editDate, type: editType,
+        actualMins: mins, actualRpe: rpeVal, notes: editNotes
+      });
       if (res.status === 'Success') {
         setEditingSession(null);
         await loadData(); // silent refresh — no full-screen success page
@@ -769,25 +746,9 @@ export default function AthleteSchedule() {
               {editingSession.dateStr} · changes are recorded and visible to your coach.
             </p>
 
-            {editingSession.proposedMins > 0 && editingSession.status !== 'Proposed' && (
-              <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '8px', marginBottom: '16px', border: '1px solid #e2e8f0' }}>
-                <p style={{ margin: '0 0 8px 0', fontSize: '12px', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>Planned (Coach)</p>
-                <div style={{ display: 'flex', gap: '12px' }}>
-                  <div style={{ flex: 1 }}>
-                    <label style={{ fontSize: '12px', fontWeight: '700', color: '#64748b' }}>Planned Mins</label>
-                    <input type="number" min="1" className="as-input-num" style={{ fontSize: '18px', padding: '8px' }} value={editPlannedMins} onChange={e => setEditPlannedMins(e.target.value)} />
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <label style={{ fontSize: '12px', fontWeight: '700', color: '#64748b' }}>Planned RPE</label>
-                    <input type="number" min="1" max="10" className="as-input-num" style={{ fontSize: '18px', padding: '8px' }} value={editPlannedRpe} onChange={e => setEditPlannedRpe(e.target.value)} />
-                  </div>
-                </div>
-              </div>
-            )}
-
             <div style={{ marginBottom: '16px' }}>
               <label style={{ fontSize: '12px', fontWeight: '700', color: '#64748b', display: 'block', marginBottom: '4px' }}>Date</label>
-              <input type="date" className="as-select" value={editDate} max={editingSession.status === 'Proposed' ? undefined : getTodayYMD()} onChange={(e) => setEditDate(e.target.value)} />
+              <input type="date" className="as-select" value={editDate} max={getTodayYMD()} onChange={(e) => setEditDate(e.target.value)} />
             </div>
 
             <div style={{ marginBottom: '16px' }}>
@@ -807,11 +768,11 @@ export default function AthleteSchedule() {
 
             <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
               <div style={{ flex: 1 }}>
-                <label style={{ fontSize: '12px', fontWeight: '700', color: '#64748b' }}>{editingSession.status === 'Proposed' ? 'Planned Mins' : 'Actual Mins'}</label>
+                <label style={{ fontSize: '12px', fontWeight: '700', color: '#64748b' }}>Actual Mins</label>
                 <input type="number" min="1" className="as-input-num" style={{ fontSize: '18px', padding: '8px' }} value={editMins} onChange={e => setEditMins(e.target.value)} />
               </div>
               <div style={{ flex: 1 }}>
-                <label style={{ fontSize: '12px', fontWeight: '700', color: '#64748b' }}>{editingSession.status === 'Proposed' ? 'Planned RPE' : 'Actual RPE'}</label>
+                <label style={{ fontSize: '12px', fontWeight: '700', color: '#64748b' }}>Actual RPE</label>
                 <input type="number" min="1" max="10" className="as-input-num" style={{ fontSize: '18px', padding: '8px' }} value={editRpe} onChange={e => setEditRpe(e.target.value)} />
               </div>
             </div>
