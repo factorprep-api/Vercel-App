@@ -4,8 +4,7 @@ import { ArrowLeft, Save, Calendar, Clock, Activity, CheckCircle, BarChart2, Ale
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
-import TreatmentReminder from '../components/TreatmentReminder';
-import { saveScheduleSession, updateSessionLog, updateScheduleProposal, fetchSchedule, getAthleteByEmail, fetchMedicalLogs, fetchEntitledPods, fetchMyTreatmentBookings } from '../api';
+import { saveScheduleSession, updateSessionLog, updateScheduleProposal, fetchSchedule, getAthleteByEmail, fetchMedicalLogs, fetchEntitledPods } from '../api';
 
 // ===== TRAINING WEEK HELPERS (Weeks start Monday) =====
 function getWeekMonday(date) {
@@ -199,42 +198,6 @@ export default function AthleteSchedule() {
 
       const logs = res.data || [];
 
-      // v1.7.0 Treatment Pod: merge treatment bookings into the sessions
-      // calendar so booked physio/massage appointments appear alongside
-      // training sessions in both the agenda and calendar views.
-      const tRes = await fetchMyTreatmentBookings().catch(() => ({ data: [] }));
-      const treatmentSessions = (tRes.data || []).map(b => {
-        const parsed = b.date ? new Date(`${b.date}T00:00:00`) : new Date();
-        const safeDate = isNaN(parsed.getTime()) ? new Date() : parsed;
-        let timeLabel = '';
-        if (b.startTime) {
-          const [h, m] = String(b.startTime).split(':');
-          const hh = parseInt(h, 10);
-          if (!isNaN(hh)) {
-            const suffix = hh >= 12 ? 'PM' : 'AM';
-            timeLabel = `${hh % 12 === 0 ? 12 : hh % 12}:${m} ${suffix}`;
-          }
-        }
-        const booked = b.status === 'booked';
-        return {
-          id: b.id,
-          rawDate: safeDate,
-          dateStr: safeDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) + (timeLabel ? ` · ${timeLabel}` : ''),
-          type: 'Treatment',
-          proposedMins: b.durationMins || 0,
-          proposedRpe: 0,
-          proposedLoad: 0,
-          actualMins: booked ? null : (b.status === 'completed' ? (b.durationMins || 0) : 0),
-          actualRpe: 0,
-          actualLoad: 0,
-          location: b.therapistName || '',
-          notes: b.notes || '',
-          attachedProgram: '',
-          status: booked ? 'Proposed' : (b.status === 'completed' ? 'Actual' : 'Cancelled'),
-          isTreatment: true
-        };
-      });
-
       if (logs.length > 1) {
         const myLogs = [];
         logs.slice(1).forEach(r => {
@@ -285,8 +248,6 @@ export default function AthleteSchedule() {
           }
         });
 
-        myLogs.push(...treatmentSessions);
-
         const completed = myLogs.filter(s => s.status !== 'Proposed');
         
         // Filter proposed sessions for athletes: hide uncompleted proposed sessions that are older than 3 days
@@ -304,17 +265,8 @@ export default function AthleteSchedule() {
         setCompletedSessions(completed.sort((a,b) => a.rawDate - b.rawDate));
         setProposedSessions(proposed.reverse());
       } else {
-        // No training sessions — still show treatment bookings
-        const completedT = treatmentSessions.filter(s => s.status !== 'Proposed');
-        const todayMs2 = new Date().setHours(0, 0, 0, 0);
-        const THREE_DAYS_MS2 = 3 * 24 * 60 * 60 * 1000;
-        const proposedT = treatmentSessions.filter(s => {
-          if (s.status !== 'Proposed') return false;
-          const sessionDayMs = new Date(s.rawDate.getFullYear(), s.rawDate.getMonth(), s.rawDate.getDate()).getTime();
-          return (todayMs2 - sessionDayMs) <= THREE_DAYS_MS2;
-        });
-        setCompletedSessions(completedT.sort((a, b) => a.rawDate - b.rawDate));
-        setProposedSessions(proposedT.reverse());
+        setCompletedSessions([]);
+        setProposedSessions([]);
       }
     } catch (e) {
       console.warn("Schedule data fetch notice:", e);
@@ -638,8 +590,6 @@ export default function AthleteSchedule() {
         <button onClick={() => navigate(-1)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#008ed3', display: 'flex', marginRight: '12px' }}><ArrowLeft size={28} /></button>
         <div><h1 className="as-title">Training Schedule</h1></div>
       </div>
-
-      <TreatmentReminder />
 
       <div className="as-tabs">
         <button className={`as-tab ${activeTab === 'log' ? 'active' : ''}`} onClick={() => { setActiveTab('log'); setShowManualLog(false); setSelectedProposed(null); }}><Calendar size={18}/> Upcoming</button>
