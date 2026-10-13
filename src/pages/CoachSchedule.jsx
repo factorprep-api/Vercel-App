@@ -222,7 +222,12 @@ export default function CoachSchedule() {
     setEditRpe(s.proposedRpe ? String(s.proposedRpe) : '');
     setEditActuals((s.athletes || [])
       .filter(a => a.status !== 'Proposed' && a.logId)
-      .map(a => ({ name: a.athlete, logId: a.logId, mins: String(a.actualMins || ''), rpe: String(a.actualRpe || '') })));
+      .map(a => ({
+        name: a.athlete, logId: a.logId,
+        date: a.logDate || toYMD(a.rawDate),
+        type: a.logType || a.type || 'Other',
+        mins: String(a.actualMins || ''), rpe: String(a.actualRpe || '')
+      })));
     setEditError(null);
   }
 
@@ -251,6 +256,10 @@ export default function CoachSchedule() {
       return;
     }
     for (const a of editActuals) {
+      if (!a.date || !/^\d{4}-\d{2}-\d{2}$/.test(a.date)) {
+        setEditError(`Please set a valid log date for ${a.name}.`);
+        return;
+      }
       const am = parseInt(a.mins, 10);
       const ar = parseInt(a.rpe, 10);
       if (!(am >= 1) || !(ar >= 1 && ar <= 10)) {
@@ -276,6 +285,7 @@ export default function CoachSchedule() {
       // Actual values: each completed athlete's own completion log.
       editActuals.forEach(a => {
         jobs.push(() => updateSessionLog(a.logId, {
+          date: a.date, type: a.type,
           actualMins: a.mins, actualRpe: a.rpe, auditNotes: 'Edited by coach'
         }));
       });
@@ -364,7 +374,9 @@ export default function CoachSchedule() {
             attachedProgram: String(r[13] || '').trim(),
             status: sessionStatus,
             id: r[12] || null,
-            logId: String(r[14] || '') || null
+            logId: String(r[14] || '') || null,
+            logDate: String(r[15] || ''),
+            logType: String(r[16] || '')
           });
         });
 setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
@@ -2235,10 +2247,38 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
               <div style={{ padding: '12px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '16px' }}>
                 <p style={{ margin: '0 0 10px 0', fontSize: '12px', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>Logged Actuals</p>
                 {editActuals.map((a, idx) => (
-                  <div key={a.logId} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                    <span style={{ flex: 1, fontSize: '13px', fontWeight: '700', color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</span>
-                    <input type="number" min="1" placeholder="Mins" className="modal-input" style={{ width: '84px', marginBottom: 0 }} value={a.mins} onChange={e => setEditActuals(editActuals.map((x, xi) => xi === idx ? { ...x, mins: e.target.value } : x))} />
-                    <input type="number" min="1" max="10" placeholder="RPE" className="modal-input" style={{ width: '72px', marginBottom: 0 }} value={a.rpe} onChange={e => setEditActuals(editActuals.map((x, xi) => xi === idx ? { ...x, rpe: e.target.value } : x))} />
+                  <div key={a.logId} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px', marginBottom: '8px' }}>
+                    <div style={{ fontSize: '13px', fontWeight: '800', color: '#0f172a', marginBottom: '6px' }}>{a.name}</div>
+                    <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ fontSize: '11px', fontWeight: '700', color: '#64748b' }}>Date</label>
+                        <input type="date" className="modal-input" style={{ marginBottom: 0, padding: '6px' }} value={a.date} onChange={e => setEditActuals(editActuals.map((x, xi) => xi === idx ? { ...x, date: e.target.value } : x))} />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ fontSize: '11px', fontWeight: '700', color: '#64748b' }}>Type</label>
+                        <select className="modal-input" style={{ marginBottom: 0, padding: '6px' }} value={a.type} onChange={e => setEditActuals(editActuals.map((x, xi) => xi === idx ? { ...x, type: e.target.value } : x))}>
+                          <option value="Field Session">Field Session</option>
+                          <option value="Competition">Competition</option>
+                          <option value="Conditioning">Conditioning</option>
+                          <option value="Rehabilitation">Rehabilitation</option>
+                          <option value="Recovery">Recovery</option>
+                          <option value="Speed / Agility">Speed / Agility</option>
+                          <option value="Prehabilitation">Prehabilitation</option>
+                          <option value="Gym Workout">Gym Workout</option>
+                          <option value="Other">Other</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ fontSize: '11px', fontWeight: '700', color: '#64748b' }}>Mins</label>
+                        <input type="number" min="1" className="modal-input" style={{ marginBottom: 0 }} value={a.mins} onChange={e => setEditActuals(editActuals.map((x, xi) => xi === idx ? { ...x, mins: e.target.value } : x))} />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <label style={{ fontSize: '11px', fontWeight: '700', color: '#64748b' }}>RPE</label>
+                        <input type="number" min="1" max="10" className="modal-input" style={{ marginBottom: 0 }} value={a.rpe} onChange={e => setEditActuals(editActuals.map((x, xi) => xi === idx ? { ...x, rpe: e.target.value } : x))} />
+                      </div>
+                    </div>
                   </div>
                 ))}
               </div>

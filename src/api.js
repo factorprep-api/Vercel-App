@@ -337,10 +337,10 @@ export const deleteCycleLog = async (id) => {
 // schedule_sessions, completions/manual logs in
 // session_logs, linked by session_id.
 // Read adapter emits the legacy sheet row shape
-// (positional arrays, header first, r[0]..r[14])
+// (positional arrays, header first, r[0]..r[16])
 // so existing pages keep working unchanged.
 // ==========================================
-const SCHED_SHEET_HEADER = ['Date','Email','Athlete','Type','Proposed Mins','Proposed RPE','Proposed Load','Actual Mins','Actual RPE','Actual Load','Location','Notes','ID','Attached Program','Log ID'];
+const SCHED_SHEET_HEADER = ['Date','Email','Athlete','Type','Proposed Mins','Proposed RPE','Proposed Load','Actual Mins','Actual RPE','Actual Load','Location','Notes','ID','Attached Program','Log ID','Log Date','Log Type'];
 
 // Resolve an athlete UUID: signed-in user first, then lookup by name
 async function resolveAthleteRow(athleteName) {
@@ -591,7 +591,9 @@ export const fetchSchedule = async (athleteName, email) => {
         r.notes || '',
         r.row_id || '',
         r.programs ? (r.programs.name || '') : '',
-        r.log_id || ''
+        r.log_id || '',
+        r.log_date || '',
+        r.log_type || ''
       ]);
     };
 
@@ -605,6 +607,8 @@ export const fetchSchedule = async (athleteName, email) => {
         ...p,
         row_id: p.id,
         log_id: linked ? linked.id : '',
+        log_date: linked ? linked.date : '',
+        log_type: linked ? linked.session_type : '',
         actual_mins: linked ? linked.actual_mins : null,
         actual_rpe: linked ? linked.actual_rpe : null,
         actual_load: linked ? linked.actual_load : null,
@@ -620,6 +624,8 @@ export const fetchSchedule = async (athleteName, email) => {
         ...l,
         row_id: l.id,
         log_id: l.id,
+        log_date: l.date || '',
+        log_type: l.session_type || '',
         proposed_mins: null,
         proposed_rpe: null,
         proposed_load: null
