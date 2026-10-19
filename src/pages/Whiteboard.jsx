@@ -17,7 +17,7 @@ const CANVAS_WIDTH = 1200;
 const CANVAS_HEIGHT = 700;
 
 const DRAWING_TOOLS = ['select', 'line', 'arrow', 'rect', 'circle', 'text', 'player', 'cone', 'soccerball', 'basketball'];
-const CONE_COLORS = ['#fbbf24', '#ef4444', '#22c55e', '#3b82f6', '#a855f7'];
+const PALETTE_COLORS = ['#000000', '#ffffff', '#dc2626', '#ef4444', '#eab308', '#fbbf24', '#22c55e', '#2563eb', '#3b82f6', '#a855f7'];
 
 const FIELD_TEMPLATES = [
   { name: 'Blank Canvas', id: 'blank', bgColor: '#ffffff' }, 
@@ -25,13 +25,7 @@ const FIELD_TEMPLATES = [
   { name: 'Basketball Court', id: 'basketball', bgColor: '#d4a574' }
 ];
 
-const TEAM_COLORS = [
-  { name: 'Red', hex: '#dc2626' }, 
-  { name: 'Blue', hex: '#2563eb' }, 
-  { name: 'Yellow', hex: '#eab308' }, 
-  { name: 'Green', hex: '#22c55e' }, 
-  { name: 'Black', hex: '#000000' }
-];
+
 
 let shapeIdCounter = 0;
 function nextId() { 
@@ -127,8 +121,6 @@ function Whiteboard() {
   const [tool, setTool] = useState('select');
   const [strokeColor, setStrokeColor] = useState('#000');
   const [strokeWidth, setStrokeWidth] = useState(4);
-  const [teamColor, setTeamColor] = useState(TEAM_COLORS[0].hex);
-  const [coneColor, setConeColor] = useState(CONE_COLORS[0]);
   const [playerNumber, setPlayerNumber] = useState('');
   const [currentTemplate, setCurrentTemplate] = useState(FIELD_TEMPLATES[0].id);
 
@@ -228,10 +220,10 @@ function Whiteboard() {
       setTextItalic(false);
       setTextColor(strokeColor);
     } else if (tool === 'player') { 
-      shapesRef.current = [...shapesRef.current, { id, type: 'player', x: pos.x, y: pos.y, teamColor, number: playerNumber }]; 
+      shapesRef.current = [...shapesRef.current, { id, type: 'player', x: pos.x, y: pos.y, teamColor: strokeColor, number: playerNumber }]; 
       addToHistory(); 
     } else if (tool === 'cone') { 
-      shapesRef.current = [...shapesRef.current, { id, type: 'cone', x: pos.x, y: pos.y, coneColor }]; 
+      shapesRef.current = [...shapesRef.current, { id, type: 'cone', x: pos.x, y: pos.y, coneColor: strokeColor }]; 
       addToHistory(); 
     } else if (tool === 'soccerball') { 
       shapesRef.current = [...shapesRef.current, { id, type: 'soccerball', x: pos.x, y: pos.y }]; 
@@ -486,9 +478,9 @@ function Whiteboard() {
           </div>
           
           <div style={{ marginBottom: '20px' }}>
-            <label style={{ fontSize: '13px', fontWeight: '700', color: DESIGN.darkText, display: 'block', marginBottom: '8px' }}>COLOR</label>
+            <label style={{ fontSize: '13px', fontWeight: '700', color: DESIGN.darkText, display: 'block', marginBottom: '8px' }}>COLOUR{tool === 'player' ? ' (PLAYER)' : tool === 'cone' ? ' (CONE)' : tool === 'text' ? ' (TEXT)' : ''}</label>
             <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
-              {['#000', '#dc2626', '#2563eb', '#eab308', '#22c55e', '#a855f7', '#ffffff'].map((color) => (
+              {PALETTE_COLORS.map((color) => (
                 <button key={color} onClick={() => setStrokeColor(color)} style={{ width: '32px', height: '32px', border: strokeColor === color ? `2px solid ${DESIGN.primaryBlue}` : '1px solid #ddd', borderRadius: '50%', backgroundColor: color, cursor: 'pointer' }} />
               ))}
             </div>
@@ -499,31 +491,13 @@ function Whiteboard() {
             <input type="range" min="1" max="10" value={strokeWidth} onChange={(e) => setStrokeWidth(parseInt(e.target.value))} style={{ width: '100%' }} />
           </div>
           
-          <div style={{ marginBottom: '20px' }}>
-            <label style={{ fontSize: '13px', fontWeight: '700', color: DESIGN.darkText, display: 'block', marginBottom: '8px' }}>PLAYER COLOR</label>
-            <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
-              {TEAM_COLORS.map((tc) => (
-                <button key={tc.name} onClick={() => setTeamColor(tc.hex)} style={{ width: '32px', height: '32px', border: teamColor === tc.hex ? `2px solid ${DESIGN.primaryBlue}` : '1px solid #ddd', borderRadius: '4px', backgroundColor: tc.hex, cursor: 'pointer', fontSize: '10px', color: '#fff', fontWeight: 'bold' }}>
-                  {tc.name[0]}
-                </button>
-              ))}
+                    {tool === 'player' && (
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ fontSize: '13px', fontWeight: '700', color: DESIGN.darkText, display: 'block', marginBottom: '8px' }}>PLAYER NUMBER</label>
+              <input type="text" value={playerNumber} onChange={(e) => setPlayerNumber(e.target.value.slice(0, 3))} placeholder="e.g. 1, 10, ST" maxLength={3} style={{ width: '100%', padding: '8px', border: `1px solid ${DESIGN.bodyGray}`, borderRadius: '4px', fontFamily: '"Roboto Flex", sans-serif', fontSize: '14px', boxSizing: 'border-box' }} />
+              <p style={{ fontSize: '10px', color: '#888', marginTop: '4px' }}>Shown inside the player marker</p>
             </div>
-          </div>
-          
-          <div style={{ marginBottom: '20px' }}>
-            <label style={{ fontSize: '13px', fontWeight: '700', color: DESIGN.darkText, display: 'block', marginBottom: '8px' }}>PLAYER NUMBER</label>
-            <input type="text" value={playerNumber} onChange={(e) => setPlayerNumber(e.target.value.slice(0, 3))} placeholder="e.g. 1, 10, ST" maxLength={3} style={{ width: '100%', padding: '8px', border: `1px solid ${DESIGN.bodyGray}`, borderRadius: '4px', fontFamily: '"Roboto Flex", sans-serif', fontSize: '14px', boxSizing: 'border-box' }} />
-            <p style={{ fontSize: '10px', color: '#888', marginTop: '4px' }}>Shown inside the player marker</p>
-          </div>
-          
-          <div style={{ marginBottom: '20px' }}>
-            <label style={{ fontSize: '13px', fontWeight: '700', color: DESIGN.darkText, display: 'block', marginBottom: '8px' }}>CONE COLOR</label>
-            <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
-              {CONE_COLORS.map((color) => (
-                <button key={color} onClick={() => setConeColor(color)} style={{ width: '32px', height: '32px', border: coneColor === color ? `2px solid ${DESIGN.primaryBlue}` : '1px solid #ddd', borderRadius: '4px', backgroundColor: color, cursor: 'pointer' }} />
-              ))}
-            </div>
-          </div>
+          )}
         </div>
         
         <div style={{ borderTop: `1px solid #eee`, padding: '12px 15px', display: 'flex', flexDirection: 'column', gap: '8px', flexShrink: 0 }}>
@@ -570,7 +544,7 @@ function Whiteboard() {
               <button onClick={() => setTextBold(!textBold)} style={{ width: '40px', height: '36px', fontWeight: 800, border: textBold ? `2px solid ${DESIGN.primaryBlue}` : '1px solid #ddd', borderRadius: '4px', backgroundColor: textBold ? '#f0f9ff' : '#fff', cursor: 'pointer' }}>B</button>
               <button onClick={() => setTextItalic(!textItalic)} style={{ width: '40px', height: '36px', fontStyle: 'italic', fontWeight: 600, border: textItalic ? `2px solid ${DESIGN.primaryBlue}` : '1px solid #ddd', borderRadius: '4px', backgroundColor: textItalic ? '#f0f9ff' : '#fff', cursor: 'pointer' }}>I</button>
               <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', marginLeft: '8px' }}>
-                {['#000', '#dc2626', '#2563eb', '#eab308', '#22c55e', '#a855f7', '#ffffff'].map((color) => (
+                {PALETTE_COLORS.map((color) => (
                   <button key={color} onClick={() => setTextColor(color)} style={{ width: '28px', height: '28px', border: textColor === color ? `2px solid ${DESIGN.primaryBlue}` : '1px solid #ddd', borderRadius: '50%', backgroundColor: color, cursor: 'pointer' }} />
                 ))}
               </div>
