@@ -35,7 +35,7 @@ function nextId() {
 
 function PlayerMarker(props) {
   return (
-    <Group x={props.x} y={props.y}>
+    <Group x={props.x} y={props.y} draggable={props.draggable} onDragEnd={props.onDragEnd}>
       <Line points={[0, -22, -14, 16, 14, 16, 0, -22]} closed fill={props.color} stroke="#fff" strokeWidth={2} />
       {props.text && (
         <Text text={props.text} fontSize={14} fontStyle="bold" fill="#fff" align="center" verticalAlign="middle" width={30} height={30} x={-15} y={-10} />
@@ -46,7 +46,7 @@ function PlayerMarker(props) {
 
 function ConeMarker(props) {
   return (
-    <Group x={props.x} y={props.y}>
+    <Group x={props.x} y={props.y} draggable={props.draggable} onDragEnd={props.onDragEnd}>
       <Circle radius={18} fill={props.coneColor} stroke="#000" strokeWidth={2} />
       <Circle radius={12} fill="#fff" stroke={props.coneColor} strokeWidth={1} />
       <Circle radius={6} fill={props.coneColor} />
@@ -56,7 +56,7 @@ function ConeMarker(props) {
 
 function SoccerBallMarker(props) {
   return (
-    <Group x={props.x} y={props.y}>
+    <Group x={props.x} y={props.y} draggable={props.draggable} onDragEnd={props.onDragEnd}>
       <Circle radius={18} fill="#fff" stroke="#000" strokeWidth={2} />
       <Text text="⚽" fontSize={22} fill="#000" align="center" verticalAlign="middle" width={36} height={36} x={-18} y={-18} />
     </Group>
@@ -65,7 +65,7 @@ function SoccerBallMarker(props) {
 
 function BasketballMarker(props) {
   return (
-    <Group x={props.x} y={props.y}>
+    <Group x={props.x} y={props.y} draggable={props.draggable} onDragEnd={props.onDragEnd}>
       <Circle radius={18} fill="#ff8c00" stroke="#000" strokeWidth={2} />
       <Text text="🏀" fontSize={22} fill="#000" align="center" verticalAlign="middle" width={36} height={36} x={-18} y={-18} />
     </Group>
@@ -339,6 +339,7 @@ function Whiteboard() {
     }
     addToHistory();
     setTextModal(null);
+    setTool('select'); // ready to drag/edit straight away
   };
 
    const handleSave = async () => {
@@ -395,24 +396,41 @@ function Whiteboard() {
   const handleDragEnd = (id, node) => {
     const newX = node.x();
     const newY = node.y();
-    const updatedShapes = shapesRef.current.map((s) => {
-      if (s.id !== id) return s;
-      
-      // Lines/Arrows have points relative to their origin. If we drag the node,
-      // we must bake the offset into the points to keep history consistent.
-      if (s.type === 'line' || s.type === 'arrow') {
-        const dx = newX - (s.x || 0);
-        const dy = newY - (s.y || 0);
-        const newPoints = s.points.map((p, idx) => (idx % 2 === 0 ? p + dx : p + dy));
-        return { ...s, x: newX, y: newY, points: newPoints };
-      }
-      
-      // For rects, circles, text, and markers (player, cone, balls)
-      return { ...s, x: newX, y: newY };
-    });
+    // Konva moves the node itself during drag; committing the node position
+    // is enough for every shape type (points are stored relative to it).
+    shapesRef.current = shapesRef.current.map((s) => (
+      s.id === id ? { ...s, x: node.x(), y: node.y() } : s
+    ));
     
     shapesRef.current = updatedShapes;
     addToHistory();
+  };
+
+  // Select tool: line/arrow endpoints get small draggable handles so a
+  // single end can be repositioned without moving the whole line.
+  const handleEndpointDragEnd = (id, pointIndex, node) => {
+    shapesRef.current = shapesRef.current.map((s) => {
+      if (s.id !== id) return s;
+      const ox = s.x || 0;
+      const oy = s.y || 0;
+      const points = [...s.points];
+      points[pointIndex] = node.x() - ox;
+      points[pointIndex + 1] = node.y() - oy;
+      return { ...s, points };
+    });
+    addToHistory();
+  };
+
+  const renderLineOrArrow = (shape, dragProps) => {
+    const ShapeNode = shape.type === 'line' ? Line : Arrow;
+    if (tool !== 'select') return <ShapeNode key={shape.id} {...shape} />;
+    const ox = shape.x || 0;
+    const oy = shape.y || 0;
+    return [
+      <ShapeNode key={shape.id} {...shape} {...dragProps} />,
+      <Circle key={shape.id + '-p0'} x={ox + shape.points[0]} y={oy + shape.points[1]} radius={7} fill="#ffffff" stroke={DESIGN.primaryBlue} strokeWidth={2} draggable onDragEnd={(e) => handleEndpointDragEnd(shape.id, 0, e.target)} />,
+      <Circle key={shape.id + '-p1'} x={ox + shape.points[2]} y={oy + shape.points[3]} radius={7} fill="#ffffff" stroke={DESIGN.primaryBlue} strokeWidth={2} draggable onDragEnd={(e) => handleEndpointDragEnd(shape.id, 2, e.target)} />
+    ];
   };
 
   const renderShapes = () => shapesRef.current.map((shape) => {
@@ -423,11 +441,11 @@ function Whiteboard() {
     };
 
     switch (shape.type) { 
-      case 'line': return <Line key={shape.id} {...shape} {...dragProps} />; 
-      case 'arrow': return <Arrow key={shape.id} {...shape} {...dragProps} />; 
+      case 'line': return renderLineOrArrow(shape, dragProps); 
+      case 'arrow': return renderLineOrArrow(shape, dragProps); 
       case 'rect': return <Rect key={shape.id} {...shape} {...dragProps} />; 
       case 'circle': return <Circle key={shape.id} {...shape} {...dragProps} />; 
-      case 'text': return <Text key={shape.id} {...shape} {...dragProps} onDblClick={tool === 'select' ? () => openTextEditor(shape) : undefined} onDblTap={tool === 'select' ? () => openTextEditor(shape) : undefined} />; 
+      case 'text': return <Text key={shape.id} {...shape} {...dragProps} onClick={tool === 'select' ? () => openTextEditor(shape) : undefined} onDblClick={tool === 'select' ? () => openTextEditor(shape) : undefined} onDblTap={tool === 'select' ? () => openTextEditor(shape) : undefined} />; 
       case 'player': return <PlayerMarker key={shape.id} x={shape.x} y={shape.y} color={shape.teamColor} text={shape.number} {...dragProps} />; 
       case 'cone': return <ConeMarker key={shape.id} x={shape.x} y={shape.y} coneColor={shape.coneColor} {...dragProps} />; 
       case 'soccerball': return <SoccerBallMarker key={shape.id} x={shape.x} y={shape.y} {...dragProps} />; 
