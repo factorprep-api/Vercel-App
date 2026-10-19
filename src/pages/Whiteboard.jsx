@@ -131,6 +131,15 @@ function Whiteboard() {
   const [coneColor, setConeColor] = useState(CONE_COLORS[0]);
   const [playerNumber, setPlayerNumber] = useState('');
   const [currentTemplate, setCurrentTemplate] = useState(FIELD_TEMPLATES[0].id);
+
+  // TEXT TOOL STATE — the text tool opens a modal (multi-line description
+  // box with font size / bold / italic / colour) instead of window.prompt.
+  const [textModal, setTextModal] = useState(null); // { x, y, existingId } | null
+  const [textDraft, setTextDraft] = useState('');
+  const [textFontSize, setTextFontSize] = useState(18);
+  const [textBold, setTextBold] = useState(true);
+  const [textItalic, setTextItalic] = useState(false);
+  const [textColor, setTextColor] = useState('#000');
   
   const [, forceRender] = useState({});
   const rerender = useCallback(() => forceRender({}), []);
@@ -209,12 +218,15 @@ function Whiteboard() {
     const pos = stage.getPointerPosition();
     const id = nextId();
     
-    if (tool === 'text') { 
-      const newText = window.prompt('Enter text:', ''); 
-      if (newText) { 
-        shapesRef.current = [...shapesRef.current, { id, type: 'text', x: pos.x, y: pos.y, text: newText, fontSize: 18, fontFamily: '"Roboto Flex", sans-serif', fill: strokeColor, fontStyle: 'bold' }]; 
-        addToHistory(); 
-      } 
+    if (tool === 'text') {
+      // Open the text modal at the click position — no shape is added until
+      // the coach confirms in the modal (Cancel adds nothing).
+      setTextModal({ x: pos.x, y: pos.y, existingId: null });
+      setTextDraft('');
+      setTextFontSize(18);
+      setTextBold(true);
+      setTextItalic(false);
+      setTextColor(strokeColor);
     } else if (tool === 'player') { 
       shapesRef.current = [...shapesRef.current, { id, type: 'player', x: pos.x, y: pos.y, teamColor, number: playerNumber }]; 
       addToHistory(); 
@@ -299,6 +311,42 @@ function Whiteboard() {
     historyRef.current = [[]]; 
     historyIndexRef.current = 0; 
     rerender(); 
+  };
+
+  // Double-clicking a text shape (Select tool) reopens the modal prefilled
+  // with that text and its settings; saving updates it in place.
+  const openTextEditor = (shape) => {
+    setTextModal({ x: shape.x, y: shape.y, existingId: shape.id });
+    setTextDraft(shape.text || '');
+    setTextFontSize(shape.fontSize || 18);
+    setTextBold((shape.fontStyle || 'bold').indexOf('bold') !== -1);
+    setTextItalic((shape.fontStyle || '').indexOf('italic') !== -1);
+    setTextColor(shape.fill || strokeColor);
+  };
+
+  const handlePlaceText = () => {
+    if (!textModal || !textDraft.trim()) return;
+    const fontStyleParts = [];
+    if (textBold) fontStyleParts.push('bold');
+    if (textItalic) fontStyleParts.push('italic');
+    const fontStyle = fontStyleParts.join(' ') || 'normal';
+
+    if (textModal.existingId) {
+      shapesRef.current = shapesRef.current.map((s) => s.id === textModal.existingId
+        ? { ...s, text: textDraft, fontSize: textFontSize, fontStyle, fill: textColor }
+        : s
+      );
+    } else {
+      shapesRef.current = [...shapesRef.current, {
+        id: nextId(), type: 'text',
+        x: textModal.x, y: textModal.y,
+        text: textDraft, fontSize: textFontSize, fontStyle, fill: textColor,
+        width: 360, wrap: 'word', lineHeight: 1.2,
+        fontFamily: '"Roboto Flex", sans-serif'
+      }];
+    }
+    addToHistory();
+    setTextModal(null);
   };
 
    const handleSave = async () => {
@@ -387,7 +435,7 @@ function Whiteboard() {
       case 'arrow': return <Arrow key={shape.id} {...shape} {...dragProps} />; 
       case 'rect': return <Rect key={shape.id} {...shape} {...dragProps} />; 
       case 'circle': return <Circle key={shape.id} {...shape} {...dragProps} />; 
-      case 'text': return <Text key={shape.id} {...shape} {...dragProps} />; 
+      case 'text': return <Text key={shape.id} {...shape} {...dragProps} onDblClick={tool === 'select' ? () => openTextEditor(shape) : undefined} onDblTap={tool === 'select' ? () => openTextEditor(shape) : undefined} />; 
       case 'player': return <PlayerMarker key={shape.id} x={shape.x} y={shape.y} color={shape.teamColor} text={shape.number} {...dragProps} />; 
       case 'cone': return <ConeMarker key={shape.id} x={shape.x} y={shape.y} coneColor={shape.coneColor} {...dragProps} />; 
       case 'soccerball': return <SoccerBallMarker key={shape.id} x={shape.x} y={shape.y} {...dragProps} />; 
@@ -434,7 +482,7 @@ function Whiteboard() {
                 </button>
               ))}
             </div>
-            <p style={{ fontSize: '10px', color: '#888', marginTop: '5px' }}>Click to place markers. Drag to draw. Use Select to move shapes.</p>
+            <p style={{ fontSize: '10px', color: '#888', marginTop: '5px' }}>Click to place markers. Drag to draw. Select: drag to move, double-click text to edit.</p>
           </div>
           
           <div style={{ marginBottom: '20px' }}>
@@ -499,6 +547,42 @@ function Whiteboard() {
         </div>
       </div>
       
+      {textModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '25px', minWidth: '420px', maxWidth: '90vw' }}>
+            <h3 style={{ margin: '0 0 16px 0', color: DESIGN.darkText }}>{textModal.existingId ? 'Edit Text' : 'Add Text / Description'}</h3>
+
+            <textarea
+              value={textDraft}
+              onChange={(e) => setTextDraft(e.target.value)}
+              placeholder="Describe the exercise, coaching points, reps..."
+              rows={5}
+              autoFocus
+              style={{ width: '100%', minHeight: '100px', padding: '10px', border: `1px solid ${DESIGN.bodyGray}`, borderRadius: '4px', fontFamily: '"Roboto Flex", sans-serif', fontSize: '14px', boxSizing: 'border-box', resize: 'vertical', marginBottom: '15px' }}
+            />
+
+            <div style={{ marginBottom: '15px' }}>
+              <label style={{ fontSize: '13px', fontWeight: '700', color: DESIGN.darkText, display: 'block', marginBottom: '8px' }}>FONT SIZE: {textFontSize}px</label>
+              <input type="range" min="10" max="48" value={textFontSize} onChange={(e) => setTextFontSize(parseInt(e.target.value))} style={{ width: '100%' }} />
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
+              <button onClick={() => setTextBold(!textBold)} style={{ width: '40px', height: '36px', fontWeight: 800, border: textBold ? `2px solid ${DESIGN.primaryBlue}` : '1px solid #ddd', borderRadius: '4px', backgroundColor: textBold ? '#f0f9ff' : '#fff', cursor: 'pointer' }}>B</button>
+              <button onClick={() => setTextItalic(!textItalic)} style={{ width: '40px', height: '36px', fontStyle: 'italic', fontWeight: 600, border: textItalic ? `2px solid ${DESIGN.primaryBlue}` : '1px solid #ddd', borderRadius: '4px', backgroundColor: textItalic ? '#f0f9ff' : '#fff', cursor: 'pointer' }}>I</button>
+              <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', marginLeft: '8px' }}>
+                {['#000', '#dc2626', '#2563eb', '#eab308', '#22c55e', '#a855f7', '#ffffff'].map((color) => (
+                  <button key={color} onClick={() => setTextColor(color)} style={{ width: '28px', height: '28px', border: textColor === color ? `2px solid ${DESIGN.primaryBlue}` : '1px solid #ddd', borderRadius: '50%', backgroundColor: color, cursor: 'pointer' }} />
+                ))}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <button onClick={() => setTextModal(null)} style={{ padding: '10px 20px', border: `1px solid ${DESIGN.bodyGray}`, borderRadius: '4px', backgroundColor: '#fff', color: DESIGN.darkText, cursor: 'pointer', fontWeight: '600' }}>Cancel</button>
+              <button onClick={handlePlaceText} disabled={!textDraft.trim()} style={{ padding: '10px 20px', border: 'none', borderRadius: '4px', backgroundColor: textDraft.trim() ? DESIGN.primaryBlue : '#aaa', color: '#fff', cursor: textDraft.trim() ? 'pointer' : 'not-allowed', fontWeight: '600' }}>{textModal.existingId ? 'Save Changes' : 'Place Text'}</button>
+            </div>
+          </div>
+        </div>
+      )}
       {showSaveModal && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
           <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '25px', minWidth: '400px', maxWidth: '90vw', maxHeight: '90vh', overflowY: 'auto' }}>
