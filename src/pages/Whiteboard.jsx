@@ -16,7 +16,7 @@ const TOOLBAR_WIDTH = 240;
 const CANVAS_WIDTH = 1200;
 const CANVAS_HEIGHT = 700;
 
-const DRAWING_TOOLS = ['select', 'line', 'arrow', 'rect', 'circle', 'text', 'player', 'cone'];
+const DRAWING_TOOLS = ['select', 'line', 'arrow', 'rect', 'circle', 'text', 'player', 'cone', 'soccerball', 'basketball'];
 const CONE_COLORS = ['#fbbf24', '#ef4444', '#22c55e', '#3b82f6', '#a855f7'];
 
 const FIELD_TEMPLATES = [
@@ -56,6 +56,24 @@ function ConeMarker(props) {
       <Circle radius={18} fill={props.coneColor} stroke="#000" strokeWidth={2} />
       <Circle radius={12} fill="#fff" stroke={props.coneColor} strokeWidth={1} />
       <Circle radius={6} fill={props.coneColor} />
+    </Group>
+  );
+}
+
+function SoccerBallMarker(props) {
+  return (
+    <Group x={props.x} y={props.y}>
+      <Circle radius={18} fill="#fff" stroke="#000" strokeWidth={2} />
+      <Text text="⚽" fontSize={22} fill="#000" align="center" verticalAlign="middle" width={36} height={36} x={-18} y={-18} />
+    </Group>
+  );
+}
+
+function BasketballMarker(props) {
+  return (
+    <Group x={props.x} y={props.y}>
+      <Circle radius={18} fill="#ff8c00" stroke="#000" strokeWidth={2} />
+      <Text text="🏀" fontSize={22} fill="#000" align="center" verticalAlign="middle" width={36} height={36} x={-18} y={-18} />
     </Group>
   );
 }
@@ -203,6 +221,12 @@ function Whiteboard() {
     } else if (tool === 'cone') { 
       shapesRef.current = [...shapesRef.current, { id, type: 'cone', x: pos.x, y: pos.y, coneColor }]; 
       addToHistory(); 
+    } else if (tool === 'soccerball') { 
+      shapesRef.current = [...shapesRef.current, { id, type: 'soccerball', x: pos.x, y: pos.y }]; 
+      addToHistory(); 
+    } else if (tool === 'basketball') { 
+      shapesRef.current = [...shapesRef.current, { id, type: 'basketball', x: pos.x, y: pos.y }]; 
+      addToHistory(); 
     } else { 
       isDrawingRef.current = true; 
       const newShape = { id, type: tool, stroke: strokeColor, strokeWidth, lineCap: 'round' }; 
@@ -328,15 +352,46 @@ function Whiteboard() {
     }
   };
 
+  const handleDragEnd = (id, node) => {
+    const newX = node.x();
+    const newY = node.y();
+    const updatedShapes = shapesRef.current.map((s) => {
+      if (s.id !== id) return s;
+      
+      // Lines/Arrows have points relative to their origin. If we drag the node,
+      // we must bake the offset into the points to keep history consistent.
+      if (s.type === 'line' || s.type === 'arrow') {
+        const dx = newX - (s.x || 0);
+        const dy = newY - (s.y || 0);
+        const newPoints = s.points.map((p, idx) => (idx % 2 === 0 ? p + dx : p + dy));
+        return { ...s, x: newX, y: newY, points: newPoints };
+      }
+      
+      // For rects, circles, text, and markers (player, cone, balls)
+      return { ...s, x: newX, y: newY };
+    });
+    
+    shapesRef.current = updatedShapes;
+    addToHistory();
+  };
+
   const renderShapes = () => shapesRef.current.map((shape) => {
+    const isDraggable = tool === 'select';
+    const dragProps = {
+      draggable: isDraggable,
+      onDragEnd: (e) => handleDragEnd(shape.id, e.target)
+    };
+
     switch (shape.type) { 
-      case 'line': return <Line key={shape.id} {...shape} />; 
-      case 'arrow': return <Arrow key={shape.id} {...shape} />; 
-      case 'rect': return <Rect key={shape.id} {...shape} />; 
-      case 'circle': return <Circle key={shape.id} {...shape} />; 
-      case 'text': return <Text key={shape.id} {...shape} />; 
-      case 'player': return <PlayerMarker key={shape.id} x={shape.x} y={shape.y} color={shape.teamColor} text={shape.number} />; 
-      case 'cone': return <ConeMarker key={shape.id} x={shape.x} y={shape.y} coneColor={shape.coneColor} />; 
+      case 'line': return <Line key={shape.id} {...shape} {...dragProps} />; 
+      case 'arrow': return <Arrow key={shape.id} {...shape} {...dragProps} />; 
+      case 'rect': return <Rect key={shape.id} {...shape} {...dragProps} />; 
+      case 'circle': return <Circle key={shape.id} {...shape} {...dragProps} />; 
+      case 'text': return <Text key={shape.id} {...shape} {...dragProps} />; 
+      case 'player': return <PlayerMarker key={shape.id} x={shape.x} y={shape.y} color={shape.teamColor} text={shape.number} {...dragProps} />; 
+      case 'cone': return <ConeMarker key={shape.id} x={shape.x} y={shape.y} coneColor={shape.coneColor} {...dragProps} />; 
+      case 'soccerball': return <SoccerBallMarker key={shape.id} x={shape.x} y={shape.y} {...dragProps} />; 
+      case 'basketball': return <BasketballMarker key={shape.id} x={shape.x} y={shape.y} {...dragProps} />; 
       default: return null; 
     }
   });
@@ -379,7 +434,7 @@ function Whiteboard() {
                 </button>
               ))}
             </div>
-            <p style={{ fontSize: '10px', color: '#888', marginTop: '5px' }}>Drag to draw. Release to finish.</p>
+            <p style={{ fontSize: '10px', color: '#888', marginTop: '5px' }}>Click to place markers. Drag to draw. Use Select to move shapes.</p>
           </div>
           
           <div style={{ marginBottom: '20px' }}>
