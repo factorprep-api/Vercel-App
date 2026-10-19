@@ -16,8 +16,8 @@ const TOOLBAR_WIDTH = 240;
 const CANVAS_WIDTH = 1200;
 const CANVAS_HEIGHT = 700;
 
-const DRAWING_TOOLS = ['select', 'line', 'arrow', 'rect', 'circle', 'text', 'player', 'cone'];
-const CONE_COLORS = ['#fbbf24', '#ef4444', '#22c55e', '#3b82f6', '#a855f7'];
+const DRAWING_TOOLS = ['select', 'line', 'arrow', 'rect', 'circle', 'text', 'player', 'cone', 'soccerball', 'basketball'];
+const PALETTE_COLORS = ['#000000', '#ffffff', '#dc2626', '#ef4444', '#eab308', '#fbbf24', '#22c55e', '#2563eb', '#3b82f6', '#a855f7'];
 
 const FIELD_TEMPLATES = [
   { name: 'Blank Canvas', id: 'blank', bgColor: '#ffffff' }, 
@@ -25,13 +25,7 @@ const FIELD_TEMPLATES = [
   { name: 'Basketball Court', id: 'basketball', bgColor: '#d4a574' }
 ];
 
-const TEAM_COLORS = [
-  { name: 'Red', hex: '#dc2626' }, 
-  { name: 'Blue', hex: '#2563eb' }, 
-  { name: 'Yellow', hex: '#eab308' }, 
-  { name: 'Green', hex: '#22c55e' }, 
-  { name: 'Black', hex: '#000000' }
-];
+
 
 let shapeIdCounter = 0;
 function nextId() { 
@@ -41,7 +35,7 @@ function nextId() {
 
 function PlayerMarker(props) {
   return (
-    <Group x={props.x} y={props.y}>
+    <Group x={props.x} y={props.y} draggable={props.draggable} onDragEnd={props.onDragEnd}>
       <Line points={[0, -22, -14, 16, 14, 16, 0, -22]} closed fill={props.color} stroke="#fff" strokeWidth={2} />
       {props.text && (
         <Text text={props.text} fontSize={14} fontStyle="bold" fill="#fff" align="center" verticalAlign="middle" width={30} height={30} x={-15} y={-10} />
@@ -52,10 +46,28 @@ function PlayerMarker(props) {
 
 function ConeMarker(props) {
   return (
-    <Group x={props.x} y={props.y}>
+    <Group x={props.x} y={props.y} draggable={props.draggable} onDragEnd={props.onDragEnd}>
       <Circle radius={18} fill={props.coneColor} stroke="#000" strokeWidth={2} />
       <Circle radius={12} fill="#fff" stroke={props.coneColor} strokeWidth={1} />
       <Circle radius={6} fill={props.coneColor} />
+    </Group>
+  );
+}
+
+function SoccerBallMarker(props) {
+  return (
+    <Group x={props.x} y={props.y} draggable={props.draggable} onDragEnd={props.onDragEnd}>
+      <Circle radius={18} fill="#fff" stroke="#000" strokeWidth={2} />
+      <Text text="⚽" fontSize={22} fill="#000" align="center" verticalAlign="middle" width={36} height={36} x={-18} y={-18} />
+    </Group>
+  );
+}
+
+function BasketballMarker(props) {
+  return (
+    <Group x={props.x} y={props.y} draggable={props.draggable} onDragEnd={props.onDragEnd}>
+      <Circle radius={18} fill="#ff8c00" stroke="#000" strokeWidth={2} />
+      <Text text="🏀" fontSize={22} fill="#000" align="center" verticalAlign="middle" width={36} height={36} x={-18} y={-18} />
     </Group>
   );
 }
@@ -109,10 +121,17 @@ function Whiteboard() {
   const [tool, setTool] = useState('select');
   const [strokeColor, setStrokeColor] = useState('#000');
   const [strokeWidth, setStrokeWidth] = useState(4);
-  const [teamColor, setTeamColor] = useState(TEAM_COLORS[0].hex);
-  const [coneColor, setConeColor] = useState(CONE_COLORS[0]);
   const [playerNumber, setPlayerNumber] = useState('');
   const [currentTemplate, setCurrentTemplate] = useState(FIELD_TEMPLATES[0].id);
+
+  // TEXT TOOL STATE — the text tool opens a modal (multi-line description
+  // box with font size / bold / italic / colour) instead of window.prompt.
+  const [textModal, setTextModal] = useState(null); // { x, y, existingId } | null
+  const [textDraft, setTextDraft] = useState('');
+  const [textFontSize, setTextFontSize] = useState(18);
+  const [textBold, setTextBold] = useState(true);
+  const [textItalic, setTextItalic] = useState(false);
+  const [textColor, setTextColor] = useState('#000');
   
   const [, forceRender] = useState({});
   const rerender = useCallback(() => forceRender({}), []);
@@ -191,17 +210,26 @@ function Whiteboard() {
     const pos = stage.getPointerPosition();
     const id = nextId();
     
-    if (tool === 'text') { 
-      const newText = window.prompt('Enter text:', ''); 
-      if (newText) { 
-        shapesRef.current = [...shapesRef.current, { id, type: 'text', x: pos.x, y: pos.y, text: newText, fontSize: 18, fontFamily: '"Roboto Flex", sans-serif', fill: strokeColor, fontStyle: 'bold' }]; 
-        addToHistory(); 
-      } 
+    if (tool === 'text') {
+      // Open the text modal at the click position — no shape is added until
+      // the coach confirms in the modal (Cancel adds nothing).
+      setTextModal({ x: pos.x, y: pos.y, existingId: null });
+      setTextDraft('');
+      setTextFontSize(18);
+      setTextBold(true);
+      setTextItalic(false);
+      setTextColor(strokeColor);
     } else if (tool === 'player') { 
-      shapesRef.current = [...shapesRef.current, { id, type: 'player', x: pos.x, y: pos.y, teamColor, number: playerNumber }]; 
+      shapesRef.current = [...shapesRef.current, { id, type: 'player', x: pos.x, y: pos.y, teamColor: strokeColor, number: playerNumber }]; 
       addToHistory(); 
     } else if (tool === 'cone') { 
-      shapesRef.current = [...shapesRef.current, { id, type: 'cone', x: pos.x, y: pos.y, coneColor }]; 
+      shapesRef.current = [...shapesRef.current, { id, type: 'cone', x: pos.x, y: pos.y, coneColor: strokeColor }]; 
+      addToHistory(); 
+    } else if (tool === 'soccerball') { 
+      shapesRef.current = [...shapesRef.current, { id, type: 'soccerball', x: pos.x, y: pos.y }]; 
+      addToHistory(); 
+    } else if (tool === 'basketball') { 
+      shapesRef.current = [...shapesRef.current, { id, type: 'basketball', x: pos.x, y: pos.y }]; 
       addToHistory(); 
     } else { 
       isDrawingRef.current = true; 
@@ -277,6 +305,43 @@ function Whiteboard() {
     rerender(); 
   };
 
+  // Double-clicking a text shape (Select tool) reopens the modal prefilled
+  // with that text and its settings; saving updates it in place.
+  const openTextEditor = (shape) => {
+    setTextModal({ x: shape.x, y: shape.y, existingId: shape.id });
+    setTextDraft(shape.text || '');
+    setTextFontSize(shape.fontSize || 18);
+    setTextBold((shape.fontStyle || 'bold').indexOf('bold') !== -1);
+    setTextItalic((shape.fontStyle || '').indexOf('italic') !== -1);
+    setTextColor(shape.fill || strokeColor);
+  };
+
+  const handlePlaceText = () => {
+    if (!textModal || !textDraft.trim()) return;
+    const fontStyleParts = [];
+    if (textBold) fontStyleParts.push('bold');
+    if (textItalic) fontStyleParts.push('italic');
+    const fontStyle = fontStyleParts.join(' ') || 'normal';
+
+    if (textModal.existingId) {
+      shapesRef.current = shapesRef.current.map((s) => s.id === textModal.existingId
+        ? { ...s, text: textDraft, fontSize: textFontSize, fontStyle, fill: textColor }
+        : s
+      );
+    } else {
+      shapesRef.current = [...shapesRef.current, {
+        id: nextId(), type: 'text',
+        x: textModal.x, y: textModal.y,
+        text: textDraft, fontSize: textFontSize, fontStyle, fill: textColor,
+        width: 360, wrap: 'word', lineHeight: 1.2,
+        fontFamily: '"Roboto Flex", sans-serif'
+      }];
+    }
+    addToHistory();
+    setTextModal(null);
+    setTool('select'); // ready to drag/edit straight away
+  };
+
    const handleSave = async () => {
     if (!exerciseTitle.trim()) { alert('Please enter a drill name'); return; }
     setSaving(true);
@@ -328,15 +393,63 @@ function Whiteboard() {
     }
   };
 
+  const handleDragEnd = (id, node) => {
+    const newX = node.x();
+    const newY = node.y();
+    // Konva moves the node itself during drag; committing the node position
+    // is enough for every shape type (points are stored relative to it).
+    shapesRef.current = shapesRef.current.map((s) => (
+      s.id === id ? { ...s, x: node.x(), y: node.y() } : s
+    ));
+    
+    shapesRef.current = updatedShapes;
+    addToHistory();
+  };
+
+  // Select tool: line/arrow endpoints get small draggable handles so a
+  // single end can be repositioned without moving the whole line.
+  const handleEndpointDragEnd = (id, pointIndex, node) => {
+    shapesRef.current = shapesRef.current.map((s) => {
+      if (s.id !== id) return s;
+      const ox = s.x || 0;
+      const oy = s.y || 0;
+      const points = [...s.points];
+      points[pointIndex] = node.x() - ox;
+      points[pointIndex + 1] = node.y() - oy;
+      return { ...s, points };
+    });
+    addToHistory();
+  };
+
+  const renderLineOrArrow = (shape, dragProps) => {
+    const ShapeNode = shape.type === 'line' ? Line : Arrow;
+    if (tool !== 'select') return <ShapeNode key={shape.id} {...shape} />;
+    const ox = shape.x || 0;
+    const oy = shape.y || 0;
+    return [
+      <ShapeNode key={shape.id} {...shape} {...dragProps} />,
+      <Circle key={shape.id + '-p0'} x={ox + shape.points[0]} y={oy + shape.points[1]} radius={7} fill="#ffffff" stroke={DESIGN.primaryBlue} strokeWidth={2} draggable onDragEnd={(e) => handleEndpointDragEnd(shape.id, 0, e.target)} />,
+      <Circle key={shape.id + '-p1'} x={ox + shape.points[2]} y={oy + shape.points[3]} radius={7} fill="#ffffff" stroke={DESIGN.primaryBlue} strokeWidth={2} draggable onDragEnd={(e) => handleEndpointDragEnd(shape.id, 2, e.target)} />
+    ];
+  };
+
   const renderShapes = () => shapesRef.current.map((shape) => {
+    const isDraggable = tool === 'select';
+    const dragProps = {
+      draggable: isDraggable,
+      onDragEnd: (e) => handleDragEnd(shape.id, e.target)
+    };
+
     switch (shape.type) { 
-      case 'line': return <Line key={shape.id} {...shape} />; 
-      case 'arrow': return <Arrow key={shape.id} {...shape} />; 
-      case 'rect': return <Rect key={shape.id} {...shape} />; 
-      case 'circle': return <Circle key={shape.id} {...shape} />; 
-      case 'text': return <Text key={shape.id} {...shape} />; 
-      case 'player': return <PlayerMarker key={shape.id} x={shape.x} y={shape.y} color={shape.teamColor} text={shape.number} />; 
-      case 'cone': return <ConeMarker key={shape.id} x={shape.x} y={shape.y} coneColor={shape.coneColor} />; 
+      case 'line': return renderLineOrArrow(shape, dragProps); 
+      case 'arrow': return renderLineOrArrow(shape, dragProps); 
+      case 'rect': return <Rect key={shape.id} {...shape} {...dragProps} />; 
+      case 'circle': return <Circle key={shape.id} {...shape} {...dragProps} />; 
+      case 'text': return <Text key={shape.id} {...shape} {...dragProps} onClick={tool === 'select' ? () => openTextEditor(shape) : undefined} onDblClick={tool === 'select' ? () => openTextEditor(shape) : undefined} onDblTap={tool === 'select' ? () => openTextEditor(shape) : undefined} />; 
+      case 'player': return <PlayerMarker key={shape.id} x={shape.x} y={shape.y} color={shape.teamColor} text={shape.number} {...dragProps} />; 
+      case 'cone': return <ConeMarker key={shape.id} x={shape.x} y={shape.y} coneColor={shape.coneColor} {...dragProps} />; 
+      case 'soccerball': return <SoccerBallMarker key={shape.id} x={shape.x} y={shape.y} {...dragProps} />; 
+      case 'basketball': return <BasketballMarker key={shape.id} x={shape.x} y={shape.y} {...dragProps} />; 
       default: return null; 
     }
   });
@@ -379,13 +492,13 @@ function Whiteboard() {
                 </button>
               ))}
             </div>
-            <p style={{ fontSize: '10px', color: '#888', marginTop: '5px' }}>Drag to draw. Release to finish.</p>
+            <p style={{ fontSize: '10px', color: '#888', marginTop: '5px' }}>Click to place markers. Drag to draw. Select: drag to move, double-click text to edit.</p>
           </div>
           
           <div style={{ marginBottom: '20px' }}>
-            <label style={{ fontSize: '13px', fontWeight: '700', color: DESIGN.darkText, display: 'block', marginBottom: '8px' }}>COLOR</label>
+            <label style={{ fontSize: '13px', fontWeight: '700', color: DESIGN.darkText, display: 'block', marginBottom: '8px' }}>COLOUR{tool === 'player' ? ' (PLAYER)' : tool === 'cone' ? ' (CONE)' : tool === 'text' ? ' (TEXT)' : ''}</label>
             <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
-              {['#000', '#dc2626', '#2563eb', '#eab308', '#22c55e', '#a855f7', '#ffffff'].map((color) => (
+              {PALETTE_COLORS.map((color) => (
                 <button key={color} onClick={() => setStrokeColor(color)} style={{ width: '32px', height: '32px', border: strokeColor === color ? `2px solid ${DESIGN.primaryBlue}` : '1px solid #ddd', borderRadius: '50%', backgroundColor: color, cursor: 'pointer' }} />
               ))}
             </div>
@@ -396,31 +509,13 @@ function Whiteboard() {
             <input type="range" min="1" max="10" value={strokeWidth} onChange={(e) => setStrokeWidth(parseInt(e.target.value))} style={{ width: '100%' }} />
           </div>
           
-          <div style={{ marginBottom: '20px' }}>
-            <label style={{ fontSize: '13px', fontWeight: '700', color: DESIGN.darkText, display: 'block', marginBottom: '8px' }}>PLAYER COLOR</label>
-            <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
-              {TEAM_COLORS.map((tc) => (
-                <button key={tc.name} onClick={() => setTeamColor(tc.hex)} style={{ width: '32px', height: '32px', border: teamColor === tc.hex ? `2px solid ${DESIGN.primaryBlue}` : '1px solid #ddd', borderRadius: '4px', backgroundColor: tc.hex, cursor: 'pointer', fontSize: '10px', color: '#fff', fontWeight: 'bold' }}>
-                  {tc.name[0]}
-                </button>
-              ))}
+                    {tool === 'player' && (
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ fontSize: '13px', fontWeight: '700', color: DESIGN.darkText, display: 'block', marginBottom: '8px' }}>PLAYER NUMBER</label>
+              <input type="text" value={playerNumber} onChange={(e) => setPlayerNumber(e.target.value.slice(0, 3))} placeholder="e.g. 1, 10, ST" maxLength={3} style={{ width: '100%', padding: '8px', border: `1px solid ${DESIGN.bodyGray}`, borderRadius: '4px', fontFamily: '"Roboto Flex", sans-serif', fontSize: '14px', boxSizing: 'border-box' }} />
+              <p style={{ fontSize: '10px', color: '#888', marginTop: '4px' }}>Shown inside the player marker</p>
             </div>
-          </div>
-          
-          <div style={{ marginBottom: '20px' }}>
-            <label style={{ fontSize: '13px', fontWeight: '700', color: DESIGN.darkText, display: 'block', marginBottom: '8px' }}>PLAYER NUMBER</label>
-            <input type="text" value={playerNumber} onChange={(e) => setPlayerNumber(e.target.value.slice(0, 3))} placeholder="e.g. 1, 10, ST" maxLength={3} style={{ width: '100%', padding: '8px', border: `1px solid ${DESIGN.bodyGray}`, borderRadius: '4px', fontFamily: '"Roboto Flex", sans-serif', fontSize: '14px', boxSizing: 'border-box' }} />
-            <p style={{ fontSize: '10px', color: '#888', marginTop: '4px' }}>Shown inside the player marker</p>
-          </div>
-          
-          <div style={{ marginBottom: '20px' }}>
-            <label style={{ fontSize: '13px', fontWeight: '700', color: DESIGN.darkText, display: 'block', marginBottom: '8px' }}>CONE COLOR</label>
-            <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap' }}>
-              {CONE_COLORS.map((color) => (
-                <button key={color} onClick={() => setConeColor(color)} style={{ width: '32px', height: '32px', border: coneColor === color ? `2px solid ${DESIGN.primaryBlue}` : '1px solid #ddd', borderRadius: '4px', backgroundColor: color, cursor: 'pointer' }} />
-              ))}
-            </div>
-          </div>
+          )}
         </div>
         
         <div style={{ borderTop: `1px solid #eee`, padding: '12px 15px', display: 'flex', flexDirection: 'column', gap: '8px', flexShrink: 0 }}>
@@ -444,6 +539,42 @@ function Whiteboard() {
         </div>
       </div>
       
+      {textModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '25px', minWidth: '420px', maxWidth: '90vw' }}>
+            <h3 style={{ margin: '0 0 16px 0', color: DESIGN.darkText }}>{textModal.existingId ? 'Edit Text' : 'Add Text / Description'}</h3>
+
+            <textarea
+              value={textDraft}
+              onChange={(e) => setTextDraft(e.target.value)}
+              placeholder="Describe the exercise, coaching points, reps..."
+              rows={5}
+              autoFocus
+              style={{ width: '100%', minHeight: '100px', padding: '10px', border: `1px solid ${DESIGN.bodyGray}`, borderRadius: '4px', fontFamily: '"Roboto Flex", sans-serif', fontSize: '14px', boxSizing: 'border-box', resize: 'vertical', marginBottom: '15px' }}
+            />
+
+            <div style={{ marginBottom: '15px' }}>
+              <label style={{ fontSize: '13px', fontWeight: '700', color: DESIGN.darkText, display: 'block', marginBottom: '8px' }}>FONT SIZE: {textFontSize}px</label>
+              <input type="range" min="10" max="48" value={textFontSize} onChange={(e) => setTextFontSize(parseInt(e.target.value))} style={{ width: '100%' }} />
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
+              <button onClick={() => setTextBold(!textBold)} style={{ width: '40px', height: '36px', fontWeight: 800, border: textBold ? `2px solid ${DESIGN.primaryBlue}` : '1px solid #ddd', borderRadius: '4px', backgroundColor: textBold ? '#f0f9ff' : '#fff', cursor: 'pointer' }}>B</button>
+              <button onClick={() => setTextItalic(!textItalic)} style={{ width: '40px', height: '36px', fontStyle: 'italic', fontWeight: 600, border: textItalic ? `2px solid ${DESIGN.primaryBlue}` : '1px solid #ddd', borderRadius: '4px', backgroundColor: textItalic ? '#f0f9ff' : '#fff', cursor: 'pointer' }}>I</button>
+              <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', marginLeft: '8px' }}>
+                {PALETTE_COLORS.map((color) => (
+                  <button key={color} onClick={() => setTextColor(color)} style={{ width: '28px', height: '28px', border: textColor === color ? `2px solid ${DESIGN.primaryBlue}` : '1px solid #ddd', borderRadius: '50%', backgroundColor: color, cursor: 'pointer' }} />
+                ))}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <button onClick={() => setTextModal(null)} style={{ padding: '10px 20px', border: `1px solid ${DESIGN.bodyGray}`, borderRadius: '4px', backgroundColor: '#fff', color: DESIGN.darkText, cursor: 'pointer', fontWeight: '600' }}>Cancel</button>
+              <button onClick={handlePlaceText} disabled={!textDraft.trim()} style={{ padding: '10px 20px', border: 'none', borderRadius: '4px', backgroundColor: textDraft.trim() ? DESIGN.primaryBlue : '#aaa', color: '#fff', cursor: textDraft.trim() ? 'pointer' : 'not-allowed', fontWeight: '600' }}>{textModal.existingId ? 'Save Changes' : 'Place Text'}</button>
+            </div>
+          </div>
+        </div>
+      )}
       {showSaveModal && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
           <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '25px', minWidth: '400px', maxWidth: '90vw', maxHeight: '90vh', overflowY: 'auto' }}>
