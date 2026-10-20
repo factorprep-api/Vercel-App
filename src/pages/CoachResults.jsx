@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
 import { fetchAthletes, fetchLogbookByAthlete, fetchWellnessLogs, fetchMedicalLogs, fetchCycleLogs, saveMedicalLog, fetchExerciseLibrary, getLatestMaxes, saveAthleteMax } from '../api';
-import { getCycleContext, PHASE_STATUS, compositeLevel, buildCycleChartData, getForwardWindow, getTrainingGuidance, getPhase } from '../utils/cycleMath';
+import { getCycleContext, PHASE_STATUS, compositeLevel, buildCycleChartData, getForwardWindow, getTrainingGuidance, getPhase, ymd } from '../utils/cycleMath';
 import { ArrowLeft, Search, AlertCircle, Heart, Moon, Utensils, HandMetal, Smile, BarChart2, LayoutGrid, Dumbbell, Activity, ShieldAlert, X, Plus, Droplet, TrendingDown, TrendingUp, MoveHorizontal } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, ReferenceArea, ComposedChart, Area } from 'recharts';
 
@@ -309,9 +309,11 @@ export default function CoachResults() {
           const athLogs = logsByAthlete[name] || [];
           const latest = athLogs.length > 0 ? athLogs[athLogs.length - 1] : null;
 
-          // Check if latest log is actually from TODAY
-          const todayYMD = new Date().toISOString().split('T')[0];
-          const latestYMD = latest && latest.rawDate ? latest.rawDate.toISOString().split('T')[0] : null;
+          // Check if latest log is actually from TODAY — compare LOCAL calendar
+          // days. rawDate is local midnight, so toISOString() would shift it back
+          // a day in UTC+ timezones and today's log would never register.
+          const todayYMD = ymd(new Date());
+          const latestYMD = latest && latest.rawDate ? ymd(latest.rawDate) : null;
           const isTodayLog = latestYMD === todayYMD;
 
           const todayLog = isTodayLog ? latest : { grip: null, feeling: null, soreness: null, sleep: null, nutrition: null };
@@ -525,7 +527,7 @@ export default function CoachResults() {
       else if (wellnessTimeRange === 'season') cutoff.setDate(today.getDate() - 90);
       const grouped = {};
       baseData.filter(d => d.rawDate >= cutoff).forEach(d => {
-        const key = d.rawDate.toISOString().split('T')[0];
+        const key = ymd(d.rawDate); // local calendar day, consistent with isTodayLog
         if (!grouped[key]) grouped[key] = { ...d, count: 1 };
         else { grouped[key].grip += d.grip; grouped[key].feeling += d.feeling; grouped[key].soreness += d.soreness; grouped[key].sleep += d.sleep; grouped[key].nutrition += d.nutrition; grouped[key].count += 1; }
       });
