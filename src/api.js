@@ -1,5 +1,9 @@
 import { supabase } from './supabase';
 
+// Local-clock date helper — 'today' must be the user's actual calendar day,
+// never the UTC day (an evening log is still 'today' locally).
+import { ymd } from './utils/cycleMath';
+
 // ==========================================
 // LIGHTWEIGHT PIPES
 // ==========================================
@@ -190,7 +194,8 @@ export const saveWellnessLog = async (payload) => {
     if (!athleteId) return { status: 'Error', message: 'Athlete not found' };
 
     const num = (v) => (v !== undefined && v !== null && v !== '') ? Number(v) : null;
-    const todayYMD = new Date().toISOString().split('T')[0];
+    // Local calendar day, not UTC — keeps the athlete's log on the day they logged
+    const todayYMD = ymd(new Date());
     const logData = {
       grip_kg: num(payload.grip),
       feeling: num(payload.feeling),
