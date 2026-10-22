@@ -637,6 +637,7 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
       // --- WELLNESS SUMMARY CALCULATIONS ---
       let well7Sum = 0, well7Count = 0;
       let latestGrip = null;
+      let gripMax = null;
       let latestWellEntry = null;
       const wellDayComp = {};
 
@@ -662,16 +663,20 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
         if (w.grip != null) {
           if (dk >= wellMin28) { grip28Sum += w.grip; grip28Count++; }
           if (dk >= wellMin3) latestGrip = w.grip; // raw force — never averaged into the composite
+          // Track the athlete's all-time best grip — readiness is relative to
+          // their own maximum, not absolute population cutoffs.
+          if (gripMax == null || w.grip > gripMax) gripMax = w.grip;
         }
       });
 
       let wellnessComposite = null;
       if (well7Count > 0) wellnessComposite = Math.round((well7Sum / well7Count) * 10) / 10;
 
+      // Grip readiness as % of the athlete's own best-ever logged grip:
+      // >=90% of best -> green, 80-90% -> amber, <80% -> red (matches CoachResults).
       let gripPct = null;
-      if (latestGrip != null && grip28Count > 0) {
-        const gripAvg = grip28Sum / grip28Count;
-        if (gripAvg > 0) gripPct = Math.round((latestGrip / gripAvg) * 1000) / 10;
+      if (latestGrip != null && gripMax != null && gripMax > 0) {
+        gripPct = Math.round((latestGrip / gripMax) * 1000) / 10;
       }
 
       const wellnessHistory = [];
@@ -1411,8 +1416,8 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
                                       </ResponsiveContainer>
                                     </div>
                                     {ath.gripPct != null && (
-                                      <p style={{ margin: '8px 0 0 0', fontSize: '13px', fontWeight: 700, color: ath.gripPct < 90 ? '#dc2626' : ath.gripPct < 95 ? '#f59e0b' : '#16a34a' }}>
-                                        Grip: {Math.round(ath.gripPct)}% of 28d avg ({Math.round(ath.gripPct) - 100 >= 0 ? '+' : '−'}{Math.abs(Math.round(ath.gripPct) - 100)}%)
+                                      <p style={{ margin: '8px 0 0 0', fontSize: '13px', fontWeight: 700, color: ath.gripPct < 80 ? '#dc2626' : ath.gripPct < 90 ? '#f59e0b' : '#16a34a' }}>
+                                        Grip: {Math.round(ath.gripPct)}% of best ({ath.gripPct >= 90 ? 'Ready' : ath.gripPct >= 80 ? 'Monitor' : 'Fatigued'})
                                       </p>
                                     )}
                                   </>

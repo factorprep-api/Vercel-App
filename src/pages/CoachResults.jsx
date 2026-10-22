@@ -323,6 +323,13 @@ export default function CoachResults() {
             isFatigued = true;
           }
 
+          // Personal grip baseline: the athlete's best-ever logged grip (kg) and
+          // how many grip logs they have. Colors the readiness grid relative to
+          // the individual's own max instead of absolute population cutoffs.
+          const gripLogs = athLogs.filter(l => l.grip != null && l.grip > 0);
+          const gripMax = gripLogs.reduce((max, l) => (l.grip > max ? l.grip : max), 0);
+          const gripLogCount = gripLogs.length;
+
           let medicalStatus = 'Fully Fit';
           let activeInjury = null;
           const athMed = medByAthlete[name] || [];
@@ -342,6 +349,9 @@ export default function CoachResults() {
             sleep: todayLog.sleep, 
             nutrition: todayLog.nutrition,
             isTodayLog,
+            // grip baseline for max-relative coloring (see getColorClass)
+            gripMax, 
+            gripLogCount,
             status: isFatigued ? 'fatigued' : 'normal',
             medicalStatus, 
             activeInjury, 
@@ -507,10 +517,19 @@ export default function CoachResults() {
     const a = document.createElement('a'); a.href = url; a.download = `factorprep_coach_results_${new Date().toISOString().split('T')[0]}.csv`; a.click(); URL.revokeObjectURL(url);
   }
 
-  const getColorClass = (val, type) => {
+  const getColorClass = (val, type, athlete) => {
     if (type === 'soreness') { if (val <= 1) return 'status-green'; if (val >= 5) return 'status-red'; return 'status-amber'; }
     if (val === 0) return 'status-amber'; 
-    if (type === 'grip') { if (val >= 45) return 'status-green'; if (val <= 40) return 'status-red'; return 'status-amber'; }
+    if (type === 'grip') {
+      // Grip strength is individual-specific: color relative to the athlete's
+      // own best-ever log, not absolute population cutoffs.
+      // >=90% of best -> green, 80-90% -> amber, <80% -> red.
+      if (!athlete || !athlete.gripMax || athlete.gripLogCount < 2) return ''; // neutral (no meaningful baseline)
+      const pct = (val / athlete.gripMax) * 100;
+      if (pct >= 90) return 'status-green';
+      if (pct < 80) return 'status-red';
+      return 'status-amber';
+    }
     if (type === 'sleep') { if (val >= 7.5) return 'status-green'; if (val <= 5.5) return 'status-red'; return 'status-amber'; }
     if (val >= 8) return 'status-green'; if (val <= 4) return 'status-red'; return 'status-amber';
   };
@@ -887,7 +906,7 @@ export default function CoachResults() {
                             {isAlert && !medBadge && <AlertCircle size={16} color="#dc2626" title="Fatigue Warning" style={{marginLeft:'8px'}} />}
                           </div>
                         </td>
-                        <td><span className={`status-badge ${athlete.grip != null ? getColorClass(athlete.grip, 'grip') : ''}`}>{athlete.grip != null ? athlete.grip.toFixed(1) : '--'}</span></td>
+                        <td><span title={athlete.grip != null && athlete.gripMax > 0 ? `${athlete.grip.toFixed(1)} kg — ${Math.round((athlete.grip / athlete.gripMax) * 100)}% of best ${athlete.gripMax.toFixed(1)} kg` : athlete.grip != null ? `${athlete.grip.toFixed(1)} kg — no grip baseline yet` : 'No grip logged today'} className={`status-badge ${athlete.grip != null ? getColorClass(athlete.grip, 'grip', athlete) : ''}`}>{athlete.grip != null ? athlete.grip.toFixed(1) : '--'}</span></td>
                         <td><span className={`status-badge ${athlete.feeling != null ? getColorClass(athlete.feeling, 'feeling') : ''}`}>{athlete.feeling != null ? athlete.feeling + '/10' : '--'}</span></td>
                         <td><span className={`status-badge ${athlete.soreness != null ? getColorClass(athlete.soreness, 'soreness') : ''}`}>{athlete.soreness != null ? athlete.soreness + '/10' : '--'}</span></td>
                         <td><span className={`status-badge ${athlete.sleep != null ? getColorClass(athlete.sleep, 'sleep') : ''}`}>{athlete.sleep != null ? athlete.sleep.toFixed(1) + 'h' : '--'}</span></td>
