@@ -338,6 +338,167 @@ export const deleteCycleLog = async (id) => {
 };
 
 // ==========================================
+// NUTRITION POD PIPES (v1.8.0)
+// ==========================================
+// foods / v_food_scores are REFERENCE data (9,365 FNDDS + AUSNUT foods,
+// scored by percentile rank of 19 nutrients — see scripts/nutrition_etl.mjs).
+// nutrition_logs stores items DENORMALIZED: each item carries the per-100g
+// nutrient values + score captured at log time, so athlete/coach views
+// compute daily totals client-side with zero joins (per plan §3).
+// Item shape: { food_id, grams, name, portionLabel, kj100, protein100,
+//               carbs100, fibre100, score }
+// ==========================================
+
+// Search the food database, best-scored first. Two-step: search
+// v_food_scores (description + score), then hydrate portions + the four
+// energy/macronutrient columns from foods for the matched ids.
+export const searchFoods = async (query, limit = 30) => {
+  try {
+    const q = (query || '').trim();
+    if (q.length < 2) return { foods: [], error: null };
+    const { data: scores, error: sErr } = await supabase
+      .from('v_food_scores')
+      .select('id, description, source, score')
+      .ilike('description', `%${q}%`)
+      .order('score', { ascending: false })
+      .limit(limit);
+    if (sErr) return { foods: [], error: sErr.message };
+    if (!scores || scores.length === 0) return { foods: [], error: null };
+    const ids = scores.map(s => s.id);
+    const { data: fds, error: fErr } = await supabase
+      .from('foods')
+      .select('id, portion_label, portion_grams, energy_kj, protein_g, carbohydrate_g, fibre_g')
+      .in('id', ids);
+    if (fErr) return { foods: [], error: fErr.message };
+    const byId = new Map((fds || []).map(f => [f.id, f]));
+    const foods = scores
+      .map(s => {
+        const f = byId.get(s.id);
+        if (!f) return null;
+        return {
+          id: s.id,
+          description: s.description,
+          source: s.source,
+          score: s.score,
+          portionLabel: f.portion_label || null,
+          portionGrams: f.portion_grams != null ? Number(f.portion_grams) : null,
+          kj100: f.energy_kj != null ? Number(f.energy_kj) : null,
+          protein100: f.protein_g != null ? Number(f.protein_g) : null,
+          carbs100: f.carbohydrate_g != null ? Number(f.carbohydrate_g) : null,
+          fibre100: f.fibre_g != null ? Number(f.fibre_g) : null,
+        };
+      })
+      .filter(Boolean);
+    return { foods, error: null };
+  } catch (err) { return { foods: [], error: err.message }; }
+};
+
+// Append items to today's free-form nutrition log (creates the day's row on
+// first save, merges into it afterwards). Date is the LOCAL calendar day —
+// the same ymd() fix that keeps wellness logs on the athlete's actual day.
+// sessionLogId is reserved for session-anchored fueling (plan §7.1); the
+// athlete UI passes null for now.
+export const saveNutritionLog = async ({ items, athlete, sessionLogId, date }) => {
+  try {
+    if (!Array.isArray(items) || items.length === 0) {
+      return { status: 'Error', message: 'Nothing to log.' };
+    }
+    let athleteId = null;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { data: mine } = await supabase.from('athletes').select('id').eq('user_id', user.id).maybeSingle();
+      if (mine) athleteId = mine.id;
+    }
+    if (!athleteId && athlete) {
+      const { data: byName } = await supabase.from('athletes').select('id').ilike('name', athlete).limit(1);
+      if (byName && byName.length > 0) athleteId = byName[0].id;
+    }
+    if (!athleteId) return { status: 'Error', message: 'Athlete not found' };
+
+    const entryDate = date || ymd(new Date());
+
+    // Find today's free-form row (session-anchored entries live separately)
+    let q = supabase
+      .from('nutrition_logs')
+      .select('id, items')
+      .eq('athlete_id', athleteId)
+      .eq('entry_date', entryDate)
+      .is('deleted_at', null);
+    if (sessionLogId) q = q.eq('session_log_id', sessionLogId);
+    else q = q.is('session_log_id', null);
+    const { data: found } = await q.maybeSingle();
+    const existing = found;
+
+    if (existing) {
+      const merged = [...(Array.isArray(existing.items) ? existing.items : []), ...items];
+      const { error } = await supabase
+        .from('nutrition_logs')
+        .update({ items: merged })
+        .eq('id', existing.id);
+      if (error) return { status: 'Error', message: error.message };
+      return { status: 'Success', items: merged };
+    }
+
+    const { data: inserted, error } = await supabase
+      .from('nutrition_logs')
+      .insert({
+        athlete_id: athleteId,
+        entry_date: entryDate,
+        session_log_id: sessionLogId || null,
+        items
+      })
+      .select('id, items')
+      .single();
+    if (error) return { status: 'Error', message: error.message };
+    return { status: 'Success', items: inserted ? inserted.items : items };
+  } catch (err) { return { status: 'Error', message: err.message }; }
+};
+
+// Rewrite the items array of a specific log row (used by the per-item delete
+// in the athlete UI). RLS (nl_update) only allows the owning athlete.
+export const updateNutritionItems = async (logId, items) => {
+  try {
+    if (!logId) return { status: 'Error', message: 'Missing log ID.' };
+    const { error } = await supabase
+      .from('nutrition_logs')
+      .update({ items })
+      .eq('id', logId);
+    if (error) return { status: 'Error', message: error.message };
+    return { status: 'Success' };
+  } catch (err) { return { status: 'Error', message: err.message }; }
+};
+
+// Recent nutrition logs visible to the signed-in user (RLS handles scoping:
+// athletes see their own, coaches see their athletes'). Joins the athlete's
+// name so coach pages can attribute logs. Items are denormalized, so views
+// compute totals client-side. sessionLogId present on session-anchored entries.
+export const fetchNutritionLogs = async (days = 30) => {
+  try {
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+    const { data, error } = await supabase
+      .from('nutrition_logs')
+      .select('id, entry_date, session_log_id, items, notes, athlete_id, athletes(name)')
+      .is('deleted_at', null)
+      .gte('entry_date', ymd(since))
+      .order('entry_date', { ascending: false });
+    if (error) return { logs: [], error: error.message };
+    return {
+      logs: (data || []).map(l => ({
+        id: l.id,
+        athleteId: l.athlete_id,
+        athleteName: l.athletes ? l.athletes.name : null,
+        date: l.entry_date,
+        sessionLogId: l.session_log_id,
+        items: Array.isArray(l.items) ? l.items : [],
+        notes: l.notes
+      })),
+      error: null
+    };
+  } catch (err) { return { logs: [], error: err.message }; }
+};
+
+// ==========================================
 // SCHEDULE PIPE (Supabase) — proposals in
 // schedule_sessions, completions/manual logs in
 // session_logs, linked by session_id.
