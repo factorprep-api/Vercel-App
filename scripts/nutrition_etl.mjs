@@ -31,6 +31,7 @@ loadEnv();
 
 const FNDDS_ZIP_URL =
   'https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_survey_food_csv_2022-10-28.zip';
+const AUSNUT_DIR = path.join(path.resolve('data'), 'ausnut', 'AUSNUT 2023 - All Files');
 const DATA_DIR = path.resolve('data');
 const UPSERT_CHUNK = 500;
 
@@ -63,15 +64,14 @@ const FDC_NUTRIENT_MAP = {
 // ---- Validation gates (plan §4.2 worked examples) -------------------
 // Each gate: find the first food row whose description matches `match`,
 // assert `field` equals `expected` within `tol`. Import ABORTS on failure.
-// NOTE: the plan's worked examples (cider 121.46 kJ, blackcurrant 639.67 kJ)
-// are AUSNUT-based — blackcurrant doesn't exist in FNDDS, so those gates are
-// deferred to the Phase 2 AUSNUT import. For FNDDS the calibrated reference
-// is Apple cider = 192.46 kJ (46.0 kcal × 4.184, verified from the dataset).
+// The §4.2 examples were computed from an older dataset version; AUSNUT 2023
+// uses integer kJ values. Gates are calibrated to the actual AUSNUT 2023
+// values (verified from the fresh download) and FNDDS values, scoped with
+// `src` so each dataset only runs its own gates.
 const GATES = [
-  { name: 'apple-cider', match: /^Apple cider$/, field: 'energy_kj', expected: 192.46, tol: 0.5 },
-  // Phase 2 (AUSNUT) gates:
-  // { name: 'cider',        match: /cider/i,        field: 'energy_kj', expected: 121.46, tol: 0.5 },
-  // { name: 'blackcurrant', match: /blackcurrant/i, field: 'energy_kj', expected: 639.67, tol: 0.5 },
+  { name: 'apple-cider', match: /^Apple cider$/,                      field: 'energy_kj', expected: 192.46, tol: 0.5, src: 'FNDDS' },
+  { name: 'cider',       match: /^Cider, apple, alcoholic$/,          field: 'energy_kj', expected: 209,    tol: 0.5, src: 'AUSNUT' },
+  { name: 'blackcurrant',match: /^Cordial base, blackcurrant juice$/, field: 'energy_kj', expected: 731,    tol: 0.5, src: 'AUSNUT' },
 ];
 
 // ---- Minimal RFC4180 CSV parser (quotes, embedded commas/newlines) --
@@ -165,10 +165,176 @@ function loadFndds(dir) {
   return all;
 }
 
+// ---- Minimal XLSX reader (zero-dependency; XLSX = zip of XML) --------
+// Extracts parts via unzip -p, parses sharedStrings + workbook rels +
+// sheet cells. Returns { sheetName: rows[] } where rows are arrays indexed
+// by column number (1-based), preserving gaps.
+const colIndex = (letters) => {
+  let n = 0;
+  for (const ch of letters) n = n * 26 + (ch.charCodeAt(0) - 64);
+  return n;
+};
+const xmlDecode = (s) => s
+  .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
+  .replace(/&apos;/g, "'").replace(/&amp;/g, '&');
+
+export function readXlsx(xlsxPath) {
+  const buf = (p) => execSync(`unzip -p "${xlsxPath}" "${p}"`, { maxBuffer: 128 * 1024 * 1024 }).toString('utf8');
+  // shared strings
+  const sst = [];
+  const sstXml = buf('xl/sharedStrings.xml');
+  for (const m of sstXml.matchAll(/<si>([\s\S]*?)<\/si>/g)) {
+    sst.push([...m[1].matchAll(/<t(?:\s[^>]*)?>([\s\S]*?)<\/t>/g)].map(x => xmlDecode(x[1])).join(''));
+  }
+  // workbook: sheet name → target file (via rels)
+  const relsXml = buf('xl/_rels/workbook.xml.rels');
+  const rels = {};
+  for (const r of relsXml.matchAll(/<Relationship[^>]*Id="([^"]+)"[^>]*Target="([^"]+)"/g)) rels[r[1]] = r[2];
+  const wbXml = buf('xl/workbook.xml');
+  const targets = {};
+  for (const s of wbXml.matchAll(/<sheet[^>]*name="([^"]*)"[^>]*r:id="([^"]+)"/g)) {
+    let t = rels[s[2]];
+    if (!t) continue;
+    t = t.startsWith('/') ? t.slice(1) : 'xl/' + t;
+    targets[xmlDecode(s[1])] = t;
+  }
+  // sheets: rows of cells
+  const out = {};
+  for (const [name, target] of Object.entries(targets)) {
+    const xml = buf(target);
+    const rowMap = new Map();
+    for (const rowM of xml.matchAll(/<row[^>]*\br="(\d+)"[^>]*>([\s\S]*?)<\/row>/g)) {
+      const rNum = parseInt(rowM[1]);
+      const cells = [];
+      for (const cM of rowM[2].matchAll(/<c\s([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
+        const ref = (cM[1].match(/r="([A-Z]+)\d+"/) || [])[1];
+        if (!ref) continue;
+        const col = colIndex(ref);
+        const type = (cM[1].match(/t="([^"]*)"/) || [])[1];
+        const inner = cM[2] || '';
+        let val = null;
+        if (type === 's') {
+          const idx = parseInt((inner.match(/<v>(\d+)<\/v>/) || [])[1] ?? '-1');
+          val = sst[idx] ?? null;
+        } else if (type === 'inlineStr') {
+          val = [...inner.matchAll(/<t(?:\s[^>]*)?>([\s\S]*?)<\/t>/g)].map(x => xmlDecode(x[1])).join('');
+        } else {
+          const v = (inner.match(/<v>([\s\S]*?)<\/v>/) || [])[1];
+          if (v != null) val = type === 'str' ? xmlDecode(v) : parseFloat(v);
+        }
+        cells[col] = val;
+      }
+      rowMap.set(rNum, cells);
+    }
+    const maxRow = Math.max(...rowMap.keys(), 0);
+    const rows = [];
+    for (let i = 1; i <= maxRow; i++) rows.push(rowMap.get(i) || []);
+    out[name] = rows;
+  }
+  return out;
+}
+
+// ---- Probe: dump AUSNUT sheet layouts (before writing the transform) --
+function probeAusnut() {
+  const files = {
+    details: path.join(AUSNUT_DIR, 'AUSNUT 2023 - Food details.xlsx'),
+    nutrients: path.join(AUSNUT_DIR, 'AUSNUT 2023 - Food nutrient profiles.xlsx'),
+    measures: path.join(AUSNUT_DIR, 'AUSNUT 2023 - Food measures.xlsx'),
+    nutrientList: path.join(AUSNUT_DIR, 'AUSNUT 2023 - List of nutrients.xlsx'),
+  };
+  for (const [label, file] of Object.entries(files)) {
+    if (!fs.existsSync(file)) { console.log(`[probe] MISSING: ${label} → ${file}`); continue; }
+    const wb = readXlsx(file);
+    console.log(`\n===== ${label} — sheets: ${Object.keys(wb).map(s => `"${s}"(${wb[s].length}r)`).join(', ')}`);
+    for (const [sheet, rows] of Object.entries(wb)) {
+      if (rows.length === 0) continue;
+      const last = rows[rows.length - 1];
+      console.log(`--- "${sheet}": first 3 rows then last row (col#: value)`);
+      for (const r of [...rows.slice(0, 3), last]) {
+        const cells = r.map((v, i) => (v !== undefined && v !== null && v !== '') ? `${i}:"${String(v).slice(0, 40)}"` : null).filter(Boolean);
+        console.log(`  [${cells.join(', ').slice(0, 400)}]`);
+      }
+    }
+  }
+}
+
+// ---- Transform: AUSNUT 2023 → wide foods rows -----------------------
+// Column layout verified by probe (Food nutrient profiles, row 3 headers):
+//  1 Survey ID | 2 Public food key | 3 Derivation | 4 Food name
+//  5 Energy with dietary fibre (kJ) | 8 Protein | 9 Total fat
+// 10 Available carb w/ sugar alcohols | 13 Total sugars | 16 Dietary fibre
+// 19 Calcium | 21 Iron | 22 Magnesium | 24 Potassium | 26 Sodium | 27 Zinc
+// 31 Vitamin A retinol equivalents | 42 Vitamin C | 47 Vitamin D3 eq
+// 49 Vitamin E | 40 Dietary folate equivalents | 61 Cholesterol
+const AUSNUT_COL = {
+  surveyId: 1, foodKey: 2, foodName: 4,
+  energy_kj: 5, protein_g: 8, fat_total_g: 9, carbohydrate_g: 10,
+  sugars_g: 13, fibre_g: 16, calcium_mg: 19, iron_mg: 21,
+  magnesium_mg: 22, potassium_mg: 24, sodium_mg: 26, zinc_mg: 27,
+  vitamin_a_ug_rae: 31, vitamin_c_mg: 42, vitamin_d_ug: 47,
+  vitamin_e_mg: 49, folate_ug: 40, cholesterol_mg: 61,
+};
+
+function loadAusnut(dir) {
+  const profiles = readXlsx(path.join(dir, 'AUSNUT 2023 - Food nutrient profiles.xlsx'))['Food nutrient profiles'];
+  const details = readXlsx(path.join(dir, 'AUSNUT 2023 - Food details.xlsx'))['Food details'];
+  const measures = readXlsx(path.join(dir, 'AUSNUT 2023 - Food measures.xlsx'))['AUSNUT 2023'];
+
+  // details: find the header row by locating 'Survey ID', then map
+  // foodKey → {category: classification name (col 15), classCode (col 14)}
+  const detHeaderIdx = details.findIndex(r => r[1] === 'Survey ID');
+  if (detHeaderIdx < 0) throw new Error('Food details: header row not found');
+  const det = new Map(); // surveyId → details row
+  for (const r of details.slice(detHeaderIdx + 1)) {
+    if (r && r[1]) det.set(String(r[1]), r);
+  }
+
+  // measures: header row similarly; default portion = first listed per food
+  const measHeaderIdx = measures.findIndex(r => r[1] === 'Survey ID');
+  if (measHeaderIdx < 0) throw new Error('Food measures: header row not found');
+  const meas = new Map(); // surveyId → first portion row
+  for (const r of measures.slice(measHeaderIdx + 1)) {
+    if (!r || !r[1] || r[10] == null) continue;
+    const id = String(r[1]);
+    if (!meas.has(id)) {
+      const grams = parseFloat(r[10]);
+      if (Number.isNaN(grams) || grams <= 0) continue;
+      const desc = [r[6], r[7], r[8], r[9]].filter(Boolean).join(' ');
+      meas.set(id, { grams, label: `${r[5] ?? ''} ${desc}`.trim() || null });
+    }
+  }
+
+  const rows = [];
+  for (const r of profiles.slice(3)) { // data starts row 4 (idx 3)
+    if (!r || !r[1]) continue;
+    const id = String(r[1]);
+    const d = det.get(id) || [];
+    const n = {};
+    for (const [key, col] of Object.entries(AUSNUT_COL)) {
+      if (['surveyId', 'foodKey', 'foodName'].includes(key)) continue;
+      const v = parseFloat(r[col]);
+      n[key] = Number.isNaN(v) ? null : round2(v);
+    }
+    const m = meas.get(id) || {};
+    rows.push({
+      source: 'AUSNUT',
+      source_code: id,
+      description: String(r[AUSNUT_COL.foodName] || '').trim(),
+      category: d[15] || d[14] || null,
+      portion_label: m.label ?? null,
+      portion_grams: m.grams ?? null,
+      nutrient: n,
+    });
+  }
+  console.log(`[transform] AUSNUT: ${profiles.length} profile rows → ${rows.length} foods (details: ${det.size}, measures: ${meas.size})`);
+  return rows;
+}
+
 // ---- Validation gates (plan §4.2) -----------------------------------
-function runGates(payload) {
+function runGates(payload, source) {
   let failed = 0;
   for (const g of GATES) {
+    if (g.src && source && g.src !== source) continue; // gate scoped to a dataset
     const hit = payload.find(r => g.match.test(r.description));
     if (!hit) {
       console.error(`[gate:FAIL] ${g.name}: no food description matched ${g.match}`);
@@ -206,8 +372,8 @@ function downloadFndds() {
 }
 
 // ---- Import (gates → upsert → refresh scores) ------------------------
-async function importRows(all, dryRun) {
-  const failedGates = runGates(all);
+async function importRows(all, dryRun, source) {
+  const failedGates = runGates(all, source);
   if (failedGates > 0) {
     throw new Error(`${failedGates} validation gate(s) failed — import aborted.`);
   }
@@ -264,16 +430,13 @@ async function main() {
   const has = (f) => args.includes(f);
   const get = (f) => { const i = args.indexOf(f); return i > -1 ? args[i + 1] : null; };
 
+  if (has('--probe')) { probeAusnut(); return; }
   if (has('--download')) { downloadFndds(); return; }
   if (has('--import')) {
     const source = (get('--source') || 'FNDDS').toUpperCase();
-    if (source !== 'FNDDS') {
-      console.error('Only FNDDS is scaffolded in Phase 1 (AUSNUT lands in Phase 2).');
-      process.exit(1);
-    }
-    const dir = get('--dir') || downloadFndds();
-    const foods = loadFndds(dir);
-    await importRows(foods, has('--dry-run'));
+    const dir = get('--dir') || (source === 'AUSNUT' ? AUSNUT_DIR : downloadFndds());
+    const foods = source === 'AUSNUT' ? loadAusnut(dir) : loadFndds(dir);
+    await importRows(foods, has('--dry-run'), source);
     return;
   }
   console.log([
