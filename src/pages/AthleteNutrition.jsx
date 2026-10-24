@@ -1,10 +1,64 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Search, Utensils, CheckCircle, Trash2, Flame, Beef, Wheat, Leaf, Loader2 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
-import { searchFoods, saveNutritionLog, fetchNutritionLogs, updateNutritionItems } from '../api';
+import { fetchFoodDatabase, saveNutritionLog, fetchNutritionLogs, updateNutritionItems } from '../api';
 import { ymd } from '../utils/cycleMath';
+
+// Exercise-library search pattern: full database loaded once (cached), then
+// instant client-side multi-word filtering, grouped by category, paginated.
+const ITEMS_PER_PAGE = 50;
+const FOOD_DB_CACHE_KEY = 'fp_food_database_v1';
+
+function buildGrouped(data) {
+  const map = {};
+  data.forEach(f => {
+    const cat = (f.category || 'Uncategorised').toUpperCase();
+    if (!map[cat]) map[cat] = [];
+    map[cat].push(f);
+  });
+  return Object.keys(map).sort().map(cat => ({
+    cat,
+    items: map[cat].sort((a, b) => a.description.localeCompare(b.description)),
+  }));
+}
+
+function getPageSlice(grouped, page) {
+  const start = (page - 1) * ITEMS_PER_PAGE;
+  const end = start + ITEMS_PER_PAGE;
+  const flat = [];
+  grouped.forEach(g => g.items.forEach(item => flat.push({ cat: g.cat, item })));
+  const slice = flat.slice(start, end);
+  const map = {};
+  slice.forEach(({ cat, item }) => {
+    if (!map[cat]) map[cat] = [];
+    map[cat].push(item);
+  });
+  return Object.keys(map).sort().map(cat => ({ cat, items: map[cat] }));
+}
+
+function PageButtons({ currentPage, totalPages, onChange }) {
+  const buttons = [];
+  const startP = Math.max(1, currentPage - 2);
+  const endP = Math.min(totalPages, currentPage + 2);
+  if (startP > 1) {
+    buttons.push(<button key="first" className="an-page-btn" onClick={() => onChange(1)}>1</button>);
+    if (startP > 2) buttons.push(<span key="dots1" className="an-page-dots">...</span>);
+  }
+  for (let i = startP; i <= endP; i++) {
+    buttons.push(
+      <button key={i} className={`an-page-btn ${i === currentPage ? 'active' : ''}`} onClick={() => onChange(i)}>
+        {i}
+      </button>
+    );
+  }
+  if (endP < totalPages) {
+    if (endP < totalPages - 1) buttons.push(<span key="dots2" className="an-page-dots">...</span>);
+    buttons.push(<button key="last" className="an-page-btn" onClick={() => onChange(totalPages)}>{totalPages}</button>);
+  }
+  return <>{buttons}</>;
+}
 
 // Portion presets offered when the database portion doesn't fit (grams)
 const GRAM_PRESETS = [50, 100, 150, 200, 250];
@@ -21,10 +75,12 @@ export default function AthleteNutrition() {
   const { userEmail, athleteName } = useAuth();
   const navigate = useNavigate();
 
-  const [query, setQuery] = useState('');
-  const [results, setResults] = useState([]);
-  const [searching, setSearching] = useState(false);
-  const [searchError, setSearchError] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [fullFoods, setFullFoods] = useState([]);    // full food database (cached)
+  const [loadingDb, setLoadingDb] = useState(true);
+  const [dbError, setDbError] = useState(null);
   const [selected, setSelected] = useState(null);   // food chosen for portion step
   const [grams, setGrams] = useState('');
   const [portionLabel, setPortionLabel] = useState('');
@@ -35,8 +91,6 @@ export default function AthleteNutrition() {
   const [removing, setRemoving] = useState(false);
   const [justLogged, setJustLogged] = useState(false);
   const [pageError, setPageError] = useState(null);
-
-  const debounceRef = useRef(null);
 
   // Load today's (or the most recent) log row
   const loadToday = async () => {
@@ -50,20 +104,63 @@ export default function AthleteNutrition() {
 
   useEffect(() => { loadToday(); }, [userEmail]);
 
-  // Debounced food search
+  // 300ms debounce — same timing as the exercise library
   useEffect(() => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    const q = query.trim();
-    if (q.length < 2) { setResults([]); setSearchError(null); return; }
-    setSearching(true);
-    debounceRef.current = setTimeout(async () => {
-      const res = await searchFoods(q);
-      setResults(res.foods || []);
-      setSearchError(res.error);
-      setSearching(false);
-    }, 300);
-    return () => clearTimeout(debounceRef.current);
-  }, [query]);
+    const t = setTimeout(() => setDebouncedQuery(searchQuery), 300);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
+
+  // Full food database: cached-first, then a background refetch keeps the
+  // cache self-healing after ETL re-imports. Same load pattern as the
+  // exercise library.
+  useEffect(() => {
+    if (!userEmail) return;
+    let isMounted = true;
+    (async () => {
+      const cached = localStorage.getItem(FOOD_DB_CACHE_KEY);
+      if (cached && isMounted) {
+        try {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setFullFoods(parsed);
+            setLoadingDb(false);
+          }
+        } catch {}
+      }
+      const res = await fetchFoodDatabase();
+      if (!isMounted) return;
+      if (res.error) {
+        if (!cached) setDbError(res.error);
+        setLoadingDb(false);
+        return;
+      }
+      setFullFoods(res.foods);
+      try { localStorage.setItem(FOOD_DB_CACHE_KEY, JSON.stringify(res.foods)); } catch {}
+      setLoadingDb(false);
+    })();
+    return () => { isMounted = false; };
+  }, [userEmail]);
+
+  // Client-side multi-word token filter (AND across tokens, name OR category)
+  const filteredDataset = useMemo(() => {
+    let base = fullFoods;
+    if (debouncedQuery.trim().length >= 2) {
+      const tokens = debouncedQuery.toLowerCase().split(/\s+/);
+      base = fullFoods.filter(f => {
+        const n = (f.description || '').toLowerCase();
+        const c = (f.category || '').toLowerCase();
+        return tokens.every(t => n.includes(t) || c.includes(t));
+      });
+    }
+    return buildGrouped(base);
+  }, [fullFoods, debouncedQuery]);
+
+  const pageGroups = useMemo(() => getPageSlice(filteredDataset, currentPage), [filteredDataset, currentPage]);
+  const totalItems = filteredDataset.reduce((s, g) => s + g.items.length, 0);
+  const totalPages = Math.ceil(totalItems / ITEMS_PER_PAGE);
+
+  const handleSearch = (e) => { setSearchQuery(e.target.value); setCurrentPage(1); };
+  const handlePageChange = (page) => { setCurrentPage(page); };
 
   const tapFood = (food) => {
     setSelected(food);
@@ -173,6 +270,15 @@ export default function AthleteNutrition() {
         .an-empty { text-align: center; color: #94a3b8; font-size: 14px; padding: 16px 0; }
         .an-spin { animation: anspin 1s linear infinite; }
         @keyframes anspin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        .an-search-wrapper { position: relative; }
+        .an-search-icon { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: #94a3b8; pointer-events: none; }
+        .an-search-wrapper .an-search { padding-left: 34px; }
+        .an-cat-title { font-size: 11px; font-weight: 800; letter-spacing: 0.5px; text-transform: uppercase; color: #94a3b8; margin: 14px 0 2px; }
+        .an-pagination { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 14px 0 2px; }
+        .an-page-btn { border: 1px solid #e2e8f0; background: #fff; color: #334155; font-size: 13px; font-weight: 600; padding: 6px 10px; border-radius: 6px; cursor: pointer; }
+        .an-page-btn.active { background: #10b981; border-color: #10b981; color: #fff; }
+        .an-page-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .an-page-dots { color: #94a3b8; font-size: 13px; }
       `}</style>
 
       <div className="an-header">
@@ -221,38 +327,51 @@ export default function AthleteNutrition() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 15, color: '#334155', marginBottom: 12 }}>
               <Utensils size={16} color="#10b981" /> What did you eat?
             </div>
-            <input
-              className="an-search"
-              placeholder="Search foods (e.g. oats, chicken)…"
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-              autoComplete="off"
-            />
-            {searching && (
+            <div className="an-search-wrapper">
+              <Search className="an-search-icon" size={16} />
+              <input
+                className="an-search"
+                placeholder="Search foods…"
+                value={searchQuery}
+                onChange={handleSearch}
+                autoComplete="off"
+              />
+            </div>
+            {loadingDb && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '14px 4px', color: '#64748b', fontSize: 13 }}>
-                <Loader2 size={14} className="an-spin" /> Searching…
+                <Loader2 size={14} className="an-spin" /> Loading food database…
               </div>
             )}
-            {searchError && <div style={{ color: '#b91c1c', fontSize: 13, padding: '10px 0' }}>Search failed: {searchError}</div>}
-            <div>
-              {results.map(f => {
-                const b = scoreBadge(f.score);
-                return (
-                  <div key={f.id} className="an-result" onClick={() => tapFood(f)}>
-                    <div style={{ minWidth: 0 }}>
-                      <div className="an-result-name">{f.description}</div>
-                      <div className="an-result-sub">
-                        {f.source} · {f.portionLabel || 'per 100 g'}{f.kj100 != null ? ` · ${Math.round(f.kj100)} kJ/100g` : ''}
+            {dbError && <div style={{ color: '#b91c1c', fontSize: 13, padding: '10px 0' }}>Failed to load foods: {dbError}</div>}
+            {!loadingDb && !dbError && pageGroups.length === 0 && (
+              <div className="an-empty">No foods matched “{searchQuery}”.</div>
+            )}
+            {!loadingDb && !dbError && pageGroups.map(group => (
+              <div key={group.cat}>
+                <h3 className="an-cat-title">{group.cat}</h3>
+                {group.items.map(f => {
+                  const b = scoreBadge(f.score);
+                  return (
+                    <div key={f.id} className="an-result" onClick={() => tapFood(f)}>
+                      <div style={{ minWidth: 0 }}>
+                        <div className="an-result-name">{f.description}</div>
+                        <div className="an-result-sub">
+                          {f.source} · {f.portionLabel || 'per 100 g'}{f.kj100 != null ? ` · ${Math.round(f.kj100)} kJ/100g` : ''}
+                        </div>
                       </div>
+                      <span className="an-badge" style={{ background: b.bg, color: b.fg }} title="Nutrient density score (0–100)">Score {b.label}</span>
                     </div>
-                    <span className="an-badge" style={{ background: b.bg, color: b.fg }} title="Nutrient density score (0–100)">Score {b.label}</span>
-                  </div>
-                );
-              })}
-              {query.trim().length >= 2 && !searching && results.length === 0 && !searchError && (
-                <div className="an-empty">No foods matched “{query}”. Try a shorter word.</div>
-              )}
-            </div>
+                  );
+                })}
+              </div>
+            ))}
+            {!loadingDb && !dbError && totalPages > 1 && (
+              <div className="an-pagination">
+                <button className="an-page-btn" disabled={currentPage === 1} onClick={() => handlePageChange(currentPage - 1)}>Prev</button>
+                <PageButtons currentPage={currentPage} totalPages={totalPages} onChange={handlePageChange} />
+                <button className="an-page-btn" disabled={currentPage === totalPages} onClick={() => handlePageChange(currentPage + 1)}>Next</button>
+              </div>
+            )}
           </>
         ) : (
           <>

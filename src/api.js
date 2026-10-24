@@ -349,46 +349,33 @@ export const deleteCycleLog = async (id) => {
 //               carbs100, fibre100, score }
 // ==========================================
 
-// Search the food database, best-scored first. Two-step: search
-// v_food_scores (description + score), then hydrate portions + the four
-// energy/macronutrient columns from foods for the matched ids.
-export const searchFoods = async (query, limit = 30) => {
+// Full food database for client-side search — the exercise-library pattern:
+// load all 9,365 FNDDS + AUSNUT foods once (merged with their percentile
+// scores), cache in localStorage, then pages filter instantly with
+// multi-word tokens. Foods only change when the ETL re-imports, and the
+// background refetch on every page load keeps the cache self-healing.
+export const fetchFoodDatabase = async () => {
   try {
-    const q = (query || '').trim();
-    if (q.length < 2) return { foods: [], error: null };
-    const { data: scores, error: sErr } = await supabase
-      .from('v_food_scores')
-      .select('id, description, source, score')
-      .ilike('description', `%${q}%`)
-      .order('score', { ascending: false })
-      .limit(limit);
-    if (sErr) return { foods: [], error: sErr.message };
-    if (!scores || scores.length === 0) return { foods: [], error: null };
-    const ids = scores.map(s => s.id);
-    const { data: fds, error: fErr } = await supabase
-      .from('foods')
-      .select('id, portion_label, portion_grams, energy_kj, protein_g, carbohydrate_g, fibre_g')
-      .in('id', ids);
-    if (fErr) return { foods: [], error: fErr.message };
-    const byId = new Map((fds || []).map(f => [f.id, f]));
-    const foods = scores
-      .map(s => {
-        const f = byId.get(s.id);
-        if (!f) return null;
-        return {
-          id: s.id,
-          description: s.description,
-          source: s.source,
-          score: s.score,
-          portionLabel: f.portion_label || null,
-          portionGrams: f.portion_grams != null ? Number(f.portion_grams) : null,
-          kj100: f.energy_kj != null ? Number(f.energy_kj) : null,
-          protein100: f.protein_g != null ? Number(f.protein_g) : null,
-          carbs100: f.carbohydrate_g != null ? Number(f.carbohydrate_g) : null,
-          fibre100: f.fibre_g != null ? Number(f.fibre_g) : null,
-        };
-      })
-      .filter(Boolean);
+    const [foodsRes, scoresRes] = await Promise.all([
+      supabase.from('foods').select('id, source, description, category, portion_label, portion_grams, energy_kj, protein_g, carbohydrate_g, fibre_g').order('description', { ascending: true }),
+      supabase.from('v_food_scores').select('id, score')
+    ]);
+    if (foodsRes.error) return { foods: [], error: foodsRes.error.message };
+    if (scoresRes.error) return { foods: [], error: scoresRes.error.message };
+    const scoreById = new Map((scoresRes.data || []).map(s => [s.id, s.score]));
+    const foods = (foodsRes.data || []).map(f => ({
+      id: f.id,
+      description: f.description,
+      source: f.source,
+      category: f.category || '',
+      portionLabel: f.portion_label || '',
+      portionGrams: f.portion_grams != null ? Number(f.portion_grams) : null,
+      kj100: f.energy_kj != null ? Number(f.energy_kj) : null,
+      protein100: f.protein_g != null ? Number(f.protein_g) : null,
+      carbs100: f.carbohydrate_g != null ? Number(f.carbohydrate_g) : null,
+      fibre100: f.fibre_g != null ? Number(f.fibre_g) : null,
+      score: scoreById.get(f.id) ?? null
+    }));
     return { foods, error: null };
   } catch (err) { return { foods: [], error: err.message }; }
 };
