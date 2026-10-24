@@ -289,19 +289,23 @@ function loadAusnut(dir) {
     if (r && r[1]) det.set(String(r[1]), r);
   }
 
-  // measures: header row similarly; default portion = first listed per food
+  // measures: header row similarly; default portion = first sensible row.
+  // AUSNUT includes "density" conversion rows for liquids (grams per mL —
+  // physics metadata, not a serving). Nobody eats "1 density", so those
+  // rows are skipped when choosing the default portion. Foods with only a
+  // density row simply get no default (the UI falls back to gram presets).
   const measHeaderIdx = measures.findIndex(r => r[1] === 'Survey ID');
   if (measHeaderIdx < 0) throw new Error('Food measures: header row not found');
-  const meas = new Map(); // surveyId → first portion row
+  const meas = new Map(); // surveyId → default portion row
   for (const r of measures.slice(measHeaderIdx + 1)) {
     if (!r || !r[1] || r[10] == null) continue;
     const id = String(r[1]);
-    if (!meas.has(id)) {
-      const grams = parseFloat(r[10]);
-      if (Number.isNaN(grams) || grams <= 0) continue;
-      const desc = [r[6], r[7], r[8], r[9]].filter(Boolean).join(' ');
-      meas.set(id, { grams, label: `${r[5] ?? ''} ${desc}`.trim() || null });
-    }
+    if (meas.has(id)) continue;
+    const desc = [r[6], r[7], r[8], r[9]].filter(Boolean).join(' ');
+    if (/density/i.test(`${r[5] ?? ''} ${desc}`)) continue; // skip conversion rows
+    const grams = parseFloat(r[10]);
+    if (Number.isNaN(grams) || grams <= 0) continue;
+    meas.set(id, { grams, label: `${r[5] ?? ''} ${desc}`.trim() || null });
   }
 
   const rows = [];
@@ -397,11 +401,13 @@ async function importRows(all, dryRun, source) {
   }
   // PostgREST directly via built-in fetch — supabase-js ≥2.109 requires a
   // WebSocket transport on Node < 22, and this script must stay zero-dependency.
+  // merge-duplicates (not ignore-duplicates) so a re-import with fixed
+  // logic actually REPAIRS existing rows instead of skipping them.
   const headers = {
     apikey: key,
     Authorization: `Bearer ${key}`,
     'Content-Type': 'application/json',
-    Prefer: 'resolution=ignore-duplicates,return=minimal',
+    Prefer: 'resolution=merge-duplicates,return=minimal',
   };
 
   for (let i = 0; i < payload.length; i += UPSERT_CHUNK) {
