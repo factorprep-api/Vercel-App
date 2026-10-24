@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Search, Utensils, CheckCircle, Trash2, Flame, Beef, Wheat, Leaf, Loader2 } from 'lucide-react';
+import { ArrowLeft, Search, Utensils, CheckCircle, Trash2, Flame, Beef, Wheat, Leaf, Loader2, Star } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
-import { fetchFoodDatabase, saveNutritionLog, fetchNutritionLogs, updateNutritionItems } from '../api';
+import { fetchFoodDatabase, fetchFoodFavorites, addFoodFavorite, removeFoodFavorite, saveNutritionLog, fetchNutritionLogs, updateNutritionItems } from '../api';
 import { ymd } from '../utils/cycleMath';
 
 // Exercise-library search pattern: full database loaded once (cached), then
@@ -87,22 +87,64 @@ export default function AthleteNutrition() {
 
   const [logId, setLogId] = useState(null);          // today's log row
   const [items, setItems] = useState([]);            // today's items
+  const [favourites, setFavourites] = useState([]);  // starred foods (v1.8.1)
+  const [recents, setRecents] = useState([]);        // recently logged foods
   const [saving, setSaving] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [justLogged, setJustLogged] = useState(false);
   const [pageError, setPageError] = useState(null);
 
-  // Load today's (or the most recent) log row
-  const loadToday = async () => {
-    const res = await fetchNutritionLogs(7);
-    if (res.error) { setPageError(res.error); return; }
+  const favIds = useMemo(() => new Set(favourites.map(f => f.id)), [favourites]);
+
+  // Load today's log row + favourites + recently logged foods (30 days).
+  // Recents are derived client-side from existing logs — no extra table.
+  const loadNutritionData = async () => {
+    const [logRes, favRes] = await Promise.all([
+      fetchNutritionLogs(30),
+      fetchFoodFavorites().catch(() => ({ foods: [] }))
+    ]);
+    if (logRes.error) { setPageError(logRes.error); return; }
     const today = ymd(new Date());
-    const row = (res.logs || []).find(l => l.date === today && !l.sessionLogId);
+    const row = (logRes.logs || []).find(l => l.date === today && !l.sessionLogId);
     setLogId(row ? row.id : null);
     setItems(row ? row.items : []);
+    setFavourites(favRes.foods || []);
+
+    // Recents: first sighting scanning newest-log-first = most recent use.
+    // Normalised to the food shape the rest of the page expects.
+    const seen = new Map();
+    (logRes.logs || []).forEach(l => {
+      (l.items || []).forEach(it => {
+        if (!it.food_id || seen.has(it.food_id)) return;
+        seen.set(it.food_id, {
+          id: it.food_id,
+          description: it.name,
+          source: 'Recent',
+          portionLabel: it.portionLabel || '',
+          portionGrams: null,
+          kj100: it.kj100 != null ? Number(it.kj100) : null,
+          protein100: it.protein100 != null ? Number(it.protein100) : null,
+          carbs100: it.carbs100 != null ? Number(it.carbs100) : null,
+          fibre100: it.fibre100 != null ? Number(it.fibre100) : null,
+          score: it.score != null ? Number(it.score) : null
+        });
+      });
+    });
+    setRecents([...seen.values()].slice(0, 8));
   };
 
-  useEffect(() => { loadToday(); }, [userEmail]);
+  useEffect(() => { loadNutritionData(); }, [userEmail]);
+
+  // Star / unstar a food. Optimistic update, reverted if the DB write fails.
+  const toggleFav = async (food) => {
+    const isFav = favIds.has(food.id);
+    setFavourites(isFav ? favourites.filter(f => f.id !== food.id) : [...favourites, food]);
+    const res = isFav ? await removeFoodFavorite(food.id) : await addFoodFavorite(food.id);
+    if (res.status !== 'Success') {
+      setFavourites(isFav ? [...favourites, food] : favourites.filter(f => f.id !== food.id));
+      setPageError(res.message || 'Could not update favourite.');
+    }
+  };
 
   // 300ms debounce — same timing as the exercise library
   useEffect(() => {
@@ -164,8 +206,8 @@ export default function AthleteNutrition() {
 
   const tapFood = (food) => {
     setSelected(food);
-    setQuery('');
-    setResults([]);
+    setSearchQuery('');
+    setDebouncedQuery('');
     if (food.portionGrams != null) {
       setGrams(String(Math.round(food.portionGrams)));
       setPortionLabel(food.portionLabel || `${Math.round(food.portionGrams)} g`);
@@ -279,6 +321,8 @@ export default function AthleteNutrition() {
         .an-page-btn.active { background: #10b981; border-color: #10b981; color: #fff; }
         .an-page-btn:disabled { opacity: 0.5; cursor: not-allowed; }
         .an-page-dots { color: #94a3b8; font-size: 13px; }
+        .an-quick-title { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; color: #94a3b8; display: flex; align-items: center; gap: 4px; margin-bottom: 6px; }
+        .an-fav-btn { background: none; border: none; cursor: pointer; padding: 4px; display: flex; }
       `}</style>
 
       <div className="an-header">
@@ -327,6 +371,34 @@ export default function AthleteNutrition() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 15, color: '#334155', marginBottom: 12 }}>
               <Utensils size={16} color="#10b981" /> What did you eat?
             </div>
+            {(favourites.length > 0 || recents.length > 0) && (
+              <div style={{ marginBottom: 14 }}>
+                {favourites.length > 0 && (
+                  <>
+                    <div className="an-quick-title"><Star size={12} color="#f59e0b" fill="#f59e0b" /> Favourites</div>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      {favourites.map(f => (
+                        <button key={f.id} className="an-chip" onClick={() => tapFood(f)} title={f.description}>
+                          {f.description.length > 32 ? f.description.slice(0, 32) + '…' : f.description}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+                {recents.length > 0 && (
+                  <>
+                    <div className="an-quick-title" style={{ marginTop: favourites.length > 0 ? 10 : 0 }}>🕘 Recent</div>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      {recents.map(f => (
+                        <button key={f.id} className="an-chip" onClick={() => tapFood(f)} title={f.description}>
+                          {f.description.length > 32 ? f.description.slice(0, 32) + '…' : f.description}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
             <div className="an-search-wrapper">
               <Search className="an-search-icon" size={16} />
               <input
@@ -359,7 +431,16 @@ export default function AthleteNutrition() {
                           {f.source} · {f.portionLabel || 'per 100 g'}{f.kj100 != null ? ` · ${Math.round(f.kj100)} kJ/100g` : ''}
                         </div>
                       </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                      <button
+                        className="an-fav-btn"
+                        onClick={(e) => { e.stopPropagation(); toggleFav(f); }}
+                        title={favIds.has(f.id) ? 'Remove from favourites' : 'Save to favourites'}
+                      >
+                        <Star size={16} color={favIds.has(f.id) ? '#f59e0b' : '#cbd5e1'} fill={favIds.has(f.id) ? '#f59e0b' : 'none'} />
+                      </button>
                       <span className="an-badge" style={{ background: b.bg, color: b.fg }} title="Nutrient density score (0–100)">Score {b.label}</span>
+                    </div>
                     </div>
                   );
                 })}

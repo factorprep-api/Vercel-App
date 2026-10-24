@@ -380,6 +380,82 @@ export const fetchFoodDatabase = async () => {
   } catch (err) { return { foods: [], error: err.message }; }
 };
 
+// ---- Favourites (v1.8.1): starred foods for one-tap repeat logging ----
+// Same food shape as fetchFoodDatabase items so the page can treat them
+// identically. Scores come from v_food_scores (no FK to a materialized
+// view, so it's a second query keyed by id).
+
+export const fetchFoodFavorites = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('nutrition_favorites')
+      .select('id, food_id, created_at, foods(description, source, category, portion_label, portion_grams, energy_kj, protein_g, carbohydrate_g, fibre_g)')
+      .order('created_at', { ascending: false });
+    if (error) return { foods: [], error: error.message };
+    const rows = data || [];
+    const ids = rows.map(r => r.food_id).filter(Boolean);
+    const scoreById = new Map();
+    if (ids.length > 0) {
+      const { data: scores, error: sErr } = await supabase
+        .from('v_food_scores')
+        .select('id, score')
+        .in('id', ids);
+      if (!sErr) (scores || []).forEach(s => scoreById.set(s.id, s.score));
+    }
+    const foods = rows
+      .map(r => {
+        const f = r.foods;
+        if (!f) return null;
+        return {
+          id: r.food_id,
+          description: f.description,
+          source: f.source,
+          category: f.category || '',
+          portionLabel: f.portion_label || '',
+          portionGrams: f.portion_grams != null ? Number(f.portion_grams) : null,
+          kj100: f.energy_kj != null ? Number(f.energy_kj) : null,
+          protein100: f.protein_g != null ? Number(f.protein_g) : null,
+          carbs100: f.carbohydrate_g != null ? Number(f.carbohydrate_g) : null,
+          fibre100: f.fibre_g != null ? Number(f.fibre_g) : null,
+          score: scoreById.get(r.food_id) ?? null
+        };
+      })
+      .filter(Boolean);
+    return { foods, error: null };
+  } catch (err) { return { foods: [], error: err.message }; }
+};
+
+export const addFoodFavorite = async (foodId) => {
+  try {
+    if (!foodId) return { status: 'Error', message: 'Missing food ID.' };
+    let athleteId = null;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { data: mine } = await supabase.from('athletes').select('id').eq('user_id', user.id).maybeSingle();
+      if (mine) athleteId = mine.id;
+    }
+    if (!athleteId) return { status: 'Error', message: 'Athlete not found' };
+    const { error } = await supabase
+      .from('nutrition_favorites')
+      .upsert({ athlete_id: athleteId, food_id: foodId }, { onConflict: 'athlete_id,food_id', ignoreDuplicates: true });
+    if (error) return { status: 'Error', message: error.message };
+    return { status: 'Success' };
+  } catch (err) { return { status: 'Error', message: err.message }; }
+};
+
+export const removeFoodFavorite = async (foodId) => {
+  try {
+    if (!foodId) return { status: 'Error', message: 'Missing food ID.' };
+    // RLS (nf_delete) restricts the delete to the owning athlete.
+    const { error } = await supabase
+      .from('nutrition_favorites')
+      .delete()
+      .eq('food_id', foodId);
+    if (error) return { status: 'Error', message: error.message };
+    return { status: 'Success' };
+  } catch (err) { return { status: 'Error', message: err.message }; }
+};
+
 // Append items to today's free-form nutrition log (creates the day's row on
 // first save, merges into it afterwards). Date is the LOCAL calendar day —
 // the same ymd() fix that keeps wellness logs on the athlete's actual day.
