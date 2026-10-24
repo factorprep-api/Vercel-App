@@ -35,10 +35,12 @@ const AUSNUT_DIR = path.join(path.resolve('data'), 'ausnut', 'AUSNUT 2023 - All 
 const DATA_DIR = path.resolve('data');
 const UPSERT_CHUNK = 500;
 
-// ---- SR-Legacy nutrient_id → canonical column (per-100g) ------------
-// IMPORTANT: the FNDDS 2019-2020 FDC release stores nutrients with the
-// classic SR-Legacy 3-digit IDs (NOT the FDC 4-digit IDs). Verified against
-// nutrient.csv / food_nutrient.csv in the downloaded dataset.
+// ---- FNDDS nutrient_id → canonical column (per-100g) ----------------
+// SR-Legacy 3-digit IDs — verified empirically from the dataset
+// (food_nutrient.csv rows, e.g. fdc 2344813 "Apple cider"). Covers the
+// plan §4.1 scoring nutrients (fatty-acid profile, B vitamins,
+// phosphorus, folate TOTAL — not DFE) + informational macros. Iodine does
+// not exist in FNDDS → stays null → 0 per plan §4.4.
 const FDC_NUTRIENT_MAP = {
   208: 'energy_kj',           // Energy (kcal) — converted ×4.184 to kJ
   203: 'protein_g',
@@ -47,31 +49,44 @@ const FDC_NUTRIENT_MAP = {
   291: 'fibre_g',             // Fiber, total dietary
   204: 'fat_total_g',
   606: 'fat_sat_g',
-  601: 'cholesterol_mg',
+  645: 'fat_mono_g',
+  646: 'fat_poly_g',
+  618: 'linoleic_g',          // ω-6
+  619: 'ala_g',               // ω-3 ALA
+  404: 'thiamin_mg',
+  405: 'riboflavin_mg',
+  406: 'niacin_mg',
   301: 'calcium_mg',
   303: 'iron_mg',
   304: 'magnesium_mg',
+  305: 'phosphorus_mg',
   306: 'potassium_mg',
   307: 'sodium_mg',
   309: 'zinc_mg',
-  320: 'vitamin_a_ug_rae',    // Vitamin A, RAE
+  320: 'vitamin_a_ug_rae',    // informational (§4.1 excludes vit A)
   401: 'vitamin_c_mg',
+  323: 'vitamin_e_mg',
   328: 'vitamin_d_ug',
-  323: 'vitamin_e_mg',        // alpha-tocopherol
-  435: 'folate_ug',           // Folate, DFE
+  417: 'folate_total_ug',     // §4.1: folate TOTAL, not DFE
+  435: 'folate_ug',           // informational DFE
+  601: 'cholesterol_mg',
 };
 
-// ---- Validation gates (plan §4.2 worked examples) -------------------
-// Each gate: find the first food row whose description matches `match`,
-// assert `field` equals `expected` within `tol`. Import ABORTS on failure.
-// The §4.2 examples were computed from an older dataset version; AUSNUT 2023
-// uses integer kJ values. Gates are calibrated to the actual AUSNUT 2023
-// values (verified from the fresh download) and FNDDS values, scoped with
-// `src` so each dataset only runs its own gates.
+// ---- Validation gates ------------------------------------------------
+// FNDDS: energy spot-check (verified from the dataset). AUSNUT: the plan
+// §4.2 worked examples are raw19 SUMS (cider ≈121.46, blackcurrant
+// ≈639.67) from the product owner's spreadsheet. AUSNUT 2023 values may
+// differ (dataset vintage) — per the plan, drift is REPORTED, never
+// silently recalibrated; gate values get locked after product review.
+const RAW19_KEYS = ['fat_sat_g','fat_mono_g','fat_poly_g','linoleic_g','ala_g',
+  'thiamin_mg','riboflavin_mg','niacin_mg','vitamin_c_mg','vitamin_e_mg',
+  'folate_total_ug','vitamin_d_ug','calcium_mg','iron_mg','magnesium_mg',
+  'phosphorus_mg','potassium_mg','zinc_mg','iodine_ug'];
+const raw19 = (row) => RAW19_KEYS.reduce((s, k) => s + (row.nutrient[k] ?? 0), 0);
 const GATES = [
-  { name: 'apple-cider', match: /^Apple cider$/,                      field: 'energy_kj', expected: 192.46, tol: 0.5, src: 'FNDDS' },
-  { name: 'cider',       match: /^Cider, apple, alcoholic$/,          field: 'energy_kj', expected: 209,    tol: 0.5, src: 'AUSNUT' },
-  { name: 'blackcurrant',match: /^Cordial base, blackcurrant juice$/, field: 'energy_kj', expected: 731,    tol: 0.5, src: 'AUSNUT' },
+  { name: 'apple-cider-energy', match: /^Apple cider$/, field: 'energy_kj', expected: 192.46, tol: 0.5, src: 'FNDDS' },
+  { name: 'cider-raw19',        match: /cider/i,       raw19: true, expected: 121.46, src: 'AUSNUT' },
+  { name: 'blackcurrant-raw19', match: /blackcurrant/i, raw19: true, expected: 639.67, src: 'AUSNUT' },
 ];
 
 // ---- Minimal RFC4180 CSV parser (quotes, embedded commas/newlines) --
@@ -266,13 +281,22 @@ function probeAusnut() {
 // 19 Calcium | 21 Iron | 22 Magnesium | 24 Potassium | 26 Sodium | 27 Zinc
 // 31 Vitamin A retinol equivalents | 42 Vitamin C | 47 Vitamin D3 eq
 // 49 Vitamin E | 40 Dietary folate equivalents | 61 Cholesterol
+// AUSNUT profile sheet columns (verified from header dump); §4.1 wording
+// matched: niacin EQUIVALENTS (35), folate TOTAL not DFE (39), vitamin D
+// equivalents (47). folate_ug (40) = informational DFE.
 const AUSNUT_COL = {
   surveyId: 1, foodKey: 2, foodName: 4,
   energy_kj: 5, protein_g: 8, fat_total_g: 9, carbohydrate_g: 10,
-  sugars_g: 13, fibre_g: 16, calcium_mg: 19, iron_mg: 21,
-  magnesium_mg: 22, potassium_mg: 24, sodium_mg: 26, zinc_mg: 27,
-  vitamin_a_ug_rae: 31, vitamin_c_mg: 42, vitamin_d_ug: 47,
-  vitamin_e_mg: 49, folate_ug: 40, cholesterol_mg: 61,
+  sugars_g: 13, fibre_g: 16,
+  calcium_mg: 19, iodine_ug: 20, iron_mg: 21, magnesium_mg: 22,
+  phosphorus_mg: 23, potassium_mg: 24, sodium_mg: 26, zinc_mg: 27,
+  vitamin_a_ug_rae: 31, thiamin_mg: 32, riboflavin_mg: 33,
+  niacin_mg: 35,           // §4.1: niacin EQUIVALENTS
+  folate_total_ug: 39,     // §4.1: folate TOTAL, not DFE (40)
+  vitamin_c_mg: 42, vitamin_d_ug: 47, vitamin_e_mg: 49,
+  fat_sat_g: 50, fat_mono_g: 51, linoleic_g: 52, ala_g: 53,
+  fat_poly_g: 57, cholesterol_mg: 61,
+  folate_ug: 40,           // informational DFE
 };
 
 function loadAusnut(dir) {
@@ -339,16 +363,29 @@ function runGates(payload, source) {
   let failed = 0;
   for (const g of GATES) {
     if (g.src && source && g.src !== source) continue; // gate scoped to a dataset
-    const hit = payload.find(r => g.match.test(r.description));
-    if (!hit) {
+    const hits = payload.filter(r => g.match.test(r.description));
+    if (hits.length === 0) {
       console.error(`[gate:FAIL] ${g.name}: no food description matched ${g.match}`);
       failed++;
       continue;
     }
-    const v = hit.nutrient[g.field]; // nutrients are nested under .nutrient
-    const ok = v != null && Math.abs(v - g.expected) <= g.tol;
-    console.log(`[gate:${ok ? 'PASS' : 'FAIL'}] ${g.name} → ${g.field}=${v} (expected ${g.expected} ±${g.tol})`);
-    if (!ok) failed++;
+    if (g.raw19) {
+      // §4.2 raw-sum worked examples — report mode: print every match with
+      // drift vs the plan's reference; hard-fail only if a value is absurd.
+      console.log(`[gate] ${g.name}: raw19 vs plan §4.2 reference ${g.expected} (report mode):`);
+      for (const h of hits.slice(0, 6)) {
+        const v = raw19(h);
+        const drift = v - g.expected;
+        console.log(`   ${h.description.slice(0, 52).padEnd(54)} raw19=${v.toFixed(2).padStart(8)}  drift ${drift >= 0 ? '+' : ''}${drift.toFixed(2)}`);
+        if (!Number.isFinite(v) || v < 0 || v > 5000) failed++;
+      }
+    } else {
+      const hit = hits[0];
+      const v = hit.nutrient[g.field]; // nutrients are nested under .nutrient
+      const ok = v != null && Math.abs(v - g.expected) <= g.tol;
+      console.log(`[gate:${ok ? 'PASS' : 'FAIL'}] ${g.name} → ${g.field}=${v} (expected ${g.expected} ±${g.tol})`);
+      if (!ok) failed++;
+    }
   }
   return failed;
 }

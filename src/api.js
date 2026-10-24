@@ -357,12 +357,12 @@ export const deleteCycleLog = async (id) => {
 export const fetchFoodDatabase = async () => {
   try {
     const [foodsRes, scoresRes] = await Promise.all([
-      supabase.from('foods').select('id, source, description, category, portion_label, portion_grams, energy_kj, protein_g, carbohydrate_g, fibre_g').order('description', { ascending: true }),
-      supabase.from('v_food_scores').select('id, score')
+      supabase.from('foods').select('id, source, description, category, portion_label, portion_grams, energy_kj, protein_g, carbohydrate_g, fat_total_g, fibre_g').order('description', { ascending: true }),
+      supabase.from('v_food_scores').select('id, percentile_score')
     ]);
     if (foodsRes.error) return { foods: [], error: foodsRes.error.message };
     if (scoresRes.error) return { foods: [], error: scoresRes.error.message };
-    const scoreById = new Map((scoresRes.data || []).map(s => [s.id, s.score]));
+    const scoreById = new Map((scoresRes.data || []).map(s => [s.id, s.percentile_score]));
     const foods = (foodsRes.data || []).map(f => ({
       id: f.id,
       description: f.description,
@@ -373,6 +373,7 @@ export const fetchFoodDatabase = async () => {
       kj100: f.energy_kj != null ? Number(f.energy_kj) : null,
       protein100: f.protein_g != null ? Number(f.protein_g) : null,
       carbs100: f.carbohydrate_g != null ? Number(f.carbohydrate_g) : null,
+      fat100: f.fat_total_g != null ? Number(f.fat_total_g) : null,
       fibre100: f.fibre_g != null ? Number(f.fibre_g) : null,
       score: scoreById.get(f.id) ?? null
     }));
@@ -398,9 +399,9 @@ export const fetchFoodFavorites = async () => {
     if (ids.length > 0) {
       const { data: scores, error: sErr } = await supabase
         .from('v_food_scores')
-        .select('id, score')
+        .select('id, percentile_score')
         .in('id', ids);
-      if (!sErr) (scores || []).forEach(s => scoreById.set(s.id, s.score));
+      if (!sErr) (scores || []).forEach(s => scoreById.set(s.id, s.percentile_score));
     }
     const foods = rows
       .map(r => {

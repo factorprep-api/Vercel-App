@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Search, Utensils, CheckCircle, Trash2, Flame, Beef, Wheat, Leaf, Loader2, Star } from 'lucide-react';
+import { ArrowLeft, Search, Utensils, CheckCircle, Trash2, Flame, Beef, Wheat, Droplet, Loader2, Star } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
 import { fetchFoodDatabase, fetchFoodFavorites, addFoodFavorite, removeFoodFavorite, saveNutritionLog, fetchNutritionLogs, updateNutritionItems } from '../api';
@@ -243,6 +243,7 @@ export default function AthleteNutrition() {
       kj100: selected.kj100,
       protein100: selected.protein100,
       carbs100: selected.carbs100,
+      fat100: selected.fat100,
       fibre100: selected.fibre100,
       score: selected.score
     };
@@ -276,9 +277,10 @@ export default function AthleteNutrition() {
     acc.kj += (Number(it.kj100) || 0) * g / 100;
     acc.protein += (Number(it.protein100) || 0) * g / 100;
     acc.carbs += (Number(it.carbs100) || 0) * g / 100;
+    acc.fat += (Number(it.fat100) || 0) * g / 100;
     acc.fibre += (Number(it.fibre100) || 0) * g / 100;
     return acc;
-  }, { kj: 0, protein: 0, carbs: 0, fibre: 0 });
+  }, { kj: 0, protein: 0, carbs: 0, fat: 0, fibre: 0 });
 
   const fmt = (v) => v > 0 ? (v < 10 ? v.toFixed(1) : Math.round(v)) : '—';
 
@@ -358,8 +360,8 @@ export default function AthleteNutrition() {
             <div className="an-total-label"><Wheat size={11} color="#f59e0b" /> carbs g</div>
           </div>
           <div className="an-total-box">
-            <div className="an-total-value">{fmt(totals.fibre)}</div>
-            <div className="an-total-label"><Leaf size={11} color="#10b981" /> fibre g</div>
+            <div className="an-total-value">{fmt(totals.fat)}</div>
+            <div className="an-total-label"><Droplet size={11} color="#f59e0b" /> fat g</div>
           </div>
         </div>
       </div>

@@ -34,7 +34,12 @@ create table if not exists public.foods (
   category text,                           -- WWEIA food category (FNDDS) or AUSNUT survey group
   portion_label text,                      -- default portion descriptor, e.g. '1 medium apple'
   portion_grams numeric,                   -- default portion weight in grams
-  -- per-100g nutrient values (19 scored nutrients)
+  -- per-100g nutrient values. The density score (v_food_scores) scores 17
+  -- axes: the 14 vitamins/minerals from plan §4.1 + 3 fatty-acid QUALITY
+  -- axes (saturated share of fat, ALA ω-3, ω-6:ω-3 balance). Macronutrients
+  -- (kJ, protein, carbs, sugars, fibre, total fat, cholesterol) and vitamin A
+  -- are informational — they display in the app's totals bar; quality
+  -- (processing level) is the quality tier's domain, not the score's.
   energy_kj numeric,
   protein_g numeric,
   carbohydrate_g numeric,
@@ -53,7 +58,19 @@ create table if not exists public.foods (
   vitamin_c_mg numeric,
   vitamin_d_ug numeric,
   vitamin_e_mg numeric,
-  folate_ug numeric,
+  folate_ug numeric,                       -- DFE (informational)
+  -- plan §4.1 scoring nutrients (v1.8.2): fatty-acid profile + B vitamins
+  -- + phosphorus + iodine + folate TOTAL (not DFE)
+  fat_mono_g numeric,
+  fat_poly_g numeric,
+  linoleic_g numeric,
+  ala_g numeric,
+  thiamin_mg numeric,
+  riboflavin_mg numeric,
+  niacin_mg numeric,
+  phosphorus_mg numeric,
+  iodine_ug numeric,
+  folate_total_ug numeric,
   created_at timestamptz not null default now(),
   unique (source, source_code)
 );
@@ -128,52 +145,86 @@ create policy nl_update on public.nutrition_logs for update
   with check (athlete_id = current_athlete_id());
 
 -- ============ 6. FOOD SCORES (materialized view — reference data only) ============
--- Directional percentile per nutrient (0–100, higher = better). The four
--- "limit" nutrients (sugars, sat fat, sodium, cholesterol) are inverted so a
--- high score ALWAYS means nutritionally better. Final score = mean of the
--- 19 directional percentiles, rounded to 2dp.
--- Missing nutrients are treated as zero (plan §4.4): 'desc nulls last' ranks
--- them worst for good nutrients; 'asc nulls first' ranks them best for the
--- inverted ones (zero sugar/sodium IS the best case).
+-- TWO scores per food, both pure functions of stored data (plan §4.6):
+--
+--   percentile_score (primary, 0–100) — 17 directional axes. The 14
+--     vitamins/minerals from §4.1 (ranked DESC nulls last: rank 1 = highest
+--     value) plus 3 fatty-acid QUALITY axes. Fat AMOUNT never scores:
+--       * satShare = saturated ÷ total fat, lower = better; foods with
+--         < 1 g/100 g total fat are NEUTRAL (50) — fat quality, not quantity
+--       * ala_g    = ω-3 amount, higher = better
+--       * w63      = ω-6 ÷ ω-3 balance, lower = better; ω-6 present with
+--         no ω-3 = worst; neither present = neutral (50)
+--     Contribution per axis = (100 − r) where r = 100·rank/N: best earns
+--     100, worst earns 0, missing ranks worst (§4.4). Score = mean, 2dp.
+--     A high score ALWAYS means nutritionally better.
+--
+--   raw_score (§4.2 legacy) — plain sum of the plan's 19 nutrient values
+--     per 100 g in native units. The §4.2 worked examples (cider ≈121.46,
+--     blackcurrant ≈639.67) validate the ETL against this.
+--
 -- NO athlete data touches this view, so the RLS bypass of a materialized
 -- view is safe. NEVER add athlete rollups here.
 drop materialized view if exists public.v_food_scores;
 create materialized view public.v_food_scores as
-with ranked as (
-  select f.id, f.source, f.description, f.category,
-    100.0 * rank() over (order by f.protein_g desc nulls last) / count(*) over ()       as r_protein,
-    100.0 * rank() over (order by f.carbohydrate_g desc nulls last) / count(*) over ()  as r_carb,
-    100.0 * rank() over (order by f.fibre_g desc nulls last) / count(*) over ()         as r_fibre,
-    100.0 * rank() over (order by f.fat_total_g desc nulls last) / count(*) over ()     as r_fat,
-    100.0 * rank() over (order by f.energy_kj desc nulls last) / count(*) over ()       as r_energy,
-    100.0 * rank() over (order by f.calcium_mg desc nulls last) / count(*) over ()      as r_calcium,
-    100.0 * rank() over (order by f.iron_mg desc nulls last) / count(*) over ()         as r_iron,
-    100.0 * rank() over (order by f.magnesium_mg desc nulls last) / count(*) over ()    as r_magnesium,
-    100.0 * rank() over (order by f.potassium_mg desc nulls last) / count(*) over ()    as r_potassium,
-    100.0 * rank() over (order by f.zinc_mg desc nulls last) / count(*) over ()         as r_zinc,
-    100.0 * rank() over (order by f.vitamin_a_ug_rae desc nulls last) / count(*) over () as r_vit_a,
-    100.0 * rank() over (order by f.vitamin_c_mg desc nulls last) / count(*) over ()    as r_vit_c,
-    100.0 * rank() over (order by f.vitamin_d_ug desc nulls last) / count(*) over ()    as r_vit_d,
-    100.0 * rank() over (order by f.vitamin_e_mg desc nulls last) / count(*) over ()    as r_vit_e,
-    100.0 * rank() over (order by f.folate_ug desc nulls last) / count(*) over ()       as r_folate,
-    100.0 * rank() over (order by f.sugars_g asc nulls first) / count(*) over ()        as r_sugars,
-    100.0 * rank() over (order by f.fat_sat_g asc nulls first) / count(*) over ()       as r_sat,
-    100.0 * rank() over (order by f.sodium_mg asc nulls first) / count(*) over ()       as r_sodium,
-    100.0 * rank() over (order by f.cholesterol_mg asc nulls first) / count(*) over ()  as r_chol
+with base as (
+  select f.*,
+    case when f.fat_total_g >= 1
+         then coalesce(f.fat_sat_g, 0) / nullif(f.fat_total_g, 0) end  as sat_share,
+    case when coalesce(f.ala_g, 0) > 0
+         then coalesce(f.linoleic_g, 0) / f.ala_g
+         when coalesce(f.linoleic_g, 0) > 0 then 1000000000
+    end as w63
   from public.foods f
+),
+ranked as (
+  select b.*,
+    100.0 * rank() over (order by b.thiamin_mg desc nulls last) / count(*) over ()        as r_thiamin,
+    100.0 * rank() over (order by b.riboflavin_mg desc nulls last) / count(*) over ()     as r_ribo,
+    100.0 * rank() over (order by b.niacin_mg desc nulls last) / count(*) over ()         as r_niacin,
+    100.0 * rank() over (order by b.vitamin_c_mg desc nulls last) / count(*) over ()      as r_vit_c,
+    100.0 * rank() over (order by b.vitamin_e_mg desc nulls last) / count(*) over ()      as r_vit_e,
+    100.0 * rank() over (order by b.folate_total_ug desc nulls last) / count(*) over ()   as r_folate,
+    100.0 * rank() over (order by b.vitamin_d_ug desc nulls last) / count(*) over ()      as r_vit_d,
+    100.0 * rank() over (order by b.calcium_mg desc nulls last) / count(*) over ()        as r_calcium,
+    100.0 * rank() over (order by b.iron_mg desc nulls last) / count(*) over ()           as r_iron,
+    100.0 * rank() over (order by b.magnesium_mg desc nulls last) / count(*) over ()      as r_magnesium,
+    100.0 * rank() over (order by b.phosphorus_mg desc nulls last) / count(*) over ()     as r_phos,
+    100.0 * rank() over (order by b.potassium_mg desc nulls last) / count(*) over ()      as r_potassium,
+    100.0 * rank() over (order by b.zinc_mg desc nulls last) / count(*) over ()           as r_zinc,
+    100.0 * rank() over (order by b.iodine_ug desc nulls last) / count(*) over ()         as r_iodine,
+    100.0 * rank() over (order by b.ala_g desc nulls last) / count(*) over ()             as r_ala,
+    100.0 * rank() over (order by b.sat_share asc nulls last) / count(*) over ()          as r_satshare,
+    100.0 * rank() over (order by b.w63 asc nulls last) / count(*) over ()                as r_w63
+  from base b
 )
 select id, source, description, category,
   round((
-    coalesce(r_protein,50) + coalesce(r_carb,50) + coalesce(r_fibre,50) + coalesce(r_fat,50)
-    + coalesce(r_energy,50) + coalesce(r_calcium,50) + coalesce(r_iron,50) + coalesce(r_magnesium,50)
-    + coalesce(r_potassium,50) + coalesce(r_zinc,50) + coalesce(r_vit_a,50) + coalesce(r_vit_c,50)
-    + coalesce(r_vit_d,50) + coalesce(r_vit_e,50) + coalesce(r_folate,50)
-    + (100 - coalesce(r_sugars,50)) + (100 - coalesce(r_sat,50)) + (100 - coalesce(r_sodium,50))
-    + (100 - coalesce(r_chol,50))
-  ) / 19.0, 2) as score
+    -- 14 vitamins/minerals (§4.1): rank 1 = highest value → (100 - r) = 100
+    (100 - coalesce(r_thiamin,50)) + (100 - coalesce(r_ribo,50)) + (100 - coalesce(r_niacin,50))
+    + (100 - coalesce(r_vit_c,50)) + (100 - coalesce(r_vit_e,50)) + (100 - coalesce(r_folate,50))
+    + (100 - coalesce(r_vit_d,50)) + (100 - coalesce(r_calcium,50)) + (100 - coalesce(r_iron,50))
+    + (100 - coalesce(r_magnesium,50)) + (100 - coalesce(r_phos,50)) + (100 - coalesce(r_potassium,50))
+    + (100 - coalesce(r_zinc,50)) + (100 - coalesce(r_iodine,50))
+    -- 3 fatty-acid QUALITY axes (fat amount never scores)
+    + (100 - coalesce(r_ala,50))
+    + case when sat_share is null then 50 else (100 - coalesce(r_satshare,50)) end
+    + case when w63 is null then 50 else (100 - coalesce(r_w63,50)) end
+  ) / 17.0, 2) as percentile_score,
+  -- §4.2 legacy raw score: the plan's 19 values in native units
+  round(
+    coalesce(fat_sat_g,0) + coalesce(fat_mono_g,0) + coalesce(fat_poly_g,0)
+    + coalesce(linoleic_g,0) + coalesce(ala_g,0)
+    + coalesce(thiamin_mg,0) + coalesce(riboflavin_mg,0) + coalesce(niacin_mg,0)
+    + coalesce(vitamin_c_mg,0) + coalesce(vitamin_e_mg,0)
+    + coalesce(folate_total_ug,0) + coalesce(vitamin_d_ug,0)
+    + coalesce(calcium_mg,0) + coalesce(iron_mg,0) + coalesce(magnesium_mg,0)
+    + coalesce(phosphorus_mg,0) + coalesce(potassium_mg,0) + coalesce(zinc_mg,0)
+    + coalesce(iodine_ug,0)
+  , 2) as raw_score
 from ranked;
 
-create index if not exists idx_fs_score on public.v_food_scores(score desc);
+create index if not exists idx_fs_score on public.v_food_scores(percentile_score desc);
 grant select on public.v_food_scores to authenticated;
 
 -- The ETL script calls this via rpc after every successful import.
