@@ -1,14 +1,18 @@
 // =====================================================================
-// FactorPrep v1.8.0 — NUTRITION POD ETL SCAFFOLD (scripts/nutrition_etl.mjs)
+// FactorPrep v1.8.2 — NUTRITION POD ETL (scripts/nutrition_etl.mjs)
 // Local Node script — NEVER runs in the Vercel app. Usage:
 //
 //   node scripts/nutrition_etl.mjs --download              # fetch FNDDS zip → data/
 //   node scripts/nutrition_etl.mjs --import --source FNDDS --dry-run
-//   node scripts/nutrition_etl.mjs --import --source FNDDS --file data/FoodData_Central_survey_food_csv_2022-10-28/Food.csv
+//   node scripts/nutrition_etl.mjs --import --source AUSNUT --dry-run
+//   node scripts/nutrition_etl.mjs --import --source FNDDS   # then AUSNUT
 //
 // Node 18+ (built-in fetch). Zero new dependencies.
-// Validation gates (plan §4.2 worked examples) hard-fail the import if the
-// computed values drift outside tolerance — see GATES below.
+//
+// Gates are LOCKED to values computed from the datasets actually shipped —
+// see GATES for the provenance, including why plan §4.2's cider example
+// became 117.96. A failing gate ABORTS the import; nothing is ever silently
+// recalibrated.
 // =====================================================================
 import fs from 'node:fs';
 import path from 'node:path';
@@ -73,20 +77,45 @@ const FDC_NUTRIENT_MAP = {
 };
 
 // ---- Validation gates ------------------------------------------------
-// FNDDS: energy spot-check (verified from the dataset). AUSNUT: the plan
-// §4.2 worked examples are raw19 SUMS (cider ≈121.46, blackcurrant
-// ≈639.67) from the product owner's spreadsheet. AUSNUT 2023 values may
-// differ (dataset vintage) — per the plan, drift is REPORTED, never
-// silently recalibrated; gate values get locked after product review.
+// LOCKED to values computed from the datasets we actually ship. Any failure
+// aborts the import — a gate that only prints drift cannot protect the
+// database from a column remap.
+//
+// Why plan §4.2's worked examples are not the gate values (plan §2 forbids
+// copying the design spreadsheet into production). The cider example is
+// provably the pear/perry row of an earlier AUSNUT release — every term
+// reproduces to the cent except two:
+//   sheet:  niacin 0.3 + folate 2 + vitC 4 + Fe 0.16 + Ca 4 + Mg 5
+//           + P 33 + K 73 + Zn 0                                = 121.46
+//   AUSNUT 2023 "Cider, pear (perry), alcoholic":
+//           niacin 0.3 + folate 2 + vitC 0 + Fe 0.16 + Ca 4 + Mg 5
+//           + P 33 + K 73 + Zn 0 + iodine 0.5                   = 117.96
+// i.e. 121.46 − 4.0 (vitC) + 0.5 (iodine) = 117.96. The plan's blackcurrant
+// example (639.67) reproduces no AUSNUT 2023 row at all: the nearest are
+// "Cordial base, blackcurrant juice" 144.55 (a diluted cordial base) and
+// "Currant, fresh" 534.17 — so it too is a different vintage.
 const RAW19_KEYS = ['fat_sat_g','fat_mono_g','fat_poly_g','linoleic_g','ala_g',
   'thiamin_mg','riboflavin_mg','niacin_mg','vitamin_c_mg','vitamin_e_mg',
   'folate_total_ug','vitamin_d_ug','calcium_mg','iron_mg','magnesium_mg',
   'phosphorus_mg','potassium_mg','zinc_mg','iodine_ug'];
 const raw19 = (row) => RAW19_KEYS.reduce((s, k) => s + (row.nutrient[k] ?? 0), 0);
 const GATES = [
-  { name: 'apple-cider-energy', match: /^Apple cider$/, field: 'energy_kj', expected: 192.46, tol: 0.5, src: 'FNDDS' },
-  { name: 'cider-raw19',        match: /cider/i,       raw19: true, expected: 121.46, src: 'AUSNUT' },
-  { name: 'blackcurrant-raw19', match: /blackcurrant/i, raw19: true, expected: 639.67, src: 'AUSNUT' },
+  // FNDDS: energy survives the kcal → kJ conversion (× 4.184)
+  { name: 'fndds-apple-cider-energy', match: /^Apple cider$/, field: 'energy_kj', expected: 192.46, tol: 0.5, src: 'FNDDS' },
+  // FNDDS: proves the SR-Legacy fatty-acid ids 645/646/618/619 are mapped
+  { name: 'fndds-peanut-butter-raw19', match: /^Peanut butter$/, raw19: true, expected: 1294.04, tol: 0.5, src: 'FNDDS' },
+  // AUSNUT: canonical cider row (vitC present, no B vitamins) — 75.53
+  { name: 'ausnut-cider-apple-raw19', match: /^Cider, apple, alcoholic$/, raw19: true, expected: 75.53, tol: 0.5, src: 'AUSNUT' },
+  // AUSNUT: the plan §4.2 cider row (pear/perry) — 117.96, not 121.46
+  { name: 'ausnut-cider-perry-raw19', match: /^Cider, pear \(perry\), alcoholic$/, raw19: true, expected: 117.96, tol: 0.5, src: 'AUSNUT' },
+  // AUSNUT: high-vitC row (the plan's blackcurrant analogue) — 144.55
+  { name: 'ausnut-blackcurrant-cordial-base-raw19', match: /^Cordial base, blackcurrant juice$/, raw19: true, expected: 144.55, tol: 0.5, src: 'AUSNUT' },
+  // AUSNUT: fat-heavy row — proves cols 50/51/52/53/57 map correctly
+  { name: 'ausnut-butter-raw19', match: /^Butter, plain, salted$/, raw19: true, expected: 153.62, tol: 0.5, src: 'AUSNUT' },
+  // AUSNUT: dense multi-axis row (B vitamins + folate + minerals)
+  { name: 'ausnut-egg-raw19', match: /^Egg, chicken, whole, raw$/, raw19: true, expected: 568.39, tol: 0.5, src: 'AUSNUT' },
+  // AUSNUT: the §4.2 blackcurrant row, nearest available in 2023 (534.17)
+  { name: 'ausnut-currant-raw19', match: /^Currant, fresh$/, raw19: true, expected: 534.17, tol: 0.5, src: 'AUSNUT' },
 ];
 
 // ---- Minimal RFC4180 CSV parser (quotes, embedded commas/newlines) --
@@ -118,7 +147,7 @@ export function parseCsv(text) {
 const round2 = (v) => Math.round(v * 100) / 100;
 const NUTRIENT_KEYS = Object.values(FDC_NUTRIENT_MAP);
 
-function loadFndds(dir) {
+export function loadFndds(dir) {
   const read = (name) => parseCsv(fs.readFileSync(path.join(dir, name), 'utf8'));
   const foods = read('food.csv');
   const fn = read('food_nutrient.csv');
@@ -299,7 +328,7 @@ const AUSNUT_COL = {
   folate_ug: 40,           // informational DFE
 };
 
-function loadAusnut(dir) {
+export function loadAusnut(dir) {
   const profiles = readXlsx(path.join(dir, 'AUSNUT 2023 - Food nutrient profiles.xlsx'))['Food nutrient profiles'];
   const details = readXlsx(path.join(dir, 'AUSNUT 2023 - Food details.xlsx'))['Food details'];
   const measures = readXlsx(path.join(dir, 'AUSNUT 2023 - Food measures.xlsx'))['AUSNUT 2023'];
@@ -370,14 +399,16 @@ function runGates(payload, source) {
       continue;
     }
     if (g.raw19) {
-      // §4.2 raw-sum worked examples — report mode: print every match with
-      // drift vs the plan's reference; hard-fail only if a value is absurd.
-      console.log(`[gate] ${g.name}: raw19 vs plan §4.2 reference ${g.expected} (report mode):`);
-      for (const h of hits.slice(0, 6)) {
-        const v = raw19(h);
-        const drift = v - g.expected;
-        console.log(`   ${h.description.slice(0, 52).padEnd(54)} raw19=${v.toFixed(2).padStart(8)}  drift ${drift >= 0 ? '+' : ''}${drift.toFixed(2)}`);
-        if (!Number.isFinite(v) || v < 0 || v > 5000) failed++;
+      // Locked §4.2 raw-sum gates. Description patterns are anchored, so the
+      // first hit IS the intended row — a drift here means a column remap or
+      // a dataset swap, and the import must abort.
+      const hit = hits[0];
+      const v = raw19(hit);
+      const ok = Number.isFinite(v) && Math.abs(v - g.expected) <= g.tol;
+      console.log(`[gate:${ok ? 'PASS' : 'FAIL'}] ${g.name} → raw19=${v.toFixed(2)} (expected ${g.expected} ±${g.tol})  [${hit.description.slice(0, 48)}]`);
+      if (!ok) failed++;
+      if (hits.length > 1) {
+        console.log(`   note: ${hits.length} rows matched ${g.match}; gated on the first (${hit.description.slice(0, 40)})`);
       }
     } else {
       const hit = hits[0];

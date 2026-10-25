@@ -338,15 +338,18 @@ export const deleteCycleLog = async (id) => {
 };
 
 // ==========================================
-// NUTRITION POD PIPES (v1.8.0)
+// NUTRITION POD PIPES (v1.8.2)
 // ==========================================
 // foods / v_food_scores are REFERENCE data (9,365 FNDDS + AUSNUT foods,
-// scored by percentile rank of 19 nutrients — see scripts/nutrition_etl.mjs).
+// scored over 17 directional nutrient axes — see scripts/nutrition_etl.mjs
+// and scripts/simulate_scores.mjs).
 // nutrition_logs stores items DENORMALIZED: each item carries the per-100g
 // nutrient values + score captured at log time, so athlete/coach views
 // compute daily totals client-side with zero joins (per plan §3).
 // Item shape: { food_id, grams, name, portionLabel, kj100, protein100,
-//               carbs100, fibre100, score }
+//               carbs100, fat100, fibre100, percentileScore, scoreAxes }
+// raw_score is deliberately NOT in the client payload (view-only, for
+// debug_scores.mjs): it is an audit/continuity figure, not a ranking.
 // ==========================================
 
 // Full food database for client-side search — the exercise-library pattern:
@@ -358,11 +361,11 @@ export const fetchFoodDatabase = async () => {
   try {
     const [foodsRes, scoresRes] = await Promise.all([
       supabase.from('foods').select('id, source, description, category, portion_label, portion_grams, energy_kj, protein_g, carbohydrate_g, fat_total_g, fibre_g').order('description', { ascending: true }),
-      supabase.from('v_food_scores').select('id, percentile_score')
+      supabase.from('v_food_scores').select('id, percentile_score, score_axes')
     ]);
     if (foodsRes.error) return { foods: [], error: foodsRes.error.message };
     if (scoresRes.error) return { foods: [], error: scoresRes.error.message };
-    const scoreById = new Map((scoresRes.data || []).map(s => [s.id, s.percentile_score]));
+    const scoreById = new Map((scoresRes.data || []).map(s => [s.id, s]));
     const foods = (foodsRes.data || []).map(f => ({
       id: f.id,
       description: f.description,
@@ -375,7 +378,8 @@ export const fetchFoodDatabase = async () => {
       carbs100: f.carbohydrate_g != null ? Number(f.carbohydrate_g) : null,
       fat100: f.fat_total_g != null ? Number(f.fat_total_g) : null,
       fibre100: f.fibre_g != null ? Number(f.fibre_g) : null,
-      score: scoreById.get(f.id) ?? null
+      percentileScore: scoreById.get(f.id)?.percentile_score ?? null,
+      scoreAxes: scoreById.get(f.id)?.score_axes ?? null
     }));
     return { foods, error: null };
   } catch (err) { return { foods: [], error: err.message }; }
@@ -385,12 +389,14 @@ export const fetchFoodDatabase = async () => {
 // Same food shape as fetchFoodDatabase items so the page can treat them
 // identically. Scores come from v_food_scores (no FK to a materialized
 // view, so it's a second query keyed by id).
+// NOTE: fat_total_g must be in the join — without it every favourite logged
+// from a chip carried fat100: undefined, so fat totals silently under-counted.
 
 export const fetchFoodFavorites = async () => {
   try {
     const { data, error } = await supabase
       .from('nutrition_favorites')
-      .select('id, food_id, created_at, foods(description, source, category, portion_label, portion_grams, energy_kj, protein_g, carbohydrate_g, fibre_g)')
+      .select('id, food_id, created_at, foods(description, source, category, portion_label, portion_grams, energy_kj, protein_g, carbohydrate_g, fat_total_g, fibre_g)')
       .order('created_at', { ascending: false });
     if (error) return { foods: [], error: error.message };
     const rows = data || [];
@@ -399,9 +405,9 @@ export const fetchFoodFavorites = async () => {
     if (ids.length > 0) {
       const { data: scores, error: sErr } = await supabase
         .from('v_food_scores')
-        .select('id, percentile_score')
+        .select('id, percentile_score, score_axes')
         .in('id', ids);
-      if (!sErr) (scores || []).forEach(s => scoreById.set(s.id, s.percentile_score));
+      if (!sErr) (scores || []).forEach(s => scoreById.set(s.id, s));
     }
     const foods = rows
       .map(r => {
@@ -417,8 +423,10 @@ export const fetchFoodFavorites = async () => {
           kj100: f.energy_kj != null ? Number(f.energy_kj) : null,
           protein100: f.protein_g != null ? Number(f.protein_g) : null,
           carbs100: f.carbohydrate_g != null ? Number(f.carbohydrate_g) : null,
+          fat100: f.fat_total_g != null ? Number(f.fat_total_g) : null,
           fibre100: f.fibre_g != null ? Number(f.fibre_g) : null,
-          score: scoreById.get(r.food_id) ?? null
+          percentileScore: scoreById.get(r.food_id)?.percentile_score ?? null,
+          scoreAxes: scoreById.get(r.food_id)?.score_axes ?? null
         };
       })
       .filter(Boolean);
