@@ -3,16 +3,17 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Search, Utensils, CheckCircle, Trash2, Flame, Beef, Wheat, Droplet, Loader2, Star, Salad } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
-import { fetchFoodDatabase, fetchFoodFavorites, addFoodFavorite, removeFoodFavorite, saveNutritionLog, fetchNutritionLogs, updateNutritionItems, fetchMealArchetypes } from '../api';
+import { fetchFoodDatabase, fetchFoodFavorites, addFoodFavorite, removeFoodFavorite, saveNutritionLog, fetchNutritionLogs, updateNutritionItems, fetchMealArchetypes, fetchMealFavorites, addMealFavorite, removeMealFavorite } from '../api';
 import { ymd } from '../utils/cycleMath';
 
 // Exercise-library search pattern: full database loaded once (cached), then
 // instant client-side multi-word filtering, grouped by category, paginated.
 const ITEMS_PER_PAGE = 50;
-// v3: v2 predates density_per_kj / score_axes_kj; a stale payload would show
-// the per-kJ measure as absent until the background refetch lands.
-const FOOD_DB_CACHE_KEY = 'fp_food_database_v3';
-const LEGACY_CACHE_KEYS = ['fp_food_database_v1', 'fp_food_database_v2'];
+// v4: v3 payloads were fetched in a single capped request (PostgREST Max
+// Rows = 1,000), so they contain only the first 1,000 alphabetical rows.
+// v4 is fetched paginated and complete; any v1–v3 cache is purged.
+const FOOD_DB_CACHE_KEY = 'fp_food_database_v4';
+const LEGACY_CACHE_KEYS = ['fp_food_database_v1', 'fp_food_database_v2', 'fp_food_database_v3'];
 
 function buildGrouped(data) {
   const map = {};
@@ -108,6 +109,12 @@ export default function AthleteNutrition() {
   const [mealPortion, setMealPortion] = useState('normal');
   const [loadingMeals, setLoadingMeals] = useState(true);
   const [mealsError, setMealsError] = useState(null);
+  // v1.9.4 Quick meals personalisation: starred meal ids (newest first, from
+  // meal_favorites), 30-day usage counts to rank unstarred generics, and the
+  // "More meals" collapse toggle.
+  const [mealFavs, setMealFavs] = useState([]);
+  const [mealUsage, setMealUsage] = useState(new Map());
+  const [showMoreMeals, setShowMoreMeals] = useState(false);
 
   const [logId, setLogId] = useState(null);          // today's log row
   const [items, setItems] = useState([]);            // today's items
@@ -123,9 +130,10 @@ export default function AthleteNutrition() {
   // Load today's log row + favourites + recently logged foods (30 days).
   // Recents are derived client-side from existing logs — no extra table.
   const loadNutritionData = async () => {
-    const [logRes, favRes] = await Promise.all([
+    const [logRes, favRes, mealFavRes] = await Promise.all([
       fetchNutritionLogs(30),
-      fetchFoodFavorites().catch(() => ({ foods: [] }))
+      fetchFoodFavorites().catch(() => ({ foods: [] })),
+      fetchMealFavorites().catch(() => ({ ids: [] }))
     ]);
     if (logRes.error) { setPageError(logRes.error); return; }
     const today = ymd(new Date());
@@ -133,6 +141,18 @@ export default function AthleteNutrition() {
     setLogId(row ? row.id : null);
     setItems(row ? row.items : []);
     setFavourites(favRes.foods || []);
+    setMealFavs(mealFavRes.ids || []);
+
+    // Meal usage: how often each archetype appears in the 30-day window —
+    // ranks the unstarred generic meals in Quick meals by actual use.
+    const usage = new Map();
+    (logRes.logs || []).forEach(l => {
+      (l.items || []).forEach(it => {
+        if (!it.archetype_id) return;
+        usage.set(it.archetype_id, (usage.get(it.archetype_id) || 0) + 1);
+      });
+    });
+    setMealUsage(usage);
 
     // Recents: first sighting scanning newest-log-first = most recent use.
     // Normalised to the food shape the rest of the page expects.
@@ -197,6 +217,19 @@ export default function AthleteNutrition() {
     }
   };
 
+  // Star / unstar a meal archetype for Quick meals. Optimistic like toggleFav;
+  // a new star goes to the top of the starred block (fetchMealFavorites
+  // returns newest-first, so the optimistic array mirrors that order).
+  const toggleMealFav = async (m) => {
+    const isFav = mealFavs.includes(m.id);
+    setMealFavs(isFav ? mealFavs.filter(id => id !== m.id) : [m.id, ...mealFavs]);
+    const res = isFav ? await removeMealFavorite(m.id) : await addMealFavorite(m.id);
+    if (res.status !== 'Success') {
+      setMealFavs(isFav ? [m.id, ...mealFavs] : mealFavs.filter(id => id !== m.id));
+      setPageError(res.message || 'Could not update favourite.');
+    }
+  };
+
   // 300ms debounce — same timing as the exercise library
   useEffect(() => {
     const t = setTimeout(() => setDebouncedQuery(searchQuery), 300);
@@ -257,6 +290,83 @@ export default function AthleteNutrition() {
 
   const handleSearch = (e) => { setSearchQuery(e.target.value); setCurrentPage(1); };
   const handlePageChange = (page) => { setCurrentPage(page); };
+
+  // ---- Quick meals ordering (v1.9.4) ----
+  // Starred meals first in star order (newest star at top), then the generic
+  // archetypes ranked by 30-day usage — so meals you actually eat surface
+  // while ones you never log sink behind the "More meals" collapse.
+  const mealFavSet = useMemo(() => new Set(mealFavs), [mealFavs]);
+  const starredMeals = useMemo(
+    () => mealFavs.map(id => meals.find(m => m.id === id)).filter(Boolean),
+    [meals, mealFavs]
+  );
+  const genericMeals = useMemo(
+    () => meals
+      .filter(m => !mealFavSet.has(m.id))
+      .sort((a, b) => (mealUsage.get(b.id) || 0) - (mealUsage.get(a.id) || 0)),
+    [meals, mealFavSet, mealUsage]
+  );
+  const visibleGenericMeals = showMoreMeals ? genericMeals : genericMeals.slice(0, 3);
+
+  // Unified search (v1.9.4): matching meals render first (max 3), foods
+  // underneath — one box answers "what did I eat" whichever pool it lives in.
+  const mealMatches = useMemo(() => {
+    if (debouncedQuery.trim().length < 2) return [];
+    const tokens = debouncedQuery.toLowerCase().split(/\s+/);
+    return meals.filter(m => {
+      const hay = (m.name + ' ' + (m.mealSlots || []).join(' ')).toLowerCase();
+      return tokens.every(t => hay.includes(t));
+    }).slice(0, 3);
+  }, [meals, debouncedQuery]);
+
+  // Row renderers shared by the Quick meals card and the search results —
+  // same layout everywhere a meal or food appears, so starring is consistent.
+  const renderMealRow = (m) => {
+    const starred = mealFavSet.has(m.id);
+    const b = scoreBadge(m.percentileScore, null, m.densityPerKj);
+    return (
+      <div key={m.id} className="an-result" onClick={() => tapMeal(m)}>
+        <div style={{ minWidth: 0 }}>
+          <div className="an-result-name">{m.name}</div>
+          <div className="an-result-sub">
+            {m.mealSlots?.length > 0 ? `${m.mealSlots.map(s => s.replace(/_/g, ' ')).join(', ')} · ` : ''}
+            Normal serve{m.energyKj != null ? ` · ${Math.round(m.energyKj).toLocaleString()} kJ` : ''}{m.proteinG != null ? ` · ${m.proteinG} g protein` : ''}
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+          <button
+            className="an-fav-btn"
+            onClick={(e) => { e.stopPropagation(); toggleMealFav(m); }}
+            title={starred ? 'Remove from Quick meals' : 'Pin to Quick meals'}
+          >
+            <Star size={16} color={starred ? '#f59e0b' : '#cbd5e1'} fill={starred ? '#f59e0b' : 'none'} />
+          </button>
+          <span className="an-badge" style={{ background: b.bg, color: b.fg }} title={b.title}>Score {b.label}</span>
+        </div>
+      </div>
+    );
+  };
+
+  const renderFoodRow = (f) => (
+    <div key={f.id} className="an-result" onClick={() => tapFood(f)}>
+      <div style={{ minWidth: 0 }}>
+        <div className="an-result-name">{f.description}</div>
+        <div className="an-result-sub">
+          {f.source} · {f.portionLabel || 'per 100 g'}{f.kj100 != null ? ` · ${Math.round(f.kj100)} kJ/100g` : ''}
+        </div>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+        <button
+          className="an-fav-btn"
+          onClick={(e) => { e.stopPropagation(); toggleFav(f); }}
+          title={favIds.has(f.id) ? 'Remove from Quick meals' : 'Pin to Quick meals'}
+        >
+          <Star size={16} color={favIds.has(f.id) ? '#f59e0b' : '#cbd5e1'} fill={favIds.has(f.id) ? '#f59e0b' : 'none'} />
+        </button>
+        <span className="an-badge" style={{ background: scoreBadge(f.percentileScore, f.scoreAxes, f.densityPerKj).bg, color: scoreBadge(f.percentileScore, f.scoreAxes, f.densityPerKj).fg }} title={scoreBadge(f.percentileScore, f.scoreAxes, f.densityPerKj).title}>Score {scoreBadge(f.percentileScore, f.scoreAxes, f.densityPerKj).label}</span>
+      </div>
+    </div>
+  );
 
   const tapFood = (food) => {
     setSelected(food);
@@ -329,8 +439,12 @@ export default function AthleteNutrition() {
   };
 
   // ---- Meal path: same save pipeline as a food, different payload ----
+  // Clearing the query mirrors tapFood, so the tier/portion step replaces the
+  // result list instead of the results staying underneath it.
   const tapMeal = (m) => {
     setMeal(m);
+    setSearchQuery('');
+    setDebouncedQuery('');
     setMealTier('fresh');     // fresh = 1.00 is the reference tier (§5.2)
     setMealPortion('normal'); // normal = the base_grams serve
   };
@@ -480,95 +594,6 @@ export default function AthleteNutrition() {
         </div>
       </div>
 
-      {/* Quick meals — tap 1: meal, tap 2: tier + portion, tap 3: add */}
-      <div className="an-card">
-        {!meal ? (
-          <>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 15, color: '#334155', marginBottom: 12 }}>
-              <Salad size={16} color="#10b981" /> Quick meals
-            </div>
-            {loadingMeals && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '14px 4px', color: '#64748b', fontSize: 13 }}>
-                <Loader2 size={14} className="an-spin" /> Loading meals…
-              </div>
-            )}
-            {mealsError && <div style={{ color: '#b91c1c', fontSize: 13, padding: '10px 0' }}>Failed to load meals: {mealsError}</div>}
-            {!loadingMeals && !mealsError && meals.length === 0 && (
-              <div className="an-empty">No meals available yet.</div>
-            )}
-            {meals.map(m => {
-              const b = scoreBadge(m.percentileScore, null, m.densityPerKj);
-              return (
-                <div key={m.id} className="an-result" onClick={() => tapMeal(m)}>
-                  <div style={{ minWidth: 0 }}>
-                    <div className="an-result-name">{m.name}</div>
-                    <div className="an-result-sub">
-                      {m.mealSlots?.length > 0 ? `${m.mealSlots.map(s => s.replace(/_/g, ' ')).join(', ')} · ` : ''}
-                      Normal serve{m.energyKj != null ? ` · ${Math.round(m.energyKj).toLocaleString()} kJ` : ''}{m.proteinG != null ? ` · ${m.proteinG} g protein` : ''}
-                    </div>
-                  </div>
-                  <span className="an-badge" style={{ background: b.bg, color: b.fg }} title={b.title}>Score {b.label}</span>
-                </div>
-              );
-            })}
-          </>
-        ) : (
-          <>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 15, color: '#334155', marginBottom: 8 }}>
-              <CheckCircle size={16} color="#10b981" /> {meal.name}
-            </div>
-            <div style={{ fontSize: 13, color: '#64748b', marginBottom: 12 }}>
-              Normal serve{meal.baseGrams != null ? ` · ${Math.round(meal.baseGrams)} g` : ''}{meal.energyKj != null ? ` · ${Math.round(meal.energyKj).toLocaleString()} kJ` : ''}{meal.proteinG != null ? ` · ${meal.proteinG} g protein` : ''}
-              {meal.percentileScore != null ? ` · Score ${Math.round(meal.percentileScore)}` : ''}
-              {meal.componentCount != null ? ` (${meal.scoredComponents}/${meal.componentCount} components scored)` : ''}
-            </div>
-            <div style={{ fontWeight: 600, fontSize: 13, color: '#334155', marginBottom: 8 }}>How was it prepared?</div>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
-              {mealTiers.map(t => (
-                <button
-                  key={t.tier}
-                  className={`an-chip ${mealTier === t.tier ? 'selected' : ''}`}
-                  onClick={() => setMealTier(t.tier)}
-                  title={`Score multiplier ×${t.scoreMultiplier}`}
-                >
-                  {t.badge}
-                </button>
-              ))}
-            </div>
-            <div style={{ fontWeight: 600, fontSize: 13, color: '#334155', marginBottom: 8 }}>How much?</div>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
-              {mealPortions.map(p => (
-                <button
-                  key={p.portionSize}
-                  className={`an-chip ${mealPortion === p.portionSize ? 'selected' : ''}`}
-                  onClick={() => setMealPortion(p.portionSize)}
-                  title={`Serve multiplier ×${p.multiplier}`}
-                >
-                  {cap(p.portionSize)}{meal.baseGrams != null ? ` · ${Math.round(meal.baseGrams * p.multiplier)} g` : ''}
-                </button>
-              ))}
-            </div>
-            {meal.energyKj != null && (() => {
-              const pm = mealPortions.find(p => p.portionSize === mealPortion)?.multiplier ?? 1;
-              return (
-                <div style={{ fontSize: 13, color: '#334155', fontWeight: 600, marginBottom: 12 }}>
-                  ≈ {Math.round(meal.energyKj * pm).toLocaleString()} kJ{meal.proteinG != null ? ` · ${(meal.proteinG * pm).toFixed(1)} g protein` : ''}
-                </div>
-              );
-            })()}
-            <button className="an-add-btn" onClick={tapAddMeal} disabled={saving}>
-              {saving ? 'Adding…' : justLogged ? <><CheckCircle size={16} /> Added!</> : 'Add to Log'}
-            </button>
-            <button
-              onClick={() => setMeal(null)}
-              style={{ width: '100%', marginTop: 8, background: 'none', border: 'none', color: '#64748b', fontSize: 13, cursor: 'pointer' }}
-            >
-              Pick a different meal
-            </button>
-          </>
-        )}
-      </div>
-
       {/* Add food — tap 1: search, tap 2: portion, tap 3: add */}
       <div className="an-card">
         {!selected ? (
@@ -576,39 +601,24 @@ export default function AthleteNutrition() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 15, color: '#334155', marginBottom: 12 }}>
               <Utensils size={16} color="#10b981" /> What did you eat?
             </div>
-            {(favourites.length > 0 || recents.length > 0) && (
+            {/* Recents only here — starred foods now live in Quick meals below */}
+            {recents.length > 0 && (
               <div style={{ marginBottom: 14 }}>
-                {favourites.length > 0 && (
-                  <>
-                    <div className="an-quick-title"><Star size={12} color="#f59e0b" fill="#f59e0b" /> Favourites</div>
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                      {favourites.map(f => (
-                        <button key={f.id} className="an-chip" onClick={() => tapFood(f)} title={f.description}>
-                          {f.description.length > 32 ? f.description.slice(0, 32) + '…' : f.description}
-                        </button>
-                      ))}
-                    </div>
-                  </>
-                )}
-                {recents.length > 0 && (
-                  <>
-                    <div className="an-quick-title" style={{ marginTop: favourites.length > 0 ? 10 : 0 }}>🕘 Recent</div>
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                      {recents.map(f => (
-                        <button key={f.id} className="an-chip" onClick={() => tapFood(f)} title={f.description}>
-                          {f.description.length > 32 ? f.description.slice(0, 32) + '…' : f.description}
-                        </button>
-                      ))}
-                    </div>
-                  </>
-                )}
+                <div className="an-quick-title">🕘 Recent</div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {recents.map(f => (
+                    <button key={f.id} className="an-chip" onClick={() => tapFood(f)} title={f.description}>
+                      {f.description.length > 32 ? f.description.slice(0, 32) + '…' : f.description}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
             <div className="an-search-wrapper">
               <Search className="an-search-icon" size={16} />
               <input
                 className="an-search"
-                placeholder="Search foods…"
+                placeholder="Search meals and foods…"
                 value={searchQuery}
                 onChange={handleSearch}
                 autoComplete="off"
@@ -620,8 +630,17 @@ export default function AthleteNutrition() {
               </div>
             )}
             {dbError && <div style={{ color: '#b91c1c', fontSize: 13, padding: '10px 0' }}>Failed to load foods: {dbError}</div>}
-            {!loadingDb && !dbError && pageGroups.length === 0 && (
-              <div className="an-empty">No foods matched “{searchQuery}”.</div>
+            {/* v1.9.4 unified search: matching meals first, foods underneath */}
+            {!loadingDb && !dbError && mealMatches.length > 0 && (
+              <>
+                <div className="an-cat-title" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <Salad size={11} color="#10b981" /> Meals
+                </div>
+                {mealMatches.map(renderMealRow)}
+              </>
+            )}
+            {!loadingDb && !dbError && pageGroups.length === 0 && mealMatches.length === 0 && (
+              <div className="an-empty">No meals or foods matched “{searchQuery}”.</div>
             )}
             {!loadingDb && !dbError && pageGroups.map(group => (
               <div key={group.cat}>
@@ -717,6 +736,101 @@ export default function AthleteNutrition() {
           </>
         )}
       </div>
+      {/* Quick meals — tap 1: meal, tap 2: tier + portion, tap 3: add */}
+      <div className="an-card">
+        {!meal ? (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 15, color: '#334155', marginBottom: 12 }}>
+              <Salad size={16} color="#10b981" /> Quick meals
+            </div>
+            {loadingMeals && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '14px 4px', color: '#64748b', fontSize: 13 }}>
+                <Loader2 size={14} className="an-spin" /> Loading meals…
+              </div>
+            )}
+            {mealsError && <div style={{ color: '#b91c1c', fontSize: 13, padding: '10px 0' }}>Failed to load meals: {mealsError}</div>}
+            {!loadingMeals && !mealsError && meals.length === 0 && (
+              <div className="an-empty">No meals available yet.</div>
+            )}
+            {!loadingMeals && !mealsError && meals.length > 0 && (
+              <>
+                {/* Your list: starred meals + starred foods (personal, newest first) */}
+                {starredMeals.length === 0 && favourites.length === 0 && (
+                  <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 8 }}>
+                    Star a meal or food to pin it here — your pins always come first.
+                  </div>
+                )}
+                {starredMeals.map(renderMealRow)}
+                {favourites.map(renderFoodRow)}
+                {/* Generic archetypes: usage-ranked, collapsed behind More meals */}
+                {visibleGenericMeals.map(renderMealRow)}
+                {genericMeals.length > 3 && (
+                  <div style={{ display: 'flex', justifyContent: 'center', padding: '8px 0 0' }}>
+                    <button className="an-page-btn" onClick={() => setShowMoreMeals(s => !s)}>
+                      {showMoreMeals ? 'Fewer meals' : `More meals (${genericMeals.length - 3})`}
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+          </>
+        ) : (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 15, color: '#334155', marginBottom: 8 }}>
+              <CheckCircle size={16} color="#10b981" /> {meal.name}
+            </div>
+            <div style={{ fontSize: 13, color: '#64748b', marginBottom: 12 }}>
+              Normal serve{meal.baseGrams != null ? ` · ${Math.round(meal.baseGrams)} g` : ''}{meal.energyKj != null ? ` · ${Math.round(meal.energyKj).toLocaleString()} kJ` : ''}{meal.proteinG != null ? ` · ${meal.proteinG} g protein` : ''}
+              {meal.percentileScore != null ? ` · Score ${Math.round(meal.percentileScore)}` : ''}
+              {meal.componentCount != null ? ` (${meal.scoredComponents}/${meal.componentCount} components scored)` : ''}
+            </div>
+            <div style={{ fontWeight: 600, fontSize: 13, color: '#334155', marginBottom: 8 }}>How was it prepared?</div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+              {mealTiers.map(t => (
+                <button
+                  key={t.tier}
+                  className={`an-chip ${mealTier === t.tier ? 'selected' : ''}`}
+                  onClick={() => setMealTier(t.tier)}
+                  title={`Score multiplier ×${t.scoreMultiplier}`}
+                >
+                  {t.badge}
+                </button>
+              ))}
+            </div>
+            <div style={{ fontWeight: 600, fontSize: 13, color: '#334155', marginBottom: 8 }}>How much?</div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+              {mealPortions.map(p => (
+                <button
+                  key={p.portionSize}
+                  className={`an-chip ${mealPortion === p.portionSize ? 'selected' : ''}`}
+                  onClick={() => setMealPortion(p.portionSize)}
+                  title={`Serve multiplier ×${p.multiplier}`}
+                >
+                  {cap(p.portionSize)}{meal.baseGrams != null ? ` · ${Math.round(meal.baseGrams * p.multiplier)} g` : ''}
+                </button>
+              ))}
+            </div>
+            {meal.energyKj != null && (() => {
+              const pm = mealPortions.find(p => p.portionSize === mealPortion)?.multiplier ?? 1;
+              return (
+                <div style={{ fontSize: 13, color: '#334155', fontWeight: 600, marginBottom: 12 }}>
+                  ≈ {Math.round(meal.energyKj * pm).toLocaleString()} kJ{meal.proteinG != null ? ` · ${(meal.proteinG * pm).toFixed(1)} g protein` : ''}
+                </div>
+              );
+            })()}
+            <button className="an-add-btn" onClick={tapAddMeal} disabled={saving}>
+              {saving ? 'Adding…' : justLogged ? <><CheckCircle size={16} /> Added!</> : 'Add to Log'}
+            </button>
+            <button
+              onClick={() => setMeal(null)}
+              style={{ width: '100%', marginTop: 8, background: 'none', border: 'none', color: '#64748b', fontSize: 13, cursor: 'pointer' }}
+            >
+              Pick a different meal
+            </button>
+          </>
+        )}
+      </div>
+
 
       {/* Today's log */}
       <div className="an-card">

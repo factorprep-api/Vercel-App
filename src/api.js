@@ -353,20 +353,47 @@ export const deleteCycleLog = async (id) => {
 // ==========================================
 
 // Full food database for client-side search — the exercise-library pattern:
-// load all 9,365 FNDDS + AUSNUT foods once (merged with their percentile
+// load all 9,3xx FNDDS + AUSNUT foods once (merged with their percentile
 // scores), cache in localStorage, then pages filter instantly with
 // multi-word tokens. Foods only change when the ETL re-imports, and the
 // background refetch on every page load keeps the cache self-healing.
+// v1.9.4: fetchAllPages walks both tables in 1,000-row .range() chunks.
+// PostgREST caps every response at Max Rows (1,000 live), so a single
+// select silently truncated the database to its first 1,000 alphabetical
+// rows — "Abalone … Bread, oatmeal" — and everything past it (lasagna
+// included) never reached the client. id ordering keeps the walk stable;
+// callers sort by description afterwards. A hard page stop guards against
+// a runaway loop if a where-less fetch ever misbehaves.
+
+const FOOD_DB_PAGE_SIZE = 1000; // live Supabase Max Rows
+const FOOD_DB_MAX_PAGES = 50;   // hard stop: 50 × 1,000 = 50,000 rows
+
+const fetchAllPages = async (table, select, orderCol = 'id') => {
+  const rows = [];
+  for (let page = 0; page < FOOD_DB_MAX_PAGES; page++) {
+    const from = page * FOOD_DB_PAGE_SIZE;
+    const { data, error } = await supabase
+      .from(table)
+      .select(select)
+      .order(orderCol)
+      .range(from, from + FOOD_DB_PAGE_SIZE - 1);
+    if (error) return { rows: null, error: error.message };
+    if (data) rows.push(...data);
+    if (!data || data.length < FOOD_DB_PAGE_SIZE) break; // short page = last page
+  }
+  return { rows, error: null };
+};
+
 export const fetchFoodDatabase = async () => {
   try {
     const [foodsRes, scoresRes] = await Promise.all([
-      supabase.from('foods').select('id, source, description, category, portion_label, portion_grams, energy_kj, protein_g, carbohydrate_g, fat_total_g, fibre_g').order('description', { ascending: true }),
-      supabase.from('v_food_scores').select('id, percentile_score, score_axes, density_per_kj, score_axes_kj')
+      fetchAllPages('foods', 'id, source, description, category, portion_label, portion_grams, energy_kj, protein_g, carbohydrate_g, fat_total_g, fibre_g'),
+      fetchAllPages('v_food_scores', 'id, percentile_score, score_axes, density_per_kj, score_axes_kj')
     ]);
     if (foodsRes.error) return { foods: [], error: foodsRes.error.message };
     if (scoresRes.error) return { foods: [], error: scoresRes.error.message };
-    const scoreById = new Map((scoresRes.data || []).map(s => [s.id, s]));
-    const foods = (foodsRes.data || []).map(f => ({
+    const scoreById = new Map((scoresRes.rows || []).map(s => [s.id, s]));
+    const foods = (foodsRes.rows || []).map(f => ({
       id: f.id,
       description: f.description,
       source: f.source,
@@ -382,7 +409,7 @@ export const fetchFoodDatabase = async () => {
       scoreAxes: scoreById.get(f.id)?.score_axes ?? null,
       densityPerKj: scoreById.get(f.id)?.density_per_kj ?? null,
       scoreAxesKj: scoreById.get(f.id)?.score_axes_kj ?? null
-    }));
+    })).sort((a, b) => a.description.localeCompare(b.description));
     return { foods, error: null };
   } catch (err) { return { foods: [], error: err.message }; }
 };
@@ -464,6 +491,55 @@ export const removeFoodFavorite = async (foodId) => {
       .from('nutrition_favorites')
       .delete()
       .eq('food_id', foodId);
+    if (error) return { status: 'Error', message: error.message };
+    return { status: 'Success' };
+  } catch (err) { return { status: 'Error', message: err.message }; }
+};
+
+// ---- Meal favourites (v1.9.4): starred archetypes for Quick meals ----
+// meal_favorites holds starred MEAL ARCHETYPES only; starred FOODS stay in
+// nutrition_favorites (one source of truth per kind). Ids return newest
+// star first so the Quick meals list reads most-recently-pinned at top.
+// The page merges these ids with the full archetype list from
+// fetchMealArchetypes — no join needed here.
+
+export const fetchMealFavorites = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('meal_favorites')
+      .select('archetype_id')
+      .order('created_at', { ascending: false });
+    if (error) return { ids: [], error: error.message };
+    return { ids: (data || []).map(r => r.archetype_id), error: null };
+  } catch (err) { return { ids: [], error: err.message }; }
+};
+
+export const addMealFavorite = async (archetypeId) => {
+  try {
+    if (!archetypeId) return { status: 'Error', message: 'Missing meal ID.' };
+    let athleteId = null;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { data: mine } = await supabase.from('athletes').select('id').eq('user_id', user.id).maybeSingle();
+      if (mine) athleteId = mine.id;
+    }
+    if (!athleteId) return { status: 'Error', message: 'Athlete not found' };
+    const { error } = await supabase
+      .from('meal_favorites')
+      .upsert({ athlete_id: athleteId, archetype_id: archetypeId }, { onConflict: 'athlete_id,archetype_id', ignoreDuplicates: true });
+    if (error) return { status: 'Error', message: error.message };
+    return { status: 'Success' };
+  } catch (err) { return { status: 'Error', message: err.message }; }
+};
+
+export const removeMealFavorite = async (archetypeId) => {
+  try {
+    if (!archetypeId) return { status: 'Error', message: 'Missing meal ID.' };
+    // RLS (mf_delete) restricts the delete to the owning athlete.
+    const { error } = await supabase
+      .from('meal_favorites')
+      .delete()
+      .eq('archetype_id', archetypeId);
     if (error) return { status: 'Error', message: error.message };
     return { status: 'Success' };
   } catch (err) { return { status: 'Error', message: err.message }; }
