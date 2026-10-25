@@ -9,10 +9,10 @@ import { ymd } from '../utils/cycleMath';
 // Exercise-library search pattern: full database loaded once (cached), then
 // instant client-side multi-word filtering, grouped by category, paginated.
 const ITEMS_PER_PAGE = 50;
-// v2: the v1 cache predates the percentile_score rename + score_axes, so
-// stale entries would render undefined badges. The v1 key is deleted on load.
-const FOOD_DB_CACHE_KEY = 'fp_food_database_v2';
-const LEGACY_CACHE_KEYS = ['fp_food_database_v1'];
+// v3: v2 predates density_per_kj / score_axes_kj; a stale payload would show
+// the per-kJ measure as absent until the background refetch lands.
+const FOOD_DB_CACHE_KEY = 'fp_food_database_v3';
+const LEGACY_CACHE_KEYS = ['fp_food_database_v1', 'fp_food_database_v2'];
 
 function buildGrouped(data) {
   const map = {};
@@ -67,14 +67,19 @@ function PageButtons({ currentPage, totalPages, onChange }) {
 const GRAM_PRESETS = [50, 100, 150, 200, 250];
 
 // Score badge colors: higher percentile rank = more nutrient-dense.
-// 'axes' is how many of the 17 scoring axes that food reports — a 15/17
-// food is not compared like-for-like with a 17/17 one, so the count is
-// shown rather than hidden.
-const scoreBadge = (score, axes) => {
-  const title = axes != null
-    ? `Nutrient density percentile (0–100), scored on ${axes} of 17 nutrient axes`
-    : 'Nutrient density percentile (0–100)';
-  if (score == null) return { bg: '#e2e8f0', fg: '#64748b', label: '—', title: 'Not scored' };
+// Two measures are carried, both true and answering different questions:
+//   per 100 g  — what one portion of food delivers
+//   per 100 kJ — how much micronutrition the calories buy
+// 'axes' is how many of the 17 axes that food reports, so a 15/17 food is
+// not presented as if it were compared like-for-like with a 17/17 one.
+const scoreBadge = (score, axes, kjScore) => {
+  const parts = [];
+  if (score != null) {
+    parts.push(`Per 100 g: ${Math.round(score)}${axes != null ? ` (${axes}/17 axes)` : ''}`);
+  }
+  if (kjScore != null) parts.push(`Per 100 kJ: ${Math.round(kjScore)}`);
+  const title = parts.length ? parts.join(' · ') : 'Not scored';
+  if (score == null) return { bg: '#e2e8f0', fg: '#64748b', label: '—', title };
   if (score >= 70) return { bg: '#dcfce7', fg: '#15803d', label: `${Math.round(score)}`, title };
   if (score >= 40) return { bg: '#fef3c7', fg: '#b45309', label: `${Math.round(score)}`, title };
   return { bg: '#fee2e2', fg: '#b91c1c', label: `${Math.round(score)}`, title };
@@ -140,7 +145,9 @@ export default function AthleteNutrition() {
           fat100: it.fat100 != null ? Number(it.fat100) : null,
           fibre100: it.fibre100 != null ? Number(it.fibre100) : null,
           percentileScore: it.percentileScore != null ? Number(it.percentileScore) : null,
-          scoreAxes: it.scoreAxes != null ? Number(it.scoreAxes) : null
+          scoreAxes: it.scoreAxes != null ? Number(it.scoreAxes) : null,
+          densityPerKj: it.densityPerKj != null ? Number(it.densityPerKj) : null,
+          scoreAxesKj: it.scoreAxesKj != null ? Number(it.scoreAxesKj) : null
         });
       });
     });
@@ -263,7 +270,9 @@ export default function AthleteNutrition() {
       fat100: selected.fat100,
       fibre100: selected.fibre100,
       percentileScore: selected.percentileScore,
-      scoreAxes: selected.scoreAxes
+      scoreAxes: selected.scoreAxes,
+      densityPerKj: selected.densityPerKj,
+      scoreAxesKj: selected.scoreAxesKj
     };
     const res = await saveNutritionLog({ items: [item], athlete: athleteName, email: userEmail });
     setSaving(false);
@@ -442,7 +451,7 @@ export default function AthleteNutrition() {
               <div key={group.cat}>
                 <h3 className="an-cat-title">{group.cat}</h3>
                 {group.items.map(f => {
-                  const b = scoreBadge(f.percentileScore, f.scoreAxes);
+                  const b = scoreBadge(f.percentileScore, f.scoreAxes, f.densityPerKj);
                   return (
                     <div key={f.id} className="an-result" onClick={() => tapFood(f)}>
                       <div style={{ minWidth: 0 }}>
@@ -480,7 +489,7 @@ export default function AthleteNutrition() {
               <CheckCircle size={16} color="#10b981" /> {selected.description}
             </div>
             <div style={{ fontSize: 13, color: '#64748b', marginBottom: 12 }}>
-              {selected.source} · Score {selected.percentileScore != null ? Math.round(selected.percentileScore) : '—'}{selected.scoreAxes != null ? ` (${selected.scoreAxes}/17 axes)` : ''}{selected.kj100 != null ? ` · ${Math.round(selected.kj100)} kJ per 100 g` : ''}
+              {selected.source} · Score {selected.percentileScore != null ? Math.round(selected.percentileScore) : '—'}{selected.scoreAxes != null ? ` (${selected.scoreAxes}/17 axes)` : ''}{selected.densityPerKj != null ? ` · ${Math.round(selected.densityPerKj)}/100 kJ` : ''}{selected.kj100 != null ? ` · ${Math.round(selected.kj100)} kJ per 100 g` : ''}
             </div>
             {selected.portionGrams != null && (
               <div style={{ marginBottom: 10 }}>
@@ -540,7 +549,7 @@ export default function AthleteNutrition() {
           <div className="an-empty">Nothing logged yet — add your first food above.</div>
         ) : (
           items.map((it, idx) => {
-            const b = scoreBadge(it.percentileScore, it.scoreAxes);
+            const b = scoreBadge(it.percentileScore, it.scoreAxes, it.densityPerKj);
             const g = Number(it.grams) || 0;
             const kj = it.kj100 != null ? Math.round(it.kj100 * g / 100) : null;
             const p = it.protein100 != null ? Math.round(it.protein100 * g / 10) / 10 : null;

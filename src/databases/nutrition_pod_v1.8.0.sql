@@ -190,7 +190,9 @@ with base as (
          then case when f.ala_g > 0 then f.linoleic_g / f.ala_g
                    when f.linoleic_g > 0 then 1000000000
                    else null end
-    end as w63
+    end as w63,
+    -- per-kJ denominators are undefined without energy
+    case when f.energy_kj > 0 then f.energy_kj end as kj
   from public.foods f
 ),
 ranked as (
@@ -214,6 +216,29 @@ ranked as (
     case when b.w63 is not null then 100.0 * (1 - (rank() over (order by b.w63 asc nulls last) - 1)::numeric / greatest(count(b.w63) over () - 1, 1)) end as c_w63
   from base b
 ),
+
+-- Same 17 axes and the same percentile method, but each amount is divided
+-- by the food's energy (per 100 kJ) instead of by 100 g. Two ratio axes
+-- (sat_share, w63) are energy-free, so they reuse the per-100 g contributions.
+ranked_kj as (
+  select b.*,
+    case when b.kj is not null and b.thiamin_mg is not null then 100.0 * (1 - (rank() over (order by b.thiamin_mg * 100.0 / b.kj desc nulls last) - 1)::numeric / greatest(count(b.thiamin_mg) filter (where b.kj is not null) over () - 1, 1)) end as ck_thiamin_mg,
+    case when b.kj is not null and b.riboflavin_mg is not null then 100.0 * (1 - (rank() over (order by b.riboflavin_mg * 100.0 / b.kj desc nulls last) - 1)::numeric / greatest(count(b.riboflavin_mg) filter (where b.kj is not null) over () - 1, 1)) end as ck_riboflavin_mg,
+    case when b.kj is not null and b.niacin_mg is not null then 100.0 * (1 - (rank() over (order by b.niacin_mg * 100.0 / b.kj desc nulls last) - 1)::numeric / greatest(count(b.niacin_mg) filter (where b.kj is not null) over () - 1, 1)) end as ck_niacin_mg,
+    case when b.kj is not null and b.vitamin_c_mg is not null then 100.0 * (1 - (rank() over (order by b.vitamin_c_mg * 100.0 / b.kj desc nulls last) - 1)::numeric / greatest(count(b.vitamin_c_mg) filter (where b.kj is not null) over () - 1, 1)) end as ck_vitamin_c_mg,
+    case when b.kj is not null and b.vitamin_e_mg is not null then 100.0 * (1 - (rank() over (order by b.vitamin_e_mg * 100.0 / b.kj desc nulls last) - 1)::numeric / greatest(count(b.vitamin_e_mg) filter (where b.kj is not null) over () - 1, 1)) end as ck_vitamin_e_mg,
+    case when b.kj is not null and b.folate_total_ug is not null then 100.0 * (1 - (rank() over (order by b.folate_total_ug * 100.0 / b.kj desc nulls last) - 1)::numeric / greatest(count(b.folate_total_ug) filter (where b.kj is not null) over () - 1, 1)) end as ck_folate_total_ug,
+    case when b.kj is not null and b.vitamin_d_ug is not null then 100.0 * (1 - (rank() over (order by b.vitamin_d_ug * 100.0 / b.kj desc nulls last) - 1)::numeric / greatest(count(b.vitamin_d_ug) filter (where b.kj is not null) over () - 1, 1)) end as ck_vitamin_d_ug,
+    case when b.kj is not null and b.calcium_mg is not null then 100.0 * (1 - (rank() over (order by b.calcium_mg * 100.0 / b.kj desc nulls last) - 1)::numeric / greatest(count(b.calcium_mg) filter (where b.kj is not null) over () - 1, 1)) end as ck_calcium_mg,
+    case when b.kj is not null and b.iron_mg is not null then 100.0 * (1 - (rank() over (order by b.iron_mg * 100.0 / b.kj desc nulls last) - 1)::numeric / greatest(count(b.iron_mg) filter (where b.kj is not null) over () - 1, 1)) end as ck_iron_mg,
+    case when b.kj is not null and b.magnesium_mg is not null then 100.0 * (1 - (rank() over (order by b.magnesium_mg * 100.0 / b.kj desc nulls last) - 1)::numeric / greatest(count(b.magnesium_mg) filter (where b.kj is not null) over () - 1, 1)) end as ck_magnesium_mg,
+    case when b.kj is not null and b.phosphorus_mg is not null then 100.0 * (1 - (rank() over (order by b.phosphorus_mg * 100.0 / b.kj desc nulls last) - 1)::numeric / greatest(count(b.phosphorus_mg) filter (where b.kj is not null) over () - 1, 1)) end as ck_phosphorus_mg,
+    case when b.kj is not null and b.potassium_mg is not null then 100.0 * (1 - (rank() over (order by b.potassium_mg * 100.0 / b.kj desc nulls last) - 1)::numeric / greatest(count(b.potassium_mg) filter (where b.kj is not null) over () - 1, 1)) end as ck_potassium_mg,
+    case when b.kj is not null and b.zinc_mg is not null then 100.0 * (1 - (rank() over (order by b.zinc_mg * 100.0 / b.kj desc nulls last) - 1)::numeric / greatest(count(b.zinc_mg) filter (where b.kj is not null) over () - 1, 1)) end as ck_zinc_mg,
+    case when b.kj is not null and b.iodine_ug is not null then 100.0 * (1 - (rank() over (order by b.iodine_ug * 100.0 / b.kj desc nulls last) - 1)::numeric / greatest(count(b.iodine_ug) filter (where b.kj is not null) over () - 1, 1)) end as ck_iodine_ug,
+    case when b.kj is not null and b.ala_g is not null then 100.0 * (1 - (rank() over (order by b.ala_g * 100.0 / b.kj desc nulls last) - 1)::numeric / greatest(count(b.ala_g) filter (where b.kj is not null) over () - 1, 1)) end as ck_ala_g,
+  from ranked b
+),
 -- Available case: keep only the contributions this food actually earned.
 scored as (
   select b.*,
@@ -221,13 +246,21 @@ scored as (
       c_thiamin, c_ribo, c_niacin, c_vit_c, c_vit_e, c_folate, c_vit_d,
       c_calcium, c_iron, c_magnesium, c_phos, c_potassium, c_zinc,
       c_iodine, c_ala, c_satshare, c_w63
-    ]) as t(v) where v is not null) as axes
-  from ranked b
+    ]) as t(v) where v is not null) as axes,
+    array(select v from unnest(array[
+      ck_thiamin, ck_riboflavin_mg, ck_niacin_mg, ck_vitamin_c_mg, ck_vitamin_e_mg,
+      ck_folate_total_ug, ck_vitamin_d_ug, ck_calcium_mg, ck_iron_mg, ck_magnesium_mg,
+      ck_phosphorus_mg, ck_potassium_mg, ck_zinc_mg, ck_iodine_ug, ck_ala_g,
+      c_satshare, c_w63
+    ]) as t(v) where v is not null) as axes_kj
+  from ranked_kj b
 ),
 final as (
   select id, source, description, category,
     round((select avg(v) from unnest(axes) as t(v)), 2)    as percentile_score,
     (select count(*) from unnest(axes) as t(v))::int       as score_axes,
+    round((select avg(v) from unnest(axes_kj) as t(v)), 2) as density_per_kj,
+    (select count(*) from unnest(axes_kj) as t(v))::int    as score_axes_kj,
     round(
       coalesce(fat_sat_g,0) + coalesce(fat_mono_g,0) + coalesce(fat_poly_g,0)
       + coalesce(linoleic_g,0) + coalesce(ala_g,0)
@@ -245,6 +278,7 @@ select f.*,
 from final f;
 
 create index if not exists idx_fs_score on public.v_food_scores(percentile_score desc);
+create index if not exists idx_fs_kj    on public.v_food_scores(density_per_kj desc);
 grant select on public.v_food_scores to authenticated;
 
 -- The ETL script calls this via rpc after every successful import.

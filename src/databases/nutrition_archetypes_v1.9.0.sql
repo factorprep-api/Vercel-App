@@ -101,7 +101,7 @@ create table if not exists public.meal_archetypes (
 create or replace view public.v_archetype_scores as
 with comp as (
   select a.id as archetype_id, a.slug, a.name, a.display_order,
-         u.food_id, u.weight, s.percentile_score
+         u.food_id, u.weight, s.percentile_score, s.density_per_kj
   from public.meal_archetypes a
   cross join lateral unnest(a.component_food_ids, a.component_weights)
     as u(food_id, weight)
@@ -111,6 +111,9 @@ select archetype_id, slug, name, display_order,
   round(sum(percentile_score * weight)
         / nullif(sum(weight) filter (where percentile_score is not null), 0), 2)
     as percentile_score,
+  round(sum(density_per_kj * weight)
+        / nullif(sum(weight) filter (where density_per_kj is not null), 0), 2)
+    as density_per_kj,
   count(*)                as component_count,
   count(percentile_score) as scored_components,
   round(sum(weight), 2)   as total_weight

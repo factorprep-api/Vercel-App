@@ -361,7 +361,7 @@ export const fetchFoodDatabase = async () => {
   try {
     const [foodsRes, scoresRes] = await Promise.all([
       supabase.from('foods').select('id, source, description, category, portion_label, portion_grams, energy_kj, protein_g, carbohydrate_g, fat_total_g, fibre_g').order('description', { ascending: true }),
-      supabase.from('v_food_scores').select('id, percentile_score, score_axes')
+      supabase.from('v_food_scores').select('id, percentile_score, score_axes, density_per_kj, score_axes_kj')
     ]);
     if (foodsRes.error) return { foods: [], error: foodsRes.error.message };
     if (scoresRes.error) return { foods: [], error: scoresRes.error.message };
@@ -379,7 +379,9 @@ export const fetchFoodDatabase = async () => {
       fat100: f.fat_total_g != null ? Number(f.fat_total_g) : null,
       fibre100: f.fibre_g != null ? Number(f.fibre_g) : null,
       percentileScore: scoreById.get(f.id)?.percentile_score ?? null,
-      scoreAxes: scoreById.get(f.id)?.score_axes ?? null
+      scoreAxes: scoreById.get(f.id)?.score_axes ?? null,
+      densityPerKj: scoreById.get(f.id)?.density_per_kj ?? null,
+      scoreAxesKj: scoreById.get(f.id)?.score_axes_kj ?? null
     }));
     return { foods, error: null };
   } catch (err) { return { foods: [], error: err.message }; }
@@ -405,7 +407,7 @@ export const fetchFoodFavorites = async () => {
     if (ids.length > 0) {
       const { data: scores, error: sErr } = await supabase
         .from('v_food_scores')
-        .select('id, percentile_score, score_axes')
+        .select('id, percentile_score, score_axes, density_per_kj, score_axes_kj')
         .in('id', ids);
       if (!sErr) (scores || []).forEach(s => scoreById.set(s.id, s));
     }
@@ -426,7 +428,9 @@ export const fetchFoodFavorites = async () => {
           fat100: f.fat_total_g != null ? Number(f.fat_total_g) : null,
           fibre100: f.fibre_g != null ? Number(f.fibre_g) : null,
           percentileScore: scoreById.get(r.food_id)?.percentile_score ?? null,
-          scoreAxes: scoreById.get(r.food_id)?.score_axes ?? null
+          scoreAxes: scoreById.get(r.food_id)?.score_axes ?? null,
+          densityPerKj: scoreById.get(r.food_id)?.density_per_kj ?? null,
+          scoreAxesKj: scoreById.get(r.food_id)?.score_axes_kj ?? null
         };
       })
       .filter(Boolean);

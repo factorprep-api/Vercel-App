@@ -389,6 +389,25 @@ The shipped system intentionally differs from the specification above. Each item
 | §4.6 `v_archetype_scores`, `v_athlete_daily_nutrition` | Not built. Athlete rollups **must not** be materialized views — matviews bypass RLS. Use a `security_invoker` view. |
 | §9.4 EPA/DHA (AUSNUT cols 54–56, plus total LC ω-3 col 58) | Data already downloaded; excluded per spec until the owner decides. |
 
+## A10. Two density measures — per 100 g and per kJ
+
+**What:** `v_food_scores` exposes two independent density scores over the same 17 axes:
+
+| Column | Denominator | Question |
+|---|---|---|
+| `percentile_score` (primary) | per 100 g | "per portion of food, what do I get?" |
+| `density_per_kj` | per kJ | "per calorie of energy budget, how much micronutrition?" |
+
+`score_axes_kj` accompanies the second, mirroring `score_axes`. Both use the same directional percentile method and the same available-case averaging; only the denominator differs. Foods with no energy value (43 of 9,336) get `density_per_kj = NULL`.
+
+**Why both:** they are complementary and both true. Across 9,293 foods the correlation is only **r = 0.49**, so this is not a rescaling. Per 100 g favours dry, energy-dense food (pizza 66, lettuce 37); per kJ favours nutrient-per-calorie (lettuce 81, pizza 58). An athlete eating a fixed weight and an athlete eating a fixed energy budget are asking different questions, and the body spends energy while the shop sells grams.
+
+**Known trade-off:** per kJ *narrows* the processed-vs-homemade gap — lasagne homemade vs ready meal is 19.8 points apart per 100 g but only 4.5 apart per kJ, because processed meals are energy-dense and often fortified. Neither measure is "meal quality": processing is the tier multiplier's job (§5) and fueling adequacy is energy + protein per portion.
+
+**Status:** per 100 g is displayed as the headline badge; per kJ is shown alongside (tooltip + detail line) and in `v_archetype_scores`. Evaluate against real athlete data before deciding whether to swap their prominence.
+
+**Where:** `nutrition_scores_v1.9.1.sql`; `v_archetype_scores` in `nutrition_archetypes_v1.9.0.sql`; `scripts/simulate_scores.mjs --compare`.
+
 ---
 
 # Verification
