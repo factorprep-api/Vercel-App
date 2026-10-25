@@ -328,6 +328,20 @@ const AUSNUT_COL = {
   folate_ug: 40,           // informational DFE
 };
 
+// AUSNUT categories that are real records but not foods. They import either as
+// nutrient isolates ("Protein", "Thiamin", "Vitamin C", "Folic acid") or as
+// tabletop/kitchen chemicals ("Baking soda", "Intense sweetener…"), so they
+// cluster at both extremes of the score and pollute athlete search — typing
+// "protein" returned raw protein powder, and "Vegetable powder" ranked 93.66.
+// Excluded at the source rather than hidden in the UI, so that the percentile
+// ranking population and the browsable food list stay the same set (plan §4.5).
+const AUSNUT_NON_FOOD_CATEGORIES = new Set([
+  'Other additives',                                    // 9
+  'Intense sweeteners',                                 // 13
+  'Chemical raising agents and cooking ingredients',    // 5
+  'Fibre supplements',                                  // 2
+]);
+
 export function loadAusnut(dir) {
   const profiles = readXlsx(path.join(dir, 'AUSNUT 2023 - Food nutrient profiles.xlsx'))['Food nutrient profiles'];
   const details = readXlsx(path.join(dir, 'AUSNUT 2023 - Food details.xlsx'))['Food details'];
@@ -362,10 +376,14 @@ export function loadAusnut(dir) {
   }
 
   const rows = [];
+  let skippedNonFood = 0;
   for (const r of profiles.slice(3)) { // data starts row 4 (idx 3)
     if (!r || !r[1]) continue;
     const id = String(r[1]);
     const d = det.get(id) || [];
+    // Categories arrive padded ("Fin fish, fresh, frozen "), so normalise.
+    const category = String(d[15] || d[14] || '').trim() || null;
+    if (category && AUSNUT_NON_FOOD_CATEGORIES.has(category)) { skippedNonFood++; continue; }
     const n = {};
     for (const [key, col] of Object.entries(AUSNUT_COL)) {
       if (['surveyId', 'foodKey', 'foodName'].includes(key)) continue;
@@ -377,13 +395,13 @@ export function loadAusnut(dir) {
       source: 'AUSNUT',
       source_code: id,
       description: String(r[AUSNUT_COL.foodName] || '').trim(),
-      category: d[15] || d[14] || null,
+      category,
       portion_label: m.label ?? null,
       portion_grams: m.grams ?? null,
       nutrient: n,
     });
   }
-  console.log(`[transform] AUSNUT: ${profiles.length} profile rows → ${rows.length} foods (details: ${det.size}, measures: ${meas.size})`);
+  console.log(`[transform] AUSNUT: ${profiles.length} profile rows → ${rows.length} foods (details: ${det.size}, measures: ${meas.size}; ${skippedNonFood} additive rows skipped)`);
   return rows;
 }
 
