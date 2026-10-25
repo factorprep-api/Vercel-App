@@ -26,6 +26,7 @@
 //
 // Zero dependencies — reuses the ETL's loaders.
 // =====================================================================
+import fs from 'node:fs';
 import path from 'node:path';
 import { loadFndds, loadAusnut } from './nutrition_etl.mjs';
 
@@ -150,6 +151,30 @@ function main() {
   }
   const old = oldScores(all);
 
+  // ---- Option A prototype: density per kJ (--compare) -----------------
+  // Same 17 axes, same percentile method, but each amount is divided by the
+  // food's energy (per 100 kJ) instead of by 100 g. Water-rich foods stop
+  // being penalised because their energy is also low; the two ratio axes
+  // (sat_share, w63) are unchanged because they are already energy-free.
+  if (args.includes('--compare')) {
+    for (const r of all) {
+      const kj = r.nutrient.energy_kj;
+      for (const a of AXES) {
+        if (a.key === 'sat_share' || a.key === 'w63') { r[`kj_${a.key}`] = r[a.key]; continue; }
+        const v = r[a.key];
+        r[`kj_${a.key}`] = (kj != null && kj > 0 && v != null) ? v * 100 / kj : null;
+      }
+    }
+    const KJ_AXES = AXES.map(a => ({ key: `kj_${a.key}`, dir: a.dir }));
+    for (const a of KJ_AXES) rankAxis(all, a.key, a.dir);
+    for (const r of all) {
+      const cs = KJ_AXES.map(a => r[`c_${a.key}`]).filter(v => v != null);
+      r.axes_kj = cs.length;
+      r.score_kj = cs.length ? r2(cs.reduce((s, v) => s + v, 0) / cs.length) : null;
+    }
+    printCompare(all);
+  }
+
   const nF = all.filter(r => r.source === 'FNDDS').length;
   const nA = all.filter(r => r.source === 'AUSNUT').length;
   console.log(`\n[load] ${all.length} foods (${nF} FNDDS + ${nA} AUSNUT)\n`);
@@ -236,3 +261,91 @@ function main() {
 }
 
 main();
+
+/**
+ * Option A prototype report. Prints per-100 g and per-kJ side by side for
+ * named foods and for the seeded archetypes, so the product owner can judge
+ * whether the energy-denominated measure carries more useful signal.
+ */
+function printCompare(all) {
+  const byKey = new Map(all.map(r => [`${r.source}|${r.description}`, r]));
+  const fmt = (v) => (v == null ? '    —' : v.toFixed(1).padStart(5));
+  const get = (src, desc) => byKey.get(`${src}|${desc}`);
+
+  console.log('\n\n=== OPTION A PROTOTYPE — per 100 g vs per kJ ===');
+  console.log('Same 17 axes, same percentile method; amounts divided by the');
+  console.log("food's energy instead of by 100 g. Higher = better.\n");
+
+  const named = [
+    ['AUSNUT', 'Lettuce, raw'],
+    ['AUSNUT', 'Tomato, common, raw'],
+    ['AUSNUT', 'Cucumber, common, unpeeled, raw'],
+    ['AUSNUT', 'Blueberry, raw'],
+    ['AUSNUT', 'Banana, cavendish, peeled, raw'],
+    ['AUSNUT', 'Rice, white, cooked'],
+    ['AUSNUT', 'Pasta, white, plain, boiled, no added salt'],
+    ['AUSNUT', 'Bread, wholemeal, commercial'],
+    ['AUSNUT', 'Oats, rolled, uncooked'],
+    ['AUSNUT', 'Yoghurt, natural, regular fat (~4%)'],
+    ['AUSNUT', 'Milk, cow, fluid, regular fat (~3.5%)'],
+    ['AUSNUT', 'Egg, chicken, whole, raw'],
+    ['AUSNUT', 'Chicken, breast, lean, baked, roasted, fried, grilled or BBQ\'d, no added fat'],
+    ['AUSNUT', 'Beef, mince, cooked, no added fat'],
+    ['AUSNUT', 'Chickpea, dried, boiled, microwaved or steamed, drained'],
+    ['AUSNUT', 'Oil, olive'],
+    ['FNDDS', 'Almonds, unroasted'],
+    ['FNDDS', 'Potato, french fries, NFS'],
+    ['FNDDS', 'Pizza with cheese and extra vegetables, medium crust'],
+    ['FNDDS', 'Chicken breast, fried, coated, skin / coating eaten, from fast food / restaurant'],
+    ['FNDDS', 'Lasagna with meat, home recipe'],
+    ['FNDDS', 'Lasagna with meat, frozen'],
+    ['AUSNUT', 'Ready meal, beef lasagne, energy controlled portion'],
+  ];
+  console.log('  per100  perKJ          kJ/100g   food');
+  for (const [src, desc] of named) {
+    const r = get(src, desc);
+    if (!r) { console.log(`       ?      ?   ${' '.repeat(9)}  ${desc}  (not found)`); continue; }
+    console.log(`  ${fmt(r.percentile_score)}  ${fmt(r.score_kj)}   ${String(Math.round(r.nutrient.energy_kj ?? 0)).padStart(6)}   ${desc}`);
+  }
+
+  const resPath = 'data/archetype_resolution.json';
+  if (fs.existsSync(resPath)) {
+    const res = JSON.parse(fs.readFileSync(resPath, 'utf8'));
+    console.log('\n=== the 10 archetypes: per-100g vs per-kJ ===');
+    console.log('  per100  perKJ   delta  archetype');
+    const rows = res.archetypes.map(a => {
+      let n1 = 0, d1 = 0, n2 = 0, d2 = 0, miss = 0;
+      for (const c of a.components) {
+        const row = byKey.get(`${c.source}|${c.description}`);
+        if (!row) { miss++; continue; }
+        if (row.percentile_score != null) { n1 += row.percentile_score * c.weight; d1 += c.weight; }
+        if (row.score_kj != null) { n2 += row.score_kj * c.weight; d2 += c.weight; }
+      }
+      return { slug: a.slug, s1: d1 ? r2(n1 / d1) : null, s2: d2 ? r2(n2 / d2) : null, miss };
+    });
+    rows.sort((x, y) => (y.s2 ?? -1) - (x.s2 ?? -1));
+    for (const r of rows) {
+      const d = (r.s1 != null && r.s2 != null) ? r.s2 - r.s1 : null;
+      const ds = d == null ? '     ' : `${d >= 0 ? '+' : ''}${d.toFixed(1).padStart(5)}`;
+      console.log(`  ${fmt(r.s1)}  ${fmt(r.s2)}  ${ds}  ${r.slug}${r.miss ? `  (${r.miss} missing)` : ''}`);
+    }
+  }
+
+  const ranked = all.filter(r => r.score_kj != null).sort((a, b) => b.score_kj - a.score_kj);
+  console.log('\n=== top 10 by per-kJ density ===');
+  ranked.slice(0, 10).forEach(r => console.log(`  ${fmt(r.score_kj)}  ${Math.round(r.nutrient.energy_kj ?? 0).toString().padStart(5)} kJ  ${r.source}  ${r.description.slice(0, 48)}`));
+  console.log('=== bottom 10 by per-kJ density ===');
+  ranked.slice(-10).forEach(r => console.log(`  ${fmt(r.score_kj)}  ${Math.round(r.nutrient.energy_kj ?? 0).toString().padStart(5)} kJ  ${r.source}  ${r.description.slice(0, 48)}`));
+
+  // How much do the two measures disagree?
+  const both = all.filter(r => r.percentile_score != null && r.score_kj != null);
+  const mean = (xs) => xs.reduce((s, v) => s + v, 0) / xs.length;
+  const m1 = mean(both.map(r => r.percentile_score));
+  const m2 = mean(both.map(r => r.score_kj));
+  const sd1 = Math.sqrt(mean(both.map(r => (r.percentile_score - m1) ** 2)));
+  const sd2 = Math.sqrt(mean(both.map(r => (r.score_kj - m2) ** 2)));
+  const cov = mean(both.map(r => (r.percentile_score - m1) * (r.score_kj - m2)));
+  console.log(`\n[compare] n=${both.length}  per100 mean ${m1.toFixed(1)} sd ${sd1.toFixed(1)}  |  perKJ mean ${m2.toFixed(1)} sd ${sd2.toFixed(1)}  |  r=${(cov / (sd1 * sd2)).toFixed(3)}`);
+  console.log('');
+}
+
