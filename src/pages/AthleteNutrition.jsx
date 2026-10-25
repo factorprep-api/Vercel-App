@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Search, Utensils, CheckCircle, Trash2, Flame, Beef, Wheat, Droplet, Loader2, Star } from 'lucide-react';
+import { ArrowLeft, Search, Utensils, CheckCircle, Trash2, Flame, Beef, Wheat, Droplet, Loader2, Star, Salad } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
-import { fetchFoodDatabase, fetchFoodFavorites, addFoodFavorite, removeFoodFavorite, saveNutritionLog, fetchNutritionLogs, updateNutritionItems } from '../api';
+import { fetchFoodDatabase, fetchFoodFavorites, addFoodFavorite, removeFoodFavorite, saveNutritionLog, fetchNutritionLogs, updateNutritionItems, fetchMealArchetypes } from '../api';
 import { ymd } from '../utils/cycleMath';
 
 // Exercise-library search pattern: full database loaded once (cached), then
@@ -99,6 +99,16 @@ export default function AthleteNutrition() {
   const [grams, setGrams] = useState('');
   const [portionLabel, setPortionLabel] = useState('');
 
+  // Meal archetypes (v1.9): the three-tap meal path — meal → tier + portion → add.
+  const [meals, setMeals] = useState([]);           // the ten archetypes
+  const [mealTiers, setMealTiers] = useState([]);   // quality tier multipliers
+  const [mealPortions, setMealPortions] = useState([]); // portion multipliers
+  const [meal, setMeal] = useState(null);           // archetype chosen for step 2
+  const [mealTier, setMealTier] = useState('fresh');
+  const [mealPortion, setMealPortion] = useState('normal');
+  const [loadingMeals, setLoadingMeals] = useState(true);
+  const [mealsError, setMealsError] = useState(null);
+
   const [logId, setLogId] = useState(null);          // today's log row
   const [items, setItems] = useState([]);            // today's items
   const [favourites, setFavourites] = useState([]);  // starred foods (v1.8.1)
@@ -155,6 +165,26 @@ export default function AthleteNutrition() {
   };
 
   useEffect(() => { loadNutritionData(); }, [userEmail]);
+
+  // Archetypes are small reference data (ten rows + two scalar tables), so no
+  // localStorage cache — refetch on mount keeps tier/portion tuning live.
+  useEffect(() => {
+    if (!userEmail) return;
+    let isMounted = true;
+    (async () => {
+      const res = await fetchMealArchetypes();
+      if (!isMounted) return;
+      if (res.error) setMealsError(res.error);
+      else {
+        setMeals(res.archetypes);
+        setMealTiers(res.tiers);
+        setMealPortions(res.portions);
+        setMealsError(null);
+      }
+      setLoadingMeals(false);
+    })();
+    return () => { isMounted = false; };
+  }, [userEmail]);
 
   // Star / unstar a food. Optimistic update, reverted if the DB write fails.
   const toggleFav = async (food) => {
@@ -298,6 +328,63 @@ export default function AthleteNutrition() {
     else setPageError(res.message || 'Could not remove item.');
   };
 
+  // ---- Meal path: same save pipeline as a food, different payload ----
+  const tapMeal = (m) => {
+    setMeal(m);
+    setMealTier('fresh');     // fresh = 1.00 is the reference tier (§5.2)
+    setMealPortion('normal'); // normal = the base_grams serve
+  };
+
+  const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+
+  const tapAddMeal = async () => {
+    if (!meal) return;
+    setSaving(true);
+    const tier = mealTiers.find(t => t.tier === mealTier);
+    const portion = mealPortions.find(p => p.portionSize === mealPortion);
+    const tierMult = tier ? tier.scoreMultiplier : 1;
+    const portionMult = portion ? portion.multiplier : 1;
+    const grams = meal.baseGrams != null ? Math.round(meal.baseGrams * portionMult) : null;
+    // Store per-100 g OF THE SERVE so the existing totals math
+    // (per-100g × grams / 100) resolves back to the per-serve view numbers.
+    const per100 = (v) => (v != null && meal.baseGrams > 0)
+      ? Number((v / meal.baseGrams * 100).toFixed(2))
+      : null;
+    // Tier counteracts density inflation by processing (§5.2): resolve the
+    // score at log time and snapshot the multiplier, so later tuning of
+    // quality_tier_modifiers never rewrites logged history (§5.3).
+    const item = {
+      food_id: null,
+      archetype_id: meal.id,
+      grams,
+      name: meal.name,
+      portionLabel: `${cap(mealPortion)} serve · ${tier ? tier.badge : cap(mealTier)}`,
+      kj100: per100(meal.energyKj),
+      protein100: per100(meal.proteinG),
+      carbs100: per100(meal.carbsG),
+      fat100: per100(meal.fatG),
+      fibre100: per100(meal.fibreG),
+      percentileScore: meal.percentileScore != null ? Number((meal.percentileScore * tierMult).toFixed(1)) : null,
+      scoreAxes: null,
+      densityPerKj: meal.densityPerKj != null ? Number((meal.densityPerKj * tierMult).toFixed(1)) : null,
+      scoreAxesKj: null,
+      qualityTier: mealTier,
+      portionSize: mealPortion,
+      scoreMultiplier: tierMult,
+      portionMultiplier: portionMult
+    };
+    const res = await saveNutritionLog({ items: [item], athlete: athleteName, email: userEmail });
+    setSaving(false);
+    if (res.status === 'Success') {
+      setItems(Array.isArray(res.items) ? res.items : [...items, item]);
+      setMeal(null);
+      setJustLogged(true);
+      setTimeout(() => setJustLogged(false), 1800);
+    } else {
+      setPageError(res.message || 'Could not save.');
+    }
+  };
+
   // Daily totals (client-side, per plan §3 — no server rollups)
   const totals = items.reduce((acc, it) => {
     const g = Number(it.grams) || 0;
@@ -360,7 +447,7 @@ export default function AthleteNutrition() {
         </button>
         <div>
           <h1 className="an-title">Nutrition Log</h1>
-          <p className="an-subtitle">Three taps: food → portion → add</p>
+          <p className="an-subtitle">Three taps: meal or food → portion → add</p>
         </div>
         <div style={{ marginLeft: 'auto' }}><HelpButton page="athlete-nutrition" /></div>
       </div>
@@ -391,6 +478,95 @@ export default function AthleteNutrition() {
             <div className="an-total-label"><Droplet size={11} color="#f59e0b" /> fat g</div>
           </div>
         </div>
+      </div>
+
+      {/* Quick meals — tap 1: meal, tap 2: tier + portion, tap 3: add */}
+      <div className="an-card">
+        {!meal ? (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 15, color: '#334155', marginBottom: 12 }}>
+              <Salad size={16} color="#10b981" /> Quick meals
+            </div>
+            {loadingMeals && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '14px 4px', color: '#64748b', fontSize: 13 }}>
+                <Loader2 size={14} className="an-spin" /> Loading meals…
+              </div>
+            )}
+            {mealsError && <div style={{ color: '#b91c1c', fontSize: 13, padding: '10px 0' }}>Failed to load meals: {mealsError}</div>}
+            {!loadingMeals && !mealsError && meals.length === 0 && (
+              <div className="an-empty">No meals available yet.</div>
+            )}
+            {meals.map(m => {
+              const b = scoreBadge(m.percentileScore, null, m.densityPerKj);
+              return (
+                <div key={m.id} className="an-result" onClick={() => tapMeal(m)}>
+                  <div style={{ minWidth: 0 }}>
+                    <div className="an-result-name">{m.name}</div>
+                    <div className="an-result-sub">
+                      {m.mealSlots?.length > 0 ? `${m.mealSlots.map(s => s.replace(/_/g, ' ')).join(', ')} · ` : ''}
+                      Normal serve{m.energyKj != null ? ` · ${Math.round(m.energyKj).toLocaleString()} kJ` : ''}{m.proteinG != null ? ` · ${m.proteinG} g protein` : ''}
+                    </div>
+                  </div>
+                  <span className="an-badge" style={{ background: b.bg, color: b.fg }} title={b.title}>Score {b.label}</span>
+                </div>
+              );
+            })}
+          </>
+        ) : (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 15, color: '#334155', marginBottom: 8 }}>
+              <CheckCircle size={16} color="#10b981" /> {meal.name}
+            </div>
+            <div style={{ fontSize: 13, color: '#64748b', marginBottom: 12 }}>
+              Normal serve{meal.baseGrams != null ? ` · ${Math.round(meal.baseGrams)} g` : ''}{meal.energyKj != null ? ` · ${Math.round(meal.energyKj).toLocaleString()} kJ` : ''}{meal.proteinG != null ? ` · ${meal.proteinG} g protein` : ''}
+              {meal.percentileScore != null ? ` · Score ${Math.round(meal.percentileScore)}` : ''}
+              {meal.componentCount != null ? ` (${meal.scoredComponents}/${meal.componentCount} components scored)` : ''}
+            </div>
+            <div style={{ fontWeight: 600, fontSize: 13, color: '#334155', marginBottom: 8 }}>How was it prepared?</div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+              {mealTiers.map(t => (
+                <button
+                  key={t.tier}
+                  className={`an-chip ${mealTier === t.tier ? 'selected' : ''}`}
+                  onClick={() => setMealTier(t.tier)}
+                  title={`Score multiplier ×${t.scoreMultiplier}`}
+                >
+                  {t.badge}
+                </button>
+              ))}
+            </div>
+            <div style={{ fontWeight: 600, fontSize: 13, color: '#334155', marginBottom: 8 }}>How much?</div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+              {mealPortions.map(p => (
+                <button
+                  key={p.portionSize}
+                  className={`an-chip ${mealPortion === p.portionSize ? 'selected' : ''}`}
+                  onClick={() => setMealPortion(p.portionSize)}
+                  title={`Serve multiplier ×${p.multiplier}`}
+                >
+                  {cap(p.portionSize)}{meal.baseGrams != null ? ` · ${Math.round(meal.baseGrams * p.multiplier)} g` : ''}
+                </button>
+              ))}
+            </div>
+            {meal.energyKj != null && (() => {
+              const pm = mealPortions.find(p => p.portionSize === mealPortion)?.multiplier ?? 1;
+              return (
+                <div style={{ fontSize: 13, color: '#334155', fontWeight: 600, marginBottom: 12 }}>
+                  ≈ {Math.round(meal.energyKj * pm).toLocaleString()} kJ{meal.proteinG != null ? ` · ${(meal.proteinG * pm).toFixed(1)} g protein` : ''}
+                </div>
+              );
+            })()}
+            <button className="an-add-btn" onClick={tapAddMeal} disabled={saving}>
+              {saving ? 'Adding…' : justLogged ? <><CheckCircle size={16} /> Added!</> : 'Add to Log'}
+            </button>
+            <button
+              onClick={() => setMeal(null)}
+              style={{ width: '100%', marginTop: 8, background: 'none', border: 'none', color: '#64748b', fontSize: 13, cursor: 'pointer' }}
+            >
+              Pick a different meal
+            </button>
+          </>
+        )}
       </div>
 
       {/* Add food — tap 1: search, tap 2: portion, tap 3: add */}

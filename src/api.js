@@ -469,6 +469,63 @@ export const removeFoodFavorite = async (foodId) => {
   } catch (err) { return { status: 'Error', message: err.message }; }
 };
 
+// ---- Meal archetypes (v1.9): the three-tap meal path ----
+// One round-trip of five small reference queries, merged client-side:
+//   meal_archetypes        — id/name/meal_slots/display_order (active only)
+//   v_archetype_scores     — weighted percentile_score + density_per_kj
+//   v_archetype_nutrients  — kJ/protein/carbs/fat/fibre per NORMAL serve
+//   quality_tier_modifiers — five tier multipliers (§5.2)
+//   portion_size_scalars   — small/normal/large multipliers (worksheet §4)
+// All reference data: no user scoping, RLS grants read to authenticated.
+// The UI resolves grams at log time as base_grams × portion multiplier and
+// snapshots the multipliers on the item (§5.3), so retuning the tables
+// later never rewrites logged history.
+export const fetchMealArchetypes = async () => {
+  try {
+    const [metaRes, scoresRes, nutrientsRes, tiersRes, portionsRes] = await Promise.all([
+      supabase.from('meal_archetypes').select('id, slug, name, meal_slots, display_order').eq('active', true),
+      supabase.from('v_archetype_scores').select('archetype_id, percentile_score, density_per_kj, component_count, scored_components'),
+      supabase.from('v_archetype_nutrients').select('archetype_id, base_grams, energy_kj, protein_g, carbohydrate_g, fat_g, fibre_g'),
+      supabase.from('quality_tier_modifiers').select('tier, score_multiplier, display_badge'),
+      supabase.from('portion_size_scalars').select('portion_size, multiplier')
+    ]);
+    const firstErr = [metaRes, scoresRes, nutrientsRes, tiersRes, portionsRes].find(r => r.error)?.error;
+    if (firstErr) return { archetypes: [], tiers: [], portions: [], error: firstErr.message };
+    const scoreById = new Map((scoresRes.data || []).map(s => [s.archetype_id, s]));
+    const nutById = new Map((nutrientsRes.data || []).map(n => [n.archetype_id, n]));
+    const archetypes = (metaRes.data || [])
+      .map(m => {
+        const s = scoreById.get(m.id);
+        const n = nutById.get(m.id);
+        return {
+          id: m.id,
+          slug: m.slug,
+          name: m.name,
+          mealSlots: Array.isArray(m.meal_slots) ? m.meal_slots : [],
+          displayOrder: m.display_order,
+          baseGrams: n?.base_grams != null ? Number(n.base_grams) : null,
+          energyKj: n?.energy_kj != null ? Number(n.energy_kj) : null,
+          proteinG: n?.protein_g != null ? Number(n.protein_g) : null,
+          carbsG: n?.carbohydrate_g != null ? Number(n.carbohydrate_g) : null,
+          fatG: n?.fat_g != null ? Number(n.fat_g) : null,
+          fibreG: n?.fibre_g != null ? Number(n.fibre_g) : null,
+          percentileScore: s?.percentile_score != null ? Number(s.percentile_score) : null,
+          densityPerKj: s?.density_per_kj != null ? Number(s.density_per_kj) : null,
+          componentCount: s?.component_count != null ? Number(s.component_count) : null,
+          scoredComponents: s?.scored_components != null ? Number(s.scored_components) : null
+        };
+      })
+      .sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0) || a.name.localeCompare(b.name));
+    const tiers = (tiersRes.data || [])
+      .map(t => ({ tier: t.tier, scoreMultiplier: Number(t.score_multiplier), badge: t.display_badge }))
+      .sort((a, b) => a.scoreMultiplier - b.scoreMultiplier);
+    const portions = (portionsRes.data || [])
+      .map(p => ({ portionSize: p.portion_size, multiplier: Number(p.multiplier) }))
+      .sort((a, b) => a.multiplier - b.multiplier);
+    return { archetypes, tiers, portions, error: null };
+  } catch (err) { return { archetypes: [], tiers: [], portions: [], error: err.message }; }
+};
+
 // Append items to today's free-form nutrition log (creates the day's row on
 // first save, merges into it afterwards). Date is the LOCAL calendar day —
 // the same ymd() fix that keeps wellness logs on the athlete's actual day.
