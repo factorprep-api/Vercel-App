@@ -119,7 +119,7 @@ ranked_kj as (
     case when b.kj is not null and b.potassium_mg is not null then 100.0 * (1 - (rank() over (order by b.potassium_mg * 100.0 / b.kj desc nulls last) - 1)::numeric / greatest(count(case when b.kj is not null then b.potassium_mg end) over () - 1, 1)) end as ck_potassium_mg,
     case when b.kj is not null and b.zinc_mg is not null then 100.0 * (1 - (rank() over (order by b.zinc_mg * 100.0 / b.kj desc nulls last) - 1)::numeric / greatest(count(case when b.kj is not null then b.zinc_mg end) over () - 1, 1)) end as ck_zinc_mg,
     case when b.kj is not null and b.iodine_ug is not null then 100.0 * (1 - (rank() over (order by b.iodine_ug * 100.0 / b.kj desc nulls last) - 1)::numeric / greatest(count(case when b.kj is not null then b.iodine_ug end) over () - 1, 1)) end as ck_iodine_ug,
-    case when b.kj is not null and b.ala_g is not null then 100.0 * (1 - (rank() over (order by b.ala_g * 100.0 / b.kj desc nulls last) - 1)::numeric / greatest(count(case when b.kj is not null then b.ala_g end) over () - 1, 1)) end as ck_ala_g,
+    case when b.kj is not null and b.ala_g is not null then 100.0 * (1 - (rank() over (order by b.ala_g * 100.0 / b.kj desc nulls last) - 1)::numeric / greatest(count(case when b.kj is not null then b.ala_g end) over () - 1, 1)) end as ck_ala_g
   from ranked b
 ),
 -- Available case: keep only the contributions this food actually earned.
