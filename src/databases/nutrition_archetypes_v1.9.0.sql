@@ -87,91 +87,11 @@ create table if not exists public.meal_archetypes (
   )
 );
 
--- Ten launch archetypes. Component order matches across the three arrays.
-insert into public.meal_archetypes
-  (slug, name, component_food_ids, component_weights, component_labels,
-   meal_slots, context_tags, display_order, active)
-values
-  ('breakfast_smoothie', 'Breakfast Smoothie',
-   array['5521a445-5f8c-495c-8474-250309b780b2'::uuid, 'e382dfc4-ed40-4a23-9cb9-2fb7b3744db7'::uuid, 'b0e85f1d-f67f-4c89-a08c-c2d323f749c1'::uuid, 'ed40fc98-8e6e-4ee0-a1ec-64a040abff85'::uuid, 'e79902b6-f2f8-49a5-9837-aea4e1bdfe7f'::uuid],
-   array[2, 2, 3, 1, 1]::numeric[],
-   array['Banana, raw', 'Berries (mixed)', 'Milk', 'Yogurt (plain)', 'Rolled oats, dry'],
-   array['breakfast', 'snack', 'post_session'],
-   array['breakfast', 'post-training', 'recovery', 'quick'],
-   1, true),
-  ('oats_bowl', 'Oats Breakfast Bowl',
-   array['e79902b6-f2f8-49a5-9837-aea4e1bdfe7f'::uuid, 'b0e85f1d-f67f-4c89-a08c-c2d323f749c1'::uuid, '5521a445-5f8c-495c-8474-250309b780b2'::uuid, '73df0dc8-fd34-4b85-82b0-23ef9340f179'::uuid],
-   array[3, 2, 1, 1]::numeric[],
-   array['Rolled oats, dry', 'Milk', 'Fruit (banana or apple)', 'Nuts and/or seeds'],
-   array['breakfast'],
-   array['breakfast', 'slow-release', 'high-fibre'],
-   2, true),
-  ('eggs_breakfast', 'Eggs Breakfast',
-   array['8a2cf9cc-97e4-454b-ab31-9cc53ce866fc'::uuid, '1736f5cc-6b89-4fac-9691-b43ff3173d09'::uuid, 'dd4e3215-4129-4476-a203-51788b02a04b'::uuid, 'e9098298-963d-4f72-93e2-6e91e2bdb3c7'::uuid],
-   array[3, 2, 1, 1]::numeric[],
-   array['Eggs (whole)', 'Wholegrain bread', 'Tomato and/or spinach', 'Avocado'],
-   array['breakfast'],
-   array['breakfast', 'high-protein'],
-   3, true),
-  ('sandwich_lunch', 'Sandwich / Lunch Wrap',
-   array['1736f5cc-6b89-4fac-9691-b43ff3173d09'::uuid, 'c747b070-9e51-40e2-b56f-4da5186a8895'::uuid, '82a47d72-fc85-45b7-9f68-3f179897a425'::uuid, '13d8ab4c-9386-47b6-9520-6050ba263b79'::uuid],
-   array[3, 2, 1, 1]::numeric[],
-   array['Wholegrain bread', 'Chicken (cooked, skinless)', 'Cheese (cheddar)', 'Salad vegetables'],
-   array['lunch'],
-   array['lunch', 'portable', 'high-protein'],
-   4, true),
-  ('rice_protein', 'Rice & Protein (Post-Training)',
-   array['e4512a08-0c57-444c-8bf0-a0f6c714314f'::uuid, 'c747b070-9e51-40e2-b56f-4da5186a8895'::uuid, 'f1d2b128-359e-45e5-9a17-cc1ee2ad3b0c'::uuid, 'fd340bef-faf7-4fd2-b3a6-5b43a45bebaf'::uuid],
-   array[3, 2, 2, 1]::numeric[],
-   array['White rice, cooked', 'Chicken breast (cooked)', 'Mixed vegetables', 'Olive oil'],
-   array['lunch', 'dinner', 'post_session'],
-   array['post-training', 'recovery', 'high-carb'],
-   5, true),
-  ('pasta_dinner', 'Pasta Dinner',
-   array['691a375f-c6ca-4c85-8e2a-fa75437d9353'::uuid, '9d3599ac-0f3d-48f9-8d13-8402420d9f0c'::uuid, '948f6064-c47e-4bae-a3b6-c81f45fd455f'::uuid, 'f1d2b128-359e-45e5-9a17-cc1ee2ad3b0c'::uuid, 'fd340bef-faf7-4fd2-b3a6-5b43a45bebaf'::uuid],
-   array[3, 2, 1, 1, 1]::numeric[],
-   array['Pasta (white, cooked)', 'Meat sauce or mince (beef)', 'Tomato-based sauce', 'Mixed vegetables', 'Olive oil'],
-   array['dinner'],
-   array['dinner', 'high-carb', 'pre-heavy-day'],
-   6, true),
-  ('salad_meal', 'Salad (Meal)',
-   array['13d8ab4c-9386-47b6-9520-6050ba263b79'::uuid, 'dd4e3215-4129-4476-a203-51788b02a04b'::uuid, '7d290f51-b9d4-477f-8a35-01ffa9f1fe92'::uuid, 'c747b070-9e51-40e2-b56f-4da5186a8895'::uuid, 'fd340bef-faf7-4fd2-b3a6-5b43a45bebaf'::uuid],
-   array[3, 2, 1, 1, 1]::numeric[],
-   array['Leafy greens', 'Tomato and cucumber', 'Legumes or feta', 'Chicken breast', 'Olive oil dressing'],
-   array['lunch', 'dinner'],
-   array['light', 'high-fibre', 'rest-day'],
-   7, true),
-  ('yogurt_snack', 'Yogurt Snack',
-   array['ed40fc98-8e6e-4ee0-a1ec-64a040abff85'::uuid, 'f979be17-d32e-4b1c-b03e-593a50c84e0e'::uuid, '61b42451-b86d-42ed-94e1-5702c5dddd75'::uuid],
-   array[3, 2, 1]::numeric[],
-   array['Yogurt (plain)', 'Fruit', 'Granola / muesli / nuts'],
-   array['snack', 'breakfast'],
-   array['snack', 'high-protein', 'recovery'],
-   8, true),
-  ('recovery_drink', 'Recovery Drink',
-   array['75413d68-e984-418e-959e-80115d5a3ef0'::uuid, '222f60fd-50ac-4713-8bbb-13b998831b0b'::uuid],
-   array[3, 2]::numeric[],
-   array['Flavoured milk', 'Sports / electrolyte drink'],
-   array['during_session', 'post_session'],
-   array['post-training', 'quick', 'portable'],
-   9, true),
-  ('takeaway_meal', 'Takeaway / Restaurant Meal',
-   array['94e2a285-8e0e-4027-842a-8e350153234f'::uuid, '3eaf750e-a526-494e-aeb1-4b98da87ae8c'::uuid, '5075e626-55bc-4a84-bed1-a9de6e5dfa66'::uuid],
-   array[3, 2, 2]::numeric[],
-   array['Pizza or burger', 'Fried side (chips)', 'Fried chicken or takeaway dish'],
-   array['lunch', 'dinner'],
-   array['low-quality-flag', 'social', 'travel'],
-   10, true)
-on conflict (slug) do update set
-  name = excluded.name,
-  component_food_ids = excluded.component_food_ids,
-  component_weights = excluded.component_weights,
-  component_labels = excluded.component_labels,
-  meal_slots = excluded.meal_slots,
-  context_tags = excluded.context_tags,
-  display_order = excluded.display_order;
--- `active` is deliberately NOT overwritten: an archetype the owner has
--- switched off must stay off across re-seeds.
+-- The ten archetype rows are seeded by SCRIPT, not pasted here:
+--   node scripts/seed_archetypes.mjs
+-- Long uuid[] literals were mangled by the SQL editor's paste buffer twice
+-- already; the script upserts the same rows over PostgREST (service role),
+-- is idempotent on slug, and never overwrites `active`.
 
 -- ============ 4. ARCHETYPE SCORES (plan §4.6) ============
 -- Weighted mean of the component foods' percentile scores using the same
