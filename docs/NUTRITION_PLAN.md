@@ -283,8 +283,8 @@ Follow existing project patterns:
 
 | # | Decision | Owner | Status |
 |---|---|---|---|
-| 1 | Quality tier multiplier values | Product owner | Pending (scaffold in §5.2 is illustrative only) |
-| 2 | Initial archetype list + component foods | Product owner | Pending (candidates in §6) |
+| 1 | Quality tier multiplier values | Product owner | **Resolved — 0.60 / 0.80 / 1.00 / 1.10 / 1.15**, seeded by `nutrition_archetypes_v1.9.0.sql` |
+| 2 | Initial archetype list + component foods | Product owner | **Resolved — 10 archetypes / 39 components**, seeded by `nutrition_archetypes_v1.9.0.sql` |
 | 3 | Load→fueling expectation model for planned-intake loop | Joint | Pending; coarse bands acceptable for v1 |
 | 4 | Include long-chain ω-3 (EPA/DHA) in the 19? Currently excluded though present in source data | Product owner | Pending |
 | 5 | Headline display format for percentile score (rank position vs 0–100 scale) | Product owner + UI | Pending |
@@ -380,8 +380,8 @@ The shipped system intentionally differs from the specification above. Each item
 
 | Spec | Status |
 |---|---|
-| §5 quality tiers + §5.2 multipliers | Blocked on §9.1 (owner values). Table + picker not built. |
-| §6 meal archetypes (the 3-tap flow) | Blocked on §9.2 (owner list). Interim fast path is favourites + recents. |
+| §5 quality tiers + §5.2 multipliers | **Seeded** in `nutrition_archetypes_v1.9.0.sql` as data (`quality_tier_modifiers`) + `portion_size_scalars`. Picker UI and snapshot-on-log not built. |
+| §6 meal archetypes (the 3-tap flow) | **Seeded**: 10 archetypes, 39 components resolved to real `food_id`s, plus `v_archetype_scores`. Picker UI not built; interim fast path is favourites + recents. |
 | §7.1 "What did you refuel with?" prompt | Column + API parameter exist; no UI calls it. |
 | §7.3 planned-vs-logged | Blocked on §9.3 (band model). |
 | §7.4 coach density-vs-load chart | Not built. |
@@ -440,6 +440,36 @@ Expected: `DELETE 29`, then the population drops 9,365 → 9,336.
 **One leftover reference row.** `Ethanol 100%` (`29505004`) sits in `Other alcoholic beverages` — a real food category — so a category filter can't drop it without dropping actual drinks. It is a recipe-derivation reference row, scores 11.28, and is only findable by searching "ethanol".
 
 **§4.2 worked examples are design-time only.** §2 forbids copying the design spreadsheet into production, so the ETL gates are locked to values computed from the shipped datasets. The cider example is provably the pear/perry row of an earlier AUSNUT release: seven of nine terms reproduce to the cent, and `121.46 − 4.0 (vitC) + 0.5 (iodine) = 117.96` in AUSNUT 2023. The blackcurrant example (639.67) reproduces no AUSNUT 2023 row at all (nearest: cordial base 144.55, fresh currant 534.17).
+
+---
+
+# Archetype resolution (v1.9.0)
+
+Built from the owner's **Tier Seeds & Archetype Worksheet v1.0** by two scripts, so the mapping is reproducible and auditable rather than hand-typed into SQL:
+
+```bash
+node scripts/resolve_archetypes.mjs    # descriptions → real food_id UUIDs, writes data/archetype_resolution.json
+node scripts/emit_archetype_seed.mjs   # that JSON → the seed block in nutrition_archetypes_v1.9.0.sql
+```
+
+`resolve_archetypes.mjs` reads `data/foods_live.json` (a snapshot of `public.foods`: id, source, source_code, description, category), applies the worksheet's Part 3 rules — one record per component, generic over branded, AUSNUT generic over FNDDS, raw/plain over prepared — and prints the chosen row for every component. Any component it cannot resolve, or can only resolve by falling back off its first (most specific) pattern, is emitted as an exception with the top three candidates and **never** seeded.
+
+**Result: 39/39 components resolved, 0 fallbacks.** Seeded: 10 archetypes, 39 components, plus `v_archetype_scores` (weighted mean of component percentile scores).
+
+## Resolution decisions worth a second look
+
+These are consequences of the worksheet's own "one record per component" rule, where the worksheet offered alternatives. They are flagged rather than silently chosen:
+
+| Component | Seeded as | Note |
+|---|---|---|
+| Salad → "Tomato and cucumber" (w2) | `Tomato, common, raw` | Only the tomato half; cucumber is a separate component waiting to be added (split as w1 + w1). |
+| Eggs → "Tomato **and/or** spinach" (w1) | `Tomato, common, raw` | The "or" is a genuine either/or; seeded as tomato. |
+| Salad → "Legumes **or** feta" (w1) | `Chickpea, dried, boiled…` | Seeded as chickpeas (the plant default). |
+| Takeaway → "Pizza **or** burger" (w3) | `Pizza with cheese and extra vegetables, medium crust` | The worksheet calls this the broadest archetype; seeded as pizza. A burger variant would be an eleventh archetype. |
+| Recovery Drink (w3 + w2) | Chocolate milk + sports drink | The worksheet says the components are **alternatives, not co-consumed**, and suggests a two-variant archetype. They are seeded as two weighted components, which reads as co-consumption. Needs an owner call before the picker ships. |
+
+**Rule 4 stands:** do not re-resolve these silently after a dataset import. Re-run the scripts, diff `data/archetype_resolution.json`, and let the owner approve changes.
+
 
 
 
