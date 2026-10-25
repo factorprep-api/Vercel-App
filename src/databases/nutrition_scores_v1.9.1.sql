@@ -26,7 +26,6 @@
 -- against real athlete data first, then decide whether to swap their order.
 -- =====================================================================
 
-drop materialized view if exists public.v_food_scores;
 -- ============ FOOD SCORES (materialized view — reference data only) ============
 -- TWO scores per food, both pure functions of stored data (plan §4.6).
 -- NO athlete data touches this view, so the RLS bypass of a materialized
@@ -57,6 +56,11 @@ drop materialized view if exists public.v_food_scores;
 -- none. Rationale: with 100% coverage of the 14 vitamin/mineral axes there
 -- are no patchy foods to distort, and the 3 fat-quality axes are genuinely
 -- undefined for <1 g/100 g fat foods rather than "bad".
+-- v_archetype_scores is a plain view over this matview, so it must be
+-- dropped first: DROP MATERIALIZED VIEW fails while a dependent object
+-- still exists, and CASCADE would drop it silently. It is recreated at
+-- the end of this file.
+drop view if exists public.v_archetype_scores;
 drop materialized view if exists public.v_food_scores;
 create materialized view public.v_food_scores as
 with base as (

@@ -174,6 +174,11 @@ create policy nl_update on public.nutrition_logs for update
 -- none. Rationale: with 100% coverage of the 14 vitamin/mineral axes there
 -- are no patchy foods to distort, and the 3 fat-quality axes are genuinely
 -- undefined for <1 g/100 g fat foods rather than "bad".
+-- v_archetype_scores is a plain view over this matview, so it must be
+-- dropped first: DROP MATERIALIZED VIEW fails while a dependent object
+-- still exists, and CASCADE would drop it silently. It is recreated at
+-- the end of this file.
+drop view if exists public.v_archetype_scores;
 drop materialized view if exists public.v_food_scores;
 create materialized view public.v_food_scores as
 with base as (
