@@ -680,6 +680,132 @@ export default function AthleteNutrition() {
         </div>
       </div>
 
+      {/* Today's log */}
+      <div className="an-card">
+        <div style={{ fontWeight: 700, fontSize: 15, color: '#334155', marginBottom: 6 }}>Today's Log</div>
+        {items.length === 0 ? (
+          <div className="an-empty">Nothing logged yet — add your first food below.</div>
+        ) : (
+          items.map((it, idx) => {
+            const b = scoreBadge(it.percentileScore, it.scoreAxes, it.densityPerKj);
+            const g = Number(it.grams) || 0;
+            const kj = it.kj100 != null ? Math.round(it.kj100 * g / 100) : null;
+            const p = it.protein100 != null ? Math.round(it.protein100 * g / 10) / 10 : null;
+            return (
+              <div key={idx} className="an-item">
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: '#0f172a' }}>{it.name}</div>
+                  <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
+                    {stripBrandLabel(it.portionLabel) || `${g} g`} · {kj != null ? `${kj} kJ` : '—'}{p != null ? ` · ${p} g protein` : ''}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span className="an-badge" style={{ background: b.bg, color: b.fg }}>{b.label}</span>
+                  <button className="an-icon-btn" onClick={() => removeItem(idx)} disabled={removing} title="Remove item">
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+      {/* Quick meals — tap 1: meal, tap 2: tier + portion, tap 3: add */}
+      <div className="an-card">
+        {!meal ? (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 15, color: '#334155', marginBottom: 12 }}>
+              <Salad size={16} color="#10b981" /> Quick meals
+            </div>
+            {loadingMeals && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '14px 4px', color: '#64748b', fontSize: 13 }}>
+                <Loader2 size={14} className="an-spin" /> Loading meals…
+              </div>
+            )}
+            {mealsError && <div style={{ color: '#b91c1c', fontSize: 13, padding: '10px 0' }}>Failed to load meals: {mealsError}</div>}
+            {!loadingMeals && !mealsError && meals.length === 0 && (
+              <div className="an-empty">No meals available yet.</div>
+            )}
+            {!loadingMeals && !mealsError && meals.length > 0 && (
+              <>
+                {/* Your list: starred meals + starred foods (personal, newest first) */}
+                {starredMeals.length === 0 && favourites.length === 0 && (
+                  <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 8 }}>
+                    Star a meal or food to pin it here — your pins always come first.
+                  </div>
+                )}
+                {starredMeals.map(renderMealRow)}
+                {favourites.map(renderFoodRow)}
+                {/* Generic archetypes: usage-ranked, collapsed behind More meals */}
+                {visibleGenericMeals.map(renderMealRow)}
+                {genericMeals.length > 3 && (
+                  <div style={{ display: 'flex', justifyContent: 'center', padding: '8px 0 0' }}>
+                    <button className="an-page-btn" onClick={() => setShowMoreMeals(s => !s)}>
+                      {showMoreMeals ? 'Fewer meals' : `More meals (${genericMeals.length - 3})`}
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+          </>
+        ) : (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 15, color: '#334155', marginBottom: 8 }}>
+              <CheckCircle size={16} color="#10b981" /> {meal.name}
+            </div>
+            <div style={{ fontSize: 13, color: '#64748b', marginBottom: 12 }}>
+              Normal serve{meal.baseGrams != null ? ` · ${Math.round(meal.baseGrams)} g` : ''}{meal.energyKj != null ? ` · ${Math.round(meal.energyKj).toLocaleString()} kJ` : ''}{meal.proteinG != null ? ` · ${meal.proteinG} g protein` : ''}
+              {meal.percentileScore != null ? ` · Score ${Math.round(meal.percentileScore)}` : ''}
+              {meal.componentCount != null ? ` (${meal.scoredComponents}/${meal.componentCount} components scored)` : ''}
+            </div>
+            <div style={{ fontWeight: 600, fontSize: 13, color: '#334155', marginBottom: 8 }}>How was it prepared?</div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+              {mealTiers.map(t => (
+                <button
+                  key={t.tier}
+                  className={`an-chip ${mealTier === t.tier ? 'selected' : ''}`}
+                  onClick={() => setMealTier(t.tier)}
+                  title={`Score multiplier ×${t.scoreMultiplier}`}
+                >
+                  {t.badge}
+                </button>
+              ))}
+            </div>
+            <div style={{ fontWeight: 600, fontSize: 13, color: '#334155', marginBottom: 8 }}>How much?</div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+              {mealPortions.map(p => (
+                <button
+                  key={p.portionSize}
+                  className={`an-chip ${mealPortion === p.portionSize ? 'selected' : ''}`}
+                  onClick={() => setMealPortion(p.portionSize)}
+                  title={`Serve multiplier ×${p.multiplier}`}
+                >
+                  {cap(p.portionSize)}{meal.baseGrams != null ? ` · ${Math.round(meal.baseGrams * p.multiplier)} g` : ''}
+                </button>
+              ))}
+            </div>
+            {meal.energyKj != null && (() => {
+              const pm = mealPortions.find(p => p.portionSize === mealPortion)?.multiplier ?? 1;
+              return (
+                <div style={{ fontSize: 13, color: '#334155', fontWeight: 600, marginBottom: 12 }}>
+                  ≈ {Math.round(meal.energyKj * pm).toLocaleString()} kJ{meal.proteinG != null ? ` · ${(meal.proteinG * pm).toFixed(1)} g protein` : ''}
+                </div>
+              );
+            })()}
+            <button className="an-add-btn" onClick={tapAddMeal} disabled={saving}>
+              {saving ? 'Adding…' : justLogged ? <><CheckCircle size={16} /> Added!</> : 'Add to Log'}
+            </button>
+            <button
+              onClick={() => setMeal(null)}
+              style={{ width: '100%', marginTop: 8, background: 'none', border: 'none', color: '#64748b', fontSize: 13, cursor: 'pointer' }}
+            >
+              Pick a different meal
+            </button>
+          </>
+        )}
+      </div>
+
+
       {/* Add food — tap 1: search, tap 2: portion, tap 3: add */}
       <div className="an-card">
         {!selected ? (
@@ -687,7 +813,7 @@ export default function AthleteNutrition() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 15, color: '#334155', marginBottom: 12 }}>
               <Utensils size={16} color="#10b981" /> What did you eat?
             </div>
-            {/* Recents only here — starred foods now live in Quick meals below */}
+            {/* Recents only here — starred foods now live in Quick meals above */}
             {recents.length > 0 && (
               <div style={{ marginBottom: 14 }}>
                 <div className="an-quick-title">🕘 Recent</div>
@@ -833,132 +959,6 @@ export default function AthleteNutrition() {
               Pick a different food
             </button>
           </>
-        )}
-      </div>
-      {/* Quick meals — tap 1: meal, tap 2: tier + portion, tap 3: add */}
-      <div className="an-card">
-        {!meal ? (
-          <>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 15, color: '#334155', marginBottom: 12 }}>
-              <Salad size={16} color="#10b981" /> Quick meals
-            </div>
-            {loadingMeals && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '14px 4px', color: '#64748b', fontSize: 13 }}>
-                <Loader2 size={14} className="an-spin" /> Loading meals…
-              </div>
-            )}
-            {mealsError && <div style={{ color: '#b91c1c', fontSize: 13, padding: '10px 0' }}>Failed to load meals: {mealsError}</div>}
-            {!loadingMeals && !mealsError && meals.length === 0 && (
-              <div className="an-empty">No meals available yet.</div>
-            )}
-            {!loadingMeals && !mealsError && meals.length > 0 && (
-              <>
-                {/* Your list: starred meals + starred foods (personal, newest first) */}
-                {starredMeals.length === 0 && favourites.length === 0 && (
-                  <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 8 }}>
-                    Star a meal or food to pin it here — your pins always come first.
-                  </div>
-                )}
-                {starredMeals.map(renderMealRow)}
-                {favourites.map(renderFoodRow)}
-                {/* Generic archetypes: usage-ranked, collapsed behind More meals */}
-                {visibleGenericMeals.map(renderMealRow)}
-                {genericMeals.length > 3 && (
-                  <div style={{ display: 'flex', justifyContent: 'center', padding: '8px 0 0' }}>
-                    <button className="an-page-btn" onClick={() => setShowMoreMeals(s => !s)}>
-                      {showMoreMeals ? 'Fewer meals' : `More meals (${genericMeals.length - 3})`}
-                    </button>
-                  </div>
-                )}
-              </>
-            )}
-          </>
-        ) : (
-          <>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 15, color: '#334155', marginBottom: 8 }}>
-              <CheckCircle size={16} color="#10b981" /> {meal.name}
-            </div>
-            <div style={{ fontSize: 13, color: '#64748b', marginBottom: 12 }}>
-              Normal serve{meal.baseGrams != null ? ` · ${Math.round(meal.baseGrams)} g` : ''}{meal.energyKj != null ? ` · ${Math.round(meal.energyKj).toLocaleString()} kJ` : ''}{meal.proteinG != null ? ` · ${meal.proteinG} g protein` : ''}
-              {meal.percentileScore != null ? ` · Score ${Math.round(meal.percentileScore)}` : ''}
-              {meal.componentCount != null ? ` (${meal.scoredComponents}/${meal.componentCount} components scored)` : ''}
-            </div>
-            <div style={{ fontWeight: 600, fontSize: 13, color: '#334155', marginBottom: 8 }}>How was it prepared?</div>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
-              {mealTiers.map(t => (
-                <button
-                  key={t.tier}
-                  className={`an-chip ${mealTier === t.tier ? 'selected' : ''}`}
-                  onClick={() => setMealTier(t.tier)}
-                  title={`Score multiplier ×${t.scoreMultiplier}`}
-                >
-                  {t.badge}
-                </button>
-              ))}
-            </div>
-            <div style={{ fontWeight: 600, fontSize: 13, color: '#334155', marginBottom: 8 }}>How much?</div>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
-              {mealPortions.map(p => (
-                <button
-                  key={p.portionSize}
-                  className={`an-chip ${mealPortion === p.portionSize ? 'selected' : ''}`}
-                  onClick={() => setMealPortion(p.portionSize)}
-                  title={`Serve multiplier ×${p.multiplier}`}
-                >
-                  {cap(p.portionSize)}{meal.baseGrams != null ? ` · ${Math.round(meal.baseGrams * p.multiplier)} g` : ''}
-                </button>
-              ))}
-            </div>
-            {meal.energyKj != null && (() => {
-              const pm = mealPortions.find(p => p.portionSize === mealPortion)?.multiplier ?? 1;
-              return (
-                <div style={{ fontSize: 13, color: '#334155', fontWeight: 600, marginBottom: 12 }}>
-                  ≈ {Math.round(meal.energyKj * pm).toLocaleString()} kJ{meal.proteinG != null ? ` · ${(meal.proteinG * pm).toFixed(1)} g protein` : ''}
-                </div>
-              );
-            })()}
-            <button className="an-add-btn" onClick={tapAddMeal} disabled={saving}>
-              {saving ? 'Adding…' : justLogged ? <><CheckCircle size={16} /> Added!</> : 'Add to Log'}
-            </button>
-            <button
-              onClick={() => setMeal(null)}
-              style={{ width: '100%', marginTop: 8, background: 'none', border: 'none', color: '#64748b', fontSize: 13, cursor: 'pointer' }}
-            >
-              Pick a different meal
-            </button>
-          </>
-        )}
-      </div>
-
-
-      {/* Today's log */}
-      <div className="an-card">
-        <div style={{ fontWeight: 700, fontSize: 15, color: '#334155', marginBottom: 6 }}>Today's Log</div>
-        {items.length === 0 ? (
-          <div className="an-empty">Nothing logged yet — add your first food above.</div>
-        ) : (
-          items.map((it, idx) => {
-            const b = scoreBadge(it.percentileScore, it.scoreAxes, it.densityPerKj);
-            const g = Number(it.grams) || 0;
-            const kj = it.kj100 != null ? Math.round(it.kj100 * g / 100) : null;
-            const p = it.protein100 != null ? Math.round(it.protein100 * g / 10) / 10 : null;
-            return (
-              <div key={idx} className="an-item">
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: '#0f172a' }}>{it.name}</div>
-                  <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
-                    {stripBrandLabel(it.portionLabel) || `${g} g`} · {kj != null ? `${kj} kJ` : '—'}{p != null ? ` · ${p} g protein` : ''}
-                  </div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span className="an-badge" style={{ background: b.bg, color: b.fg }}>{b.label}</span>
-                  <button className="an-icon-btn" onClick={() => removeItem(idx)} disabled={removing} title="Remove item">
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-              </div>
-            );
-          })
         )}
       </div>
     </div>
