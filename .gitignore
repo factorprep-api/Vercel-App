@@ -27,3 +27,6 @@ dist-ssr
 
 # Nutrition ETL datasets (re-downloadable, ~40MB extracted)
 data/
+
+# One-off generated test images
+test.png
