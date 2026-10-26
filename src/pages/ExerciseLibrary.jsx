@@ -524,7 +524,7 @@ function AddExerciseModal({ userEmail, athleteName, existingCategories, isAdmin,
   }, [existingCategories, coachCategoryName]);
 
   const helperText = isAdmin
-    ? `Defaults to "${coachCategoryName}". Select "Public Library" to publish to everyone.`
+    ? `Pick where the exercise lives: "${coachCategoryName}" is visible only to you, "Public Library" is visible to every coach and athlete.`
     : `Defaults to "${coachCategoryName}". Type or select existing categories.`;
 
   async function handleSave() {
@@ -575,11 +575,19 @@ function AddExerciseModal({ userEmail, athleteName, existingCategories, isAdmin,
         
         <div className="exlib-add-field">
           <label className="exlib-add-label">Exercise Library:</label>
-          <input className="exlib-add-input" list="exlib-muscle-list" value={muscle} onChange={e => setMuscle(e.target.value)} placeholder="e.g. Chest" />
-          <datalist id="exlib-muscle-list">
-            {categoryOptions.map(cat => <option key={cat} value={cat} />)}
-            {isAdmin && <option value="Public Library" />}
-          </datalist>
+          {isAdmin ? (
+            <select className="exlib-add-input" value={muscle} onChange={e => setMuscle(e.target.value)}>
+              <option value={coachCategoryName}>{coachCategoryName} (only you)</option>
+              <option value="Public Library">Public Library (everyone)</option>
+            </select>
+          ) : (
+            <>
+              <input className="exlib-add-input" list="exlib-muscle-list" value={muscle} onChange={e => setMuscle(e.target.value)} placeholder="e.g. Chest" />
+              <datalist id="exlib-muscle-list">
+                {categoryOptions.map(cat => <option key={cat} value={cat} />)}
+              </datalist>
+            </>
+          )}
           <p style={{ fontSize: 11, color: '#888', margin: '4px 0 0 0' }}>{helperText}</p>
         </div>
         

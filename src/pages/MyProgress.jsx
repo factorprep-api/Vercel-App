@@ -827,9 +827,11 @@ useEffect(() => {
     const kg = parseFloat(bwWeight);
     if (!Number.isFinite(kg) || kg <= 0 || kg >= 500) { showToast('Please enter a valid body weight in kg.', true); return; }
     if (!bwDate) { showToast('Please pick a date.', true); return; }
-    const needProfile = !bodyData || bodyData.sex == null || bodyData.birthYear == null || bodyData.heightCm == null;
+    // Profile fields are always visible (prefilled from the saved profile), so
+    // athletes can also correct sex / birth year / height later. The profile is
+    // validated and sent on every save - the athletes-row update is idempotent.
     let profile = null;
-    if (needProfile) {
+    {
       const y = parseInt(bwBirthYear, 10);
       const h = parseFloat(bwHeight);
       if (!bwSex) { showToast('Please select male or female.', true); return; }
@@ -1300,7 +1302,7 @@ useEffect(() => {
                 <div className="mp-maxes-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span>Current Core Maxes</span>
                   <div style={{ display: 'flex', gap: '6px' }}>
-                    <button onClick={() => { setBwDate(new Date().toISOString().split('T')[0]); setShowBwModal(true); }} style={{ background: '#008ed3', color: '#fff', border: 'none', borderRadius: '6px', padding: '6px 12px', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}>+ Add BW</button>
+                    <button onClick={() => { setBwDate(new Date().toISOString().split('T')[0]); setBwSex(bodyData?.sex ?? ''); setBwBirthYear(bodyData?.birthYear != null ? String(bodyData.birthYear) : ''); setBwHeight(bodyData?.heightCm != null ? String(bodyData.heightCm) : ''); setShowBwModal(true); }} style={{ background: '#008ed3', color: '#fff', border: 'none', borderRadius: '6px', padding: '6px 12px', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}>+ Add BW</button>
                     <button onClick={() => { setMaxSearchQuery(''); setDebouncedMaxSearch(''); setShowMaxDropdown(false); setShowMaxModal(true); }} style={{ background: '#008ed3', color: '#fff', border: 'none', borderRadius: '6px', padding: '6px 12px', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}>+ Add 1RM</button>
                   </div>
                 </div>
@@ -1869,10 +1871,9 @@ useEffect(() => {
             <p style={{ margin: '0 0 16px 0', fontSize: '12px', color: '#d97706' }}>
               Your weight feeds the energy-balance view on the Nutrition page. Coaches of your team can see your weight — that's expected.
             </p>
-            {(!bodyData || bodyData.sex == null || bodyData.birthYear == null || bodyData.heightCm == null) && (
-              <>
+            <>
                 <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: '#64748b', fontWeight: 600 }}>
-                  Needed once to estimate your daily energy needs. Only sex, birth year and height are stored.
+                  These feed your daily energy needs on the Nutrition page. Only sex, birth year and height are stored - you can update them anytime.
                 </p>
                 <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#555', marginBottom: '4px', textTransform: 'uppercase' }}>Sex</label>
                 <select
@@ -1903,8 +1904,7 @@ useEffect(() => {
                   placeholder="e.g. 180"
                   style={{ width: '100%', padding: '8px 12px', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '14px', marginBottom: '12px' }}
                 />
-              </>
-            )}
+            </>
             <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#555', marginBottom: '4px', textTransform: 'uppercase' }}>Body weight (kg)</label>
             <input
               type="number"
