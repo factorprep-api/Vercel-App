@@ -1178,6 +1178,71 @@ export const saveAthleteMax = async (athleteName, exerciseName, oneRmKg, date) =
   } catch (err) { return { status: 'Error', message: err.message }; }
 };
 
+// ---- Body data (v1.9.5): athlete profile + dated body weights ----
+// sex/birth_year/height_cm live on the athletes row (athlete-settable —
+// the admin-field protection trigger only guards role/primary_club_id);
+// weights live in body_measurements (each entry a dated row, newest wins).
+// Both feed the BMR-based energy balance on the nutrition page. RLS
+// (bm_select) lets coaches of the athlete's teams read weights; the
+// profile is athlete-owned and only ever written by the athlete here.
+
+export const fetchAthleteBodyData = async (athleteName) => {
+  try {
+    const athleteId = await resolveAthleteRow(athleteName);
+    if (!athleteId) return { status: 'Error', message: 'Athlete not found' };
+    const [{ data: prof, error: profErr }, { data: wt, error: wtErr }] = await Promise.all([
+      supabase.from('athletes').select('sex, birth_year, height_cm').eq('id', athleteId).maybeSingle(),
+      supabase.from('body_measurements').select('weight_kg, entry_date')
+        .eq('athlete_id', athleteId).is('deleted_at', null)
+        .order('entry_date', { ascending: false })
+        .order('created_at', { ascending: false })
+        .limit(1)
+    ]);
+    if (profErr) return { status: 'Error', message: profErr.message };
+    if (wtErr) return { status: 'Error', message: wtErr.message };
+    const w = (wt || [])[0] || null;
+    return {
+      status: 'Success',
+      sex: prof?.sex ?? null,
+      birthYear: prof?.birth_year ?? null,
+      heightCm: prof?.height_cm != null ? Number(prof.height_cm) : null,
+      weightKg: w ? Number(w.weight_kg) : null,
+      weightDate: w ? w.entry_date : null
+    };
+  } catch (err) { return { status: 'Error', message: err.message }; }
+};
+
+export const saveAthleteProfile = async (athleteName, profile) => {
+  try {
+    const athleteId = await resolveAthleteRow(athleteName);
+    if (!athleteId) return { status: 'Error', message: 'Athlete not found' };
+    const upd = {};
+    if (profile.sex != null) upd.sex = profile.sex;
+    if (profile.birthYear != null) upd.birth_year = profile.birthYear;
+    if (profile.heightCm != null) upd.height_cm = profile.heightCm;
+    if (Object.keys(upd).length === 0) return { status: 'Success' };
+    const { error } = await supabase.from('athletes').update(upd).eq('id', athleteId);
+    if (error) return { status: 'Error', message: error.message };
+    return { status: 'Success' };
+  } catch (err) { return { status: 'Error', message: err.message }; }
+};
+
+export const saveBodyWeight = async (athleteName, kg, date) => {
+  try {
+    const athleteId = await resolveAthleteRow(athleteName);
+    if (!athleteId) return { status: 'Error', message: 'Athlete not found' };
+    const val = parseFloat(kg);
+    if (!Number.isFinite(val) || val <= 0 || val >= 500) return { status: 'Error', message: 'Please enter a valid body weight in kg.' };
+    const { error } = await supabase.from('body_measurements').insert({
+      athlete_id: athleteId,
+      weight_kg: Math.round(val * 10) / 10,
+      entry_date: date || new Date().toISOString().split('T')[0]
+    });
+    if (error) return { status: 'Error', message: error.message };
+    return { status: 'Success' };
+  } catch (err) { return { status: 'Error', message: err.message }; }
+};
+
 export const getLastLoggedWeight = async (athleteName, exerciseName) => {
   try {
     const athleteId = await resolveAthleteRow(athleteName);

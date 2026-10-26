@@ -17,7 +17,10 @@ import {
   saveAthleteMax,
   fetchCycleLogs,
   saveCycleLog,
-  deleteCycleLog
+  deleteCycleLog,
+  fetchAthleteBodyData,
+  saveAthleteProfile,
+  saveBodyWeight
 } from '../api';
 import { getCycleContext, PHASE_STATUS, buildCycleChartData, ymd } from '../utils/cycleMath';
 import {
@@ -207,6 +210,17 @@ useEffect(() => {
   const [maxValueInput, setMaxValueInput] = useState('');
   const [maxDateInput, setMaxDateInput] = useState(new Date().toISOString().split('T')[0]);
   const [maxSaving, setMaxSaving] = useState(false);
+
+  // ADD BW MODAL STATE (v1.9.5, athlete self-service). bodyData holds the
+  // athlete's profile (sex/birth_year/height_cm) and latest weight.
+  const [showBwModal, setShowBwModal] = useState(false);
+  const [bwSaving, setBwSaving] = useState(false);
+  const [bwWeight, setBwWeight] = useState('');
+  const [bwDate, setBwDate] = useState(new Date().toISOString().split('T')[0]);
+  const [bwSex, setBwSex] = useState('');
+  const [bwBirthYear, setBwBirthYear] = useState('');
+  const [bwHeight, setBwHeight] = useState('');
+  const [bodyData, setBodyData] = useState(null);
   const [history, setHistory] = useState([]);
   const [programsData, setProgramsData] = useState([]);
   const [libraryData, setLibraryData] = useState([]);
@@ -287,6 +301,22 @@ useEffect(() => {
       loadData();
     }
   }, [userEmail]);
+
+  // v1.9.5: body data (profile + latest weight) for the Metrics tab —
+  // refetches whenever the resolved athlete name settles.
+  useEffect(() => {
+    let alive = true;
+    if (!athleteName) return;
+    fetchAthleteBodyData(athleteName)
+      .then(res => {
+        if (alive && res.status === 'Success') {
+          setBodyData({ sex: res.sex, birthYear: res.birthYear, heightCm: res.heightCm, weightKg: res.weightKg, weightDate: res.weightDate });
+        }
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [athleteName]);
+
 
   async function loadData() {
     const cached = localStorage.getItem('fp_progress_data');
@@ -762,6 +792,56 @@ const epleyExercises = useMemo(() => {
     setMaxSaving(false);
   }
 
+  // ===== ADD BW HANDLER (v1.9.5, athlete self-service) =====
+  // First entry must complete the profile: sex is male/female only (product
+  // decision — no third option), and without sex/age/height there is no
+  // honest BMR, so the energy gauge simply doesn't render until it's set.
+  async function handleSaveBw() {
+    const kg = parseFloat(bwWeight);
+    if (!Number.isFinite(kg) || kg <= 0 || kg >= 500) { showToast('Please enter a valid body weight in kg.', true); return; }
+    if (!bwDate) { showToast('Please pick a date.', true); return; }
+    const needProfile = !bodyData || bodyData.sex == null || bodyData.birthYear == null || bodyData.heightCm == null;
+    let profile = null;
+    if (needProfile) {
+      const y = parseInt(bwBirthYear, 10);
+      const h = parseFloat(bwHeight);
+      if (!bwSex) { showToast('Please select male or female.', true); return; }
+      if (!Number.isFinite(y) || y < 1930 || y > 2020) { showToast('Please enter a valid birth year.', true); return; }
+      if (!Number.isFinite(h) || h < 100 || h > 250) { showToast('Please enter a valid height in cm.', true); return; }
+      profile = { sex: bwSex, birthYear: y, heightCm: h };
+    }
+    setBwSaving(true);
+    try {
+      if (profile) {
+        const profRes = await saveAthleteProfile(athleteName, profile);
+        if (profRes.status !== 'Success') {
+          showToast('Could not save profile: ' + (profRes.message || 'Unknown error'), true);
+          setBwSaving(false);
+          return;
+        }
+      }
+      const res = await saveBodyWeight(athleteName, kg, bwDate);
+      if (res.status === 'Success') {
+        setBodyData(prev => ({
+          sex: profile ? profile.sex : prev?.sex ?? null,
+          birthYear: profile ? profile.birthYear : prev?.birthYear ?? null,
+          heightCm: profile ? profile.heightCm : prev?.heightCm ?? null,
+          weightKg: kg,
+          weightDate: bwDate
+        }));
+        setShowBwModal(false);
+        setBwWeight('');
+        setBwDate(new Date().toISOString().split('T')[0]);
+        showToast('Body weight saved.');
+      } else {
+        showToast('Save failed: ' + (res.message || 'Unknown error'), true);
+      }
+    } catch {
+      showToast('Network error. Please try again.', true);
+    }
+    setBwSaving(false);
+  }
+
   // ===== STEP B: EDIT HANDLERS =====
   const openEditModal = (exerciseName, setNumber, field, currentValue, metricLabel) => {
     setEditingSet({ exerciseName, setNumber, field, currentValue, metricLabel });
@@ -871,7 +951,7 @@ const epleyExercises = useMemo(() => {
                 className={`mp-tab ${activeTab === 'maxes' ? 'active' : ''}`}
                 onClick={() => setActiveTab('maxes')}
               >
-                <Dumbbell size={16} /> Metrics (1RM)
+                <Dumbbell size={16} /> Metrics
               </button>
               <button
                 className={`mp-tab ${activeTab === 'history' ? 'active' : ''}`}
@@ -1192,18 +1272,29 @@ const epleyExercises = useMemo(() => {
               <div className="mp-maxes-card">
                 <div className="mp-maxes-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span>Current Core Maxes</span>
-                  <button onClick={() => setShowMaxModal(true)} style={{ background: '#008ed3', color: '#fff', border: 'none', borderRadius: '6px', padding: '6px 12px', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}>+ Add 1RM</button>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <button onClick={() => { setBwDate(new Date().toISOString().split('T')[0]); setShowBwModal(true); }} style={{ background: '#008ed3', color: '#fff', border: 'none', borderRadius: '6px', padding: '6px 12px', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}>+ Add BW</button>
+                    <button onClick={() => setShowMaxModal(true)} style={{ background: '#008ed3', color: '#fff', border: 'none', borderRadius: '6px', padding: '6px 12px', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}>+ Add 1RM</button>
+                  </div>
                 </div>
                 <div className="mp-maxes-grid">
-                  {maxes.length === 0 ? (
+                  {maxes.length === 0 && bodyData?.weightKg == null ? (
                     <p className="mp-placeholder">No metrics recorded yet.</p>
                   ) : (
-                    maxes.map((max, i) => (
-                      <div key={i} className="mp-max-item">
-                        <div className="mp-max-label">{max.name}</div>
-                        <div className="mp-max-value">{max.weight} <span className="mp-max-unit">kg</span></div>
-                      </div>
-                    ))
+                    <>
+                      {bodyData?.weightKg != null && (
+                        <div className="mp-max-item">
+                          <div className="mp-max-label">Body Weight</div>
+                          <div className="mp-max-value">{bodyData.weightKg} <span className="mp-max-unit">kg</span></div>
+                        </div>
+                      )}
+                      {maxes.map((max, i) => (
+                        <div key={i} className="mp-max-item">
+                          <div className="mp-max-label">{max.name}</div>
+                          <div className="mp-max-value">{max.weight} <span className="mp-max-unit">kg</span></div>
+                        </div>
+                      ))}
+                    </>
                   )}
                 </div>
               </div>
@@ -1715,6 +1806,91 @@ const epleyExercises = useMemo(() => {
         </div>
       )}
 
+      {/* ===== ADD BW MODAL (v1.9.5, athlete self-service) ===== */}
+      {showBwModal && (
+        <div onClick={() => { if (!bwSaving) setShowBwModal(false); }} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15,23,42,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '16px' }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: '#ffffff', borderRadius: '16px', width: '100%', maxWidth: '440px', padding: '24px', boxShadow: '0 20px 40px rgba(0,0,0,0.15)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+              <h3 style={{ fontSize: '18px', color: '#0f172a', fontWeight: '800', margin: 0 }}>Add Body Weight</h3>
+              <button onClick={() => { if (!bwSaving) setShowBwModal(false); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', padding: 0 }}>
+                <X size={20} />
+              </button>
+            </div>
+            <p style={{ margin: '0 0 16px 0', fontSize: '12px', color: '#d97706' }}>
+              Your weight feeds the energy-balance view on the Nutrition page. Coaches of your team can see your weight — that's expected.
+            </p>
+            {(!bodyData || bodyData.sex == null || bodyData.birthYear == null || bodyData.heightCm == null) && (
+              <>
+                <p style={{ margin: '0 0 12px 0', fontSize: '12px', color: '#64748b', fontWeight: 600 }}>
+                  Needed once to estimate your daily energy needs. Only sex, birth year and height are stored.
+                </p>
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#555', marginBottom: '4px', textTransform: 'uppercase' }}>Sex</label>
+                <select
+                  value={bwSex}
+                  onChange={(e) => setBwSex(e.target.value)}
+                  disabled={bwSaving}
+                  style={{ width: '100%', padding: '8px 12px', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '14px', marginBottom: '12px', background: '#fff' }}
+                >
+                  <option value="">Select…</option>
+                  <option value="male">Male</option>
+                  <option value="female">Female</option>
+                </select>
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#555', marginBottom: '4px', textTransform: 'uppercase' }}>Birth year</label>
+                <input
+                  type="number"
+                  value={bwBirthYear}
+                  onChange={(e) => setBwBirthYear(e.target.value)}
+                  disabled={bwSaving}
+                  placeholder="e.g. 2001"
+                  style={{ width: '100%', padding: '8px 12px', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '14px', marginBottom: '12px' }}
+                />
+                <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#555', marginBottom: '4px', textTransform: 'uppercase' }}>Height (cm)</label>
+                <input
+                  type="number"
+                  value={bwHeight}
+                  onChange={(e) => setBwHeight(e.target.value)}
+                  disabled={bwSaving}
+                  placeholder="e.g. 180"
+                  style={{ width: '100%', padding: '8px 12px', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '14px', marginBottom: '12px' }}
+                />
+              </>
+            )}
+            <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#555', marginBottom: '4px', textTransform: 'uppercase' }}>Body weight (kg)</label>
+            <input
+              type="number"
+              value={bwWeight}
+              onChange={(e) => setBwWeight(e.target.value)}
+              disabled={bwSaving}
+              placeholder="e.g. 72.5"
+              style={{ width: '100%', padding: '8px 12px', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '14px', marginBottom: '12px' }}
+            />
+            <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#555', marginBottom: '4px', textTransform: 'uppercase' }}>Date</label>
+            <input
+              type="date"
+              value={bwDate}
+              onChange={(e) => setBwDate(e.target.value)}
+              disabled={bwSaving}
+              style={{ width: '100%', padding: '8px 12px', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '14px', marginBottom: '16px' }}
+            />
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                onClick={() => { if (!bwSaving) setShowBwModal(false); }}
+                disabled={bwSaving}
+                style={{ flex: 1, padding: '10px', borderRadius: '8px', background: '#f1f5f9', color: '#334155', border: 'none', fontSize: '14px', fontWeight: 600, cursor: bwSaving ? 'not-allowed' : 'pointer' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveBw}
+                disabled={bwSaving}
+                style={{ flex: 1, padding: '10px', borderRadius: '8px', background: bwSaving ? '#94a3b8' : '#008ed3', color: '#fff', border: 'none', fontSize: '14px', fontWeight: 700, cursor: bwSaving ? 'not-allowed' : 'pointer' }}
+              >
+                {bwSaving ? 'Saving...' : 'Save Weight'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <HelpButton pageName="My Progress" position="bottom-right" />
       {toast && (
         <div style={{
