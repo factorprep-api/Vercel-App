@@ -117,6 +117,10 @@ export default function CoachResults() {
   const [maxDateInput, setMaxDateInput] = useState(new Date().toISOString().split('T')[0]);
   const [maxSaving, setMaxSaving] = useState(false);
   const [currentMaxes, setCurrentMaxes] = useState({});
+  // Exercise picker search (same algorithm as the Exercise Library)
+  const [maxSearchQuery, setMaxSearchQuery] = useState('');
+  const [debouncedMaxSearch, setDebouncedMaxSearch] = useState('');
+  const [showMaxDropdown, setShowMaxDropdown] = useState(false);
 
   // WELLNESS & MEDICAL STATE
   const [wellnessRoster, setWellnessRoster] = useState([]);
@@ -210,14 +214,36 @@ export default function CoachResults() {
     setMaxExerciseSel('');
     setMaxValueInput('');
     setMaxDateInput(new Date().toISOString().split('T')[0]);
+    setMaxSearchQuery('');
+    setDebouncedMaxSearch('');
+    setShowMaxDropdown(false);
     try {
-      // Only exercises with the weight/1RM (Epley) formula enabled can take a 1RM
+      // Only exercises with the weight/1RM (Epley) formula enabled can take a 1RM.
+      // Name + muscle/category are kept so the picker search matches exactly like
+      // the Exercise Library.
       const lib = await fetchExerciseLibrary();
-      setMaxExercises(lib.filter(e => e.isEpley).map(e => e.name).sort((a, b) => a.localeCompare(b)));
+      setMaxExercises(lib.filter(e => e.isEpley).map(e => ({ name: e.name, muscle: e.muscle })).sort((a, b) => a.name.localeCompare(b.name)));
       const maxRes = await getLatestMaxes(selectedAthlete);
       setCurrentMaxes(maxRes.status === 'Success' ? (maxRes.maxes || {}) : {});
     } catch { setMaxExercises([]); }
   }
+
+  // 300ms debounce — same timing as the exercise library
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedMaxSearch(maxSearchQuery), 300);
+    return () => clearTimeout(t);
+  }, [maxSearchQuery]);
+
+  // Multi-token AND search (name OR muscle), exactly like the Exercise Library
+  const filteredMaxExercises = useMemo(() => {
+    if (debouncedMaxSearch.length < 2) return maxExercises;
+    const tokens = debouncedMaxSearch.toLowerCase().split(/\s+/);
+    return maxExercises.filter(e => {
+      const n = e.name.toLowerCase();
+      const m = (e.muscle || '').toLowerCase();
+      return tokens.every(t => n.includes(t) || m.includes(t));
+    });
+  }, [debouncedMaxSearch, maxExercises]);
 
   async function handleSaveMax() {
     if (!maxExerciseSel) { alert('Please select an exercise.'); return; }
@@ -231,6 +257,8 @@ export default function CoachResults() {
         setShowMaxModal(false);
         setMaxExerciseSel('');
         setMaxValueInput('');
+        setMaxSearchQuery('');
+        setDebouncedMaxSearch('');
       } else {
         alert('Save failed: ' + (res.message || 'Unknown error'));
       }
@@ -1045,12 +1073,35 @@ export default function CoachResults() {
             <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: COLORS.bodyGray, textTransform: 'uppercase', marginBottom: '6px' }}>
               Exercise (1RM / Epley enabled)
             </label>
-            <select value={maxExerciseSel} onChange={(e) => setMaxExerciseSel(e.target.value)} style={{ ...styles.select, width: '100%' }}>
-              <option value="">Select an exercise…</option>
-              {maxExercises.map((name) => (
-                <option key={name} value={name}>{name}</option>
-              ))}
-            </select>
+            <div style={{ position: 'relative' }}>
+              <input
+                type="text"
+                value={maxSearchQuery}
+                onChange={(e) => { setMaxSearchQuery(e.target.value); setMaxExerciseSel(''); setShowMaxDropdown(true); }}
+                onFocus={() => setShowMaxDropdown(true)}
+                onBlur={() => setShowMaxDropdown(false)}
+                autoComplete="off"
+                placeholder="Type to search exercises..."
+                style={{ ...styles.input, width: '100%', cursor: 'text' }}
+              />
+              {showMaxDropdown && (
+                <ul style={{ position: 'absolute', top: '100%', left: 0, right: 0, margin: '4px 0 0 0', padding: '4px 0', listStyle: 'none', background: COLORS.white, border: `1px solid ${COLORS.border}`, borderRadius: '8px', boxShadow: '0 8px 20px rgba(0,0,0,0.12)', maxHeight: '220px', overflowY: 'auto', zIndex: 10 }}>
+                  {filteredMaxExercises.length === 0 ? (
+                    <li style={{ padding: '10px 12px', color: COLORS.bodyGray, fontSize: '14px' }}>No exercises found.</li>
+                  ) : (
+                    filteredMaxExercises.map((ex) => (
+                      <li
+                        key={ex.name}
+                        onMouseDown={(e) => { e.preventDefault(); setMaxExerciseSel(ex.name); setMaxSearchQuery(ex.name); setShowMaxDropdown(false); }}
+                        style={{ padding: '10px 12px', fontSize: '14px', color: COLORS.darkText, cursor: 'pointer' }}
+                      >
+                        {ex.name}
+                      </li>
+                    ))
+                  )}
+                </ul>
+              )}
+            </div>
             {maxExerciseSel && currentMaxes[maxExerciseSel] ? (
               <p style={{ fontSize: '12px', color: COLORS.green, margin: '8px 0 0 0', fontWeight: '600' }}>
                 Current saved 1RM: {currentMaxes[maxExerciseSel]} kg

@@ -1599,13 +1599,17 @@ export const addExerciseToLibrary = async (exerciseData) => {
     else if (exerciseData.formula === 'distance') metricType = 'distance';
     else if (exerciseData.formula === 'reps_only') metricType = 'reps_only';
 
+    // isPublic: true -> shared public library row (no owner, visible to
+    // everyone via ex_select). Only the admin can request this; the DB
+    // policy ex_admin_public_insert rejects public inserts from anyone else.
+    const isPublic = exerciseData.isPublic === true;
     const { error } = await supabase.from('exercises').insert({
       exercise_name: exerciseData.name, // CHANGED
       muscle_category: exerciseData.muscle || 'Other',
       video_url: exerciseData.video || '',
       metric_type: metricType,
-      is_public: false,
-      owner_user_id: user ? user.id : null
+      is_public: isPublic,
+      owner_user_id: isPublic ? null : (user ? user.id : null)
     });
     if (error) return { status: 'Error', message: error.message };
     return { status: 'Success' };
