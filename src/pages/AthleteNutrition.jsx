@@ -67,6 +67,32 @@ function PageButtons({ currentPage, totalPages, onChange }) {
 // Portion presets offered when the database portion doesn't fit (grams)
 const GRAM_PRESETS = [50, 100, 150, 200, 250];
 
+// ---- Brand neutrality (product decision) ----
+// AUSNUT portion labels append retailer/manufacturer names ("1 pouch Coles",
+// "1 KFC Bowl", "1 scoop Musashi Shred and Burn"). The app does not promote
+// brands anywhere food is displayed; if a brand ever appears here it will be
+// a deliberately designed paid placement, never free incidental exposure.
+// Strip from the first brand token to the end of the label — the useful part
+// ("1 pouch", "1 biscuit", "1 scoop") survives. Descriptions keep brand names:
+// they are the food's identity and an athlete searching "Milo" needs the hit.
+const BRAND_LABEL_RE = new RegExp(
+  '\\s*\\b(?:' + [
+    'Coles(?:\\s*Brand)?', 'Home Brand', 'Black & Gold', 'Woolworths', 'Woolies', 'Aldi', 'IGA',
+    'Sanitarium', 'Weet-?Bix', 'Uncle Tobys?', 'Kelloggs?', 'Nutri-?Grain', 'Nestle', 'Milo',
+    'Sustagen', 'Ensure', 'Up & Go', 'Musashi', 'Mainland', 'Bulla', 'Devondale', 'Bega',
+    'Tip Top', 'Helga(?:s)?', 'Buttercup', 'Yoplait', 'Vaalia', 'Chobani', 'Tamar Valley',
+    'Pauls', 'Abbotts Village', 'McDonald', "McDonald's", 'MCDonald', 'KFC', 'Hungry Jack', 'Subway',
+    'Domino(?:s)?', 'Pizza Hut'
+  ].join('|') + ')\\b.*$',
+  'i'
+);
+const stripBrandLabel = (label) => {
+  if (!label) return label;
+  const stripped = label.replace(BRAND_LABEL_RE, '').replace(/[\s,;:-]+$/, '').trim();
+  // Label was brand-only ("Coles 70") — never echo the brand back.
+  return stripped || 'per serve';
+};
+
 // ---- Popular picks (empty-search suggestions) ----
 // Curated, never score-ranked: global ranking surfaces fortified powders
 // (Herbalife 96) because per-kJ scoring rewards fortification. The four
@@ -98,7 +124,7 @@ const resolveStaples = (foods) => {
     if (match) {
       picks.push({
         ...match,
-        portionLabel: (match.portionLabel || '').replace(/\s+(Coles|Woolworths|Woolies|Home Brand|Black & Gold|Coles Brand).*$/i, '').trim() || null
+        portionLabel: stripBrandLabel(match.portionLabel || '') || null
       });
     }
   });
@@ -411,7 +437,7 @@ export default function AthleteNutrition() {
       <div style={{ minWidth: 0 }}>
         <div className="an-result-name">{f.description}</div>
         <div className="an-result-sub">
-          {f.source} · {f.portionLabel || 'per 100 g'}{f.kj100 != null ? ` · ${Math.round(f.kj100)} kJ/100g` : ''}
+          {f.source} · {stripBrandLabel(f.portionLabel) || 'per 100 g'}{f.kj100 != null ? ` · ${Math.round(f.kj100)} kJ/100g` : ''}
         </div>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
@@ -433,7 +459,8 @@ export default function AthleteNutrition() {
     setDebouncedQuery('');
     if (food.portionGrams != null) {
       setGrams(String(Math.round(food.portionGrams)));
-      setPortionLabel(food.portionLabel || `${Math.round(food.portionGrams)} g`);
+      // Store the brand-neutral label — it persists into today's log items.
+      setPortionLabel(food.portionLabel ? (stripBrandLabel(food.portionLabel) || `${Math.round(food.portionGrams)} g`) : `${Math.round(food.portionGrams)} g`);
     } else {
       setGrams('');
       setPortionLabel('');
@@ -724,7 +751,7 @@ export default function AthleteNutrition() {
                       <div style={{ minWidth: 0 }}>
                         <div className="an-result-name">{f.description}</div>
                         <div className="an-result-sub">
-                          {f.source} · {f.portionLabel || 'per 100 g'}{f.kj100 != null ? ` · ${Math.round(f.kj100)} kJ/100g` : ''}
+                          {f.source} · {stripBrandLabel(f.portionLabel) || 'per 100 g'}{f.kj100 != null ? ` · ${Math.round(f.kj100)} kJ/100g` : ''}
                         </div>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
@@ -761,10 +788,10 @@ export default function AthleteNutrition() {
             {selected.portionGrams != null && (
               <div style={{ marginBottom: 10 }}>
                 <button
-                  className={`an-chip ${parseFloat(grams) === Math.round(selected.portionGrams) && portionLabel === (selected.portionLabel || '') ? 'selected' : ''}`}
+                  className={`an-chip ${parseFloat(grams) === Math.round(selected.portionGrams) && portionLabel === (stripBrandLabel(selected.portionLabel || '') || '') ? 'selected' : ''}`}
                   onClick={() => tapPreset(Math.round(selected.portionGrams))}
                 >
-                  {selected.portionLabel || 'Standard'} ({Math.round(selected.portionGrams)} g)
+                  {stripBrandLabel(selected.portionLabel) || 'Standard'} ({Math.round(selected.portionGrams)} g)
                 </button>
               </div>
             )}
@@ -920,7 +947,7 @@ export default function AthleteNutrition() {
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 14, fontWeight: 600, color: '#0f172a' }}>{it.name}</div>
                   <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
-                    {it.portionLabel || `${g} g`} · {kj != null ? `${kj} kJ` : '—'}{p != null ? ` · ${p} g protein` : ''}
+                    {stripBrandLabel(it.portionLabel) || `${g} g`} · {kj != null ? `${kj} kJ` : '—'}{p != null ? ` · ${p} g protein` : ''}
                   </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

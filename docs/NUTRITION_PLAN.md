@@ -291,6 +291,7 @@ Follow existing project patterns:
 | 6 | Dataset source precedence when foods overlap between FNDDS/AUSNUT/Swiss | Product owner | **Resolved: single global pool, no regional split** (see A6) |
 | 7 | Fatty acids' role in raw score: currently included (they contribute negligibly at g-scale); remove for cleanliness or keep for fidelity? | Product owner | Pending; low priority |
 | 8 | Replacement of wellness slider with logged nutrition data | Product owner | Roadmap, post-MVP |
+| 9 | Brand neutrality in displayed portion labels | Product owner | **Resolved (v1.9.4)** — brands are stripped from portion labels at display and log time (`stripBrandLabel`, AthleteNutrition.jsx). AUSNUT labels append retailer/manufacturer names ("1 pouch Coles", "1 KFC Bowl", "1 scoop Musashi"); the app never promotes brands for free. If a brand appears it will be a deliberately designed, paid placement. Descriptions keep brand names — they are the food's identity and an athlete searching "Milo" needs the hit. |
 
 ## 10. Explicit Non-Goals (v1)
 
