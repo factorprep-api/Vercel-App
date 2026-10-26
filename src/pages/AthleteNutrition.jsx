@@ -67,23 +67,62 @@ function PageButtons({ currentPage, totalPages, onChange }) {
 // Portion presets offered when the database portion doesn't fit (grams)
 const GRAM_PRESETS = [50, 100, 150, 200, 250];
 
-// Score badge colors: higher percentile rank = more nutrient-dense.
-// Two measures are carried, both true and answering different questions:
-//   per 100 g  — what one portion of food delivers
-//   per 100 kJ — how much micronutrition the calories buy
-// 'axes' is how many of the 17 axes that food reports, so a 15/17 food is
-// not presented as if it were compared like-for-like with a 17/17 one.
+// ---- Popular picks (empty-search suggestions) ----
+// Curated, never score-ranked: global ranking surfaces fortified powders
+// (Herbalife 96) because per-kJ scoring rewards fortification. The four
+// meals come from the archetype table by per-kJ density; the six staples
+// resolve by description prefix against the live database — never
+// hard-coded UUIDs, which the ETL regenerates on re-import — so they
+// survive data refreshes. Reject lists keep variants honest (breadcrumb
+// coatings, mixed dishes, brand pouches, sweet potato when potato).
+const POPULAR_STAPLES = [
+  { key: 'banana', patterns: ['banana, raw'], reject: ['pepper', 'prawn', 'passion'] },
+  { key: 'eggs', patterns: ['egg, whole, boiled', 'egg, whole, poached', 'egg, whole, raw'], reject: ['preserved', 'omelet', 'omelette', 'scrambled', 'fried'] },
+  { key: 'chicken', patterns: ['chicken breast, ', 'chicken, breast, '], reject: ['coated', 'breadcrumb', 'crumbed', 'fried', 'marinade', 'fast food', 'restaurant', 'canned', 'skin eaten', 'sauce'] },
+  { key: 'rice', patterns: ['rice, white, cooked', 'rice, white, steamed'], reject: ['fried', 'with ', 'fat added', 'oil', 'margarine', 'puerto', 'lentil', 'bean', 'sushi', 'flavoured', 'flavored', 'coconut'] },
+  { key: 'yoghurt', patterns: ['yoghurt, natural', 'yogurt, plain'], reject: ['flav', 'fruit', 'granola', 'muesli', 'with ', 'sheep', 'goat'] },
+  { key: 'potato', patterns: ['potato, baked', 'potato, boiled'], reject: ['margarine', 'oil', 'fat added', 'made with', 'with ', 'baby', 'school', 'sweet'] },
+];
+
+// Highest per-kJ survivor per staple group. AUSNUT portion labels carry
+// supermarket noise ("1 pouch Coles") — stripped so the portion line reads
+// clean and the row falls back to 'per 100 g'.
+const resolveStaples = (foods) => {
+  const picks = [];
+  POPULAR_STAPLES.forEach(st => {
+    const match = foods
+      .filter(f => st.patterns.some(p => (f.description || '').toLowerCase().startsWith(p)))
+      .filter(f => !st.reject.some(r => (f.description || '').toLowerCase().includes(r)))
+      .filter(f => f.densityPerKj != null)
+      .sort((a, b) => (b.densityPerKj || 0) - (a.densityPerKj || 0))[0];
+    if (match) {
+      picks.push({
+        ...match,
+        portionLabel: (match.portionLabel || '').replace(/\s+(Coles|Woolworths|Woolies|Home Brand|Black & Gold|Coles Brand).*$/i, '').trim() || null
+      });
+    }
+  });
+  return picks;
+};
+
+// Score badge colors — headline is the per-kJ measure (what the calories
+// buy), because athletes compare meals and foods by the fuel they give.
+// Per-100 g stays in the tooltip: it ranks processing density (a takeaway
+// meal outscores porridge per 100 g but loses per kJ), so it misleads as a
+// headline. 'axes' is how many of the 17 axes that food reports, so a 15/17
+// food is not presented as if it were compared like-for-like with a 17/17
+// one. Falls back to the per-100 g score when a row (older log items) has
+// no per-kJ measure.
 const scoreBadge = (score, axes, kjScore) => {
   const parts = [];
-  if (score != null) {
-    parts.push(`Per 100 g: ${Math.round(score)}${axes != null ? ` (${axes}/17 axes)` : ''}`);
-  }
   if (kjScore != null) parts.push(`Per 100 kJ: ${Math.round(kjScore)}`);
+  if (score != null) parts.push(`Per 100 g: ${Math.round(score)}${axes != null ? ` (${axes}/17 axes)` : ''}`);
   const title = parts.length ? parts.join(' · ') : 'Not scored';
-  if (score == null) return { bg: '#e2e8f0', fg: '#64748b', label: '—', title };
-  if (score >= 70) return { bg: '#dcfce7', fg: '#15803d', label: `${Math.round(score)}`, title };
-  if (score >= 40) return { bg: '#fef3c7', fg: '#b45309', label: `${Math.round(score)}`, title };
-  return { bg: '#fee2e2', fg: '#b91c1c', label: `${Math.round(score)}`, title };
+  const headline = kjScore != null ? kjScore : score;
+  if (headline == null) return { bg: '#e2e8f0', fg: '#64748b', label: '—', title };
+  if (headline >= 70) return { bg: '#dcfce7', fg: '#15803d', label: `${Math.round(headline)}`, title };
+  if (headline >= 40) return { bg: '#fef3c7', fg: '#b45309', label: `${Math.round(headline)}`, title };
+  return { bg: '#fee2e2', fg: '#b91c1c', label: `${Math.round(headline)}`, title };
 };
 
 export default function AthleteNutrition() {
@@ -307,6 +346,26 @@ export default function AthleteNutrition() {
     [meals, mealFavSet, mealUsage]
   );
   const visibleGenericMeals = showMoreMeals ? genericMeals : genericMeals.slice(0, 3);
+
+  // ---- Popular picks (empty search) ----
+  // Shown only while the search is untouched: a "browse everything" dump of
+  // 9,365 foods opens on Duck fat and 17/17-red badges, which reads as broken.
+  // Four highest nutrient-per-kJ meals + six curated staples; anything already
+  // starred or logged today is excluded so the panel never repeats you.
+  const isPicking = debouncedQuery.trim().length < 2;
+  const popularMeals = useMemo(() => {
+    if (!isPicking) return [];
+    const exclude = new Set(mealFavs);
+    return [...meals]
+      .filter(m => !exclude.has(m.id))
+      .sort((a, b) => (b.densityPerKj ?? -1) - (a.densityPerKj ?? -1) || String(a.name).localeCompare(String(b.name)))
+      .slice(0, 4);
+  }, [isPicking, meals, mealFavs]);
+  const popularStaples = useMemo(() => {
+    if (!isPicking || loadingDb || dbError) return [];
+    const exclude = new Set([...favIds, ...items.filter(it => it.food_id).map(it => it.food_id)]);
+    return resolveStaples(fullFoods).filter(f => !exclude.has(f.id));
+  }, [isPicking, loadingDb, dbError, fullFoods, favIds, items]);
 
   // Unified search (v1.9.4): matching meals render first (max 3), foods
   // underneath — one box answers "what did I eat" whichever pool it lives in.
@@ -630,6 +689,19 @@ export default function AthleteNutrition() {
               </div>
             )}
             {dbError && <div style={{ color: '#b91c1c', fontSize: 13, padding: '10px 0' }}>Failed to load foods: {dbError}</div>}
+            {/* Popular picks: 4 nutrient-per-kJ meals + 6 curated staples,
+                shown only while the search is empty. Deliberately curated —
+                global score ranking surfaces fortified powders. The paginated
+                category list appears only once you type. */}
+            {!loadingDb && !dbError && isPicking && (popularMeals.length > 0 || popularStaples.length > 0) && (
+              <>
+                <div style={{ fontSize: 12, color: '#94a3b8', margin: '10px 0 4px' }}>
+                  Popular picks — search to find anything else
+                </div>
+                {popularMeals.map(renderMealRow)}
+                {popularStaples.map(renderFoodRow)}
+              </>
+            )}
             {/* v1.9.4 unified search: matching meals first, foods underneath */}
             {!loadingDb && !dbError && mealMatches.length > 0 && (
               <>
@@ -639,10 +711,10 @@ export default function AthleteNutrition() {
                 {mealMatches.map(renderMealRow)}
               </>
             )}
-            {!loadingDb && !dbError && pageGroups.length === 0 && mealMatches.length === 0 && (
+            {!loadingDb && !dbError && !isPicking && pageGroups.length === 0 && mealMatches.length === 0 && (
               <div className="an-empty">No meals or foods matched “{searchQuery}”.</div>
             )}
-            {!loadingDb && !dbError && pageGroups.map(group => (
+            {!loadingDb && !dbError && !isPicking && pageGroups.map(group => (
               <div key={group.cat}>
                 <h3 className="an-cat-title">{group.cat}</h3>
                 {group.items.map(f => {
@@ -670,7 +742,7 @@ export default function AthleteNutrition() {
                 })}
               </div>
             ))}
-            {!loadingDb && !dbError && totalPages > 1 && (
+            {!loadingDb && !dbError && !isPicking && totalPages > 1 && (
               <div className="an-pagination">
                 <button className="an-page-btn" disabled={currentPage === 1} onClick={() => handlePageChange(currentPage - 1)}>Prev</button>
                 <PageButtons currentPage={currentPage} totalPages={totalPages} onChange={handlePageChange} />
