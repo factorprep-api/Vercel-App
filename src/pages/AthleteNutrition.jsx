@@ -131,6 +131,17 @@ const resolveStaples = (foods) => {
   return picks;
 };
 
+// Quality tier fallback (§5.2): quality_tier_modifiers is the source of truth
+// (loaded with the meal archetypes); these mirrors keep the food quality
+// selector and its multiplier working if that reference fetch ever fails.
+const FOOD_TIERS_FALLBACK = [
+  { tier: 'processed', scoreMultiplier: 0.60, badge: 'Processed' },
+  { tier: 'supermarket', scoreMultiplier: 0.80, badge: 'Supermarket' },
+  { tier: 'fresh', scoreMultiplier: 1.00, badge: 'Fresh' },
+  { tier: 'local', scoreMultiplier: 1.10, badge: 'Local' },
+  { tier: 'homegrown', scoreMultiplier: 1.15, badge: 'Homegrown' }
+];
+
 // Score badge colors — headline is the per-kJ measure (what the calories
 // buy), because athletes compare meals and foods by the fuel they give.
 // Per-100 g stays in the tooltip: it ranks processing density (a takeaway
@@ -154,6 +165,14 @@ const resolveStaples = (foods) => {
 //   per-100g: green 31.6%  yellow 23.0%  amber 20.3%  red 25.1%
 // Re-derive via scripts/simulate_scores.mjs if the scoring population
 // changes (import, activation, axis set).
+const qualityBand = (headline) => {
+  if (headline == null) return { bg: '#e2e8f0', fg: '#64748b' };
+  if (headline >= 61) return { bg: '#dcfce7', fg: '#15803d' }; // top quartile
+  if (headline >= 53) return { bg: '#fef9c3', fg: '#854d0e' }; // 2nd quartile
+  if (headline >= 42) return { bg: '#ffedd5', fg: '#c2410c' }; // 3rd quartile
+  return { bg: '#fee2e2', fg: '#b91c1c' };                     // bottom quartile
+};
+
 const scoreBadge = (score, axes, kjScore) => {
   const parts = [];
   if (kjScore != null) parts.push(`Per 100 kJ: ${Math.round(kjScore)}`);
@@ -161,10 +180,7 @@ const scoreBadge = (score, axes, kjScore) => {
   const title = parts.length ? parts.join(' · ') : 'Not scored';
   const headline = kjScore != null ? kjScore : score;
   if (headline == null) return { bg: '#e2e8f0', fg: '#64748b', label: '—', title };
-  if (headline >= 61) return { bg: '#dcfce7', fg: '#15803d', label: `${Math.round(headline)}`, title }; // top quartile
-  if (headline >= 53) return { bg: '#fef9c3', fg: '#854d0e', label: `${Math.round(headline)}`, title }; // 2nd quartile
-  if (headline >= 42) return { bg: '#ffedd5', fg: '#c2410c', label: `${Math.round(headline)}`, title }; // 3rd quartile
-  return { bg: '#fee2e2', fg: '#b91c1c', label: `${Math.round(headline)}`, title }; // bottom quartile
+  return { ...qualityBand(headline), label: `${Math.round(headline)}`, title };
 };
 
 // ---- Energy balance (v1.9.7): BMR + training vs logged intake ----
@@ -238,6 +254,10 @@ export default function AthleteNutrition() {
   const [selected, setSelected] = useState(null);   // food chosen for portion step
   const [grams, setGrams] = useState('');
   const [portionLabel, setPortionLabel] = useState('');
+  // Food quality selector (§5.2): chosen per food, defaulting to Supermarket
+  // (×0.80) — where nearly everybody gets their food. The multiplier is
+  // applied to the scores at log time and snapshot with the item (§5.3).
+  const [foodTier, setFoodTier] = useState('supermarket');
 
   // Energy balance (v1.9.7): body profile + latest weight + today's training.
   const [bodyData, setBodyData] = useState(null);
@@ -248,7 +268,7 @@ export default function AthleteNutrition() {
   const [mealTiers, setMealTiers] = useState([]);   // quality tier multipliers
   const [mealPortions, setMealPortions] = useState([]); // portion multipliers
   const [meal, setMeal] = useState(null);           // archetype chosen for step 2
-  const [mealTier, setMealTier] = useState('fresh');
+  const [mealTier, setMealTier] = useState('supermarket'); // default tier (§5.2): supermarket, where nearly everybody gets their food
   const [mealPortion, setMealPortion] = useState('normal');
   const [loadingMeals, setLoadingMeals] = useState(true);
   const [mealsError, setMealsError] = useState(null);
@@ -310,6 +330,14 @@ export default function AthleteNutrition() {
         // Carry the same fields as a database food so a chip can be logged
         // without re-fetching. fat100 matters: without it, food logged from a
         // Recent chip contributed 0 g fat to the day's totals.
+        // Scores were tier-adjusted at log time (§5.2 snapshot), so a re-log
+        // must reconstruct the raw database score by dividing out the stored
+        // multiplier — otherwise the tier would be applied twice. The tier
+        // the item was logged with becomes the selector's default; legacy
+        // items pre-dating the selector carry raw scores and default to
+        // Supermarket.
+        const mult = it.scoreMultiplier != null ? Number(it.scoreMultiplier) : null;
+        const raw = (v) => (v == null ? null : (mult && mult !== 1 ? Number((v / mult).toFixed(2)) : Number(v)));
         seen.set(it.food_id, {
           id: it.food_id,
           description: it.name,
@@ -321,10 +349,11 @@ export default function AthleteNutrition() {
           carbs100: it.carbs100 != null ? Number(it.carbs100) : null,
           fat100: it.fat100 != null ? Number(it.fat100) : null,
           fibre100: it.fibre100 != null ? Number(it.fibre100) : null,
-          percentileScore: it.percentileScore != null ? Number(it.percentileScore) : null,
+          percentileScore: raw(it.percentileScore),
           scoreAxes: it.scoreAxes != null ? Number(it.scoreAxes) : null,
-          densityPerKj: it.densityPerKj != null ? Number(it.densityPerKj) : null,
-          scoreAxesKj: it.scoreAxesKj != null ? Number(it.scoreAxesKj) : null
+          densityPerKj: raw(it.densityPerKj),
+          scoreAxesKj: it.scoreAxesKj != null ? Number(it.scoreAxesKj) : null,
+          qualityTier: it.qualityTier || null
         });
       });
     });
@@ -539,6 +568,11 @@ export default function AthleteNutrition() {
     setSelected(food);
     setSearchQuery('');
     setDebouncedQuery('');
+    // Quality selector defaults to Supermarket (§5.2 decision), except for a
+    // recently logged food, which re-selects the tier it was logged with —
+    // with the raw score reconstructed, the same tier reproduces the same
+    // stored values (adjustment applied exactly once).
+    setFoodTier(food.qualityTier || 'supermarket');
     if (food.portionGrams != null) {
       setGrams(String(Math.round(food.portionGrams)));
       // Store the brand-neutral label — it persists into today's log items.
@@ -567,20 +601,29 @@ export default function AthleteNutrition() {
     if (!selected) return;
     if (!g || g <= 0) return;
     setSaving(true);
+    // Quality tier (§5.2/§5.3): resolve the multiplier at log time and
+    // snapshot it with the item, so later tuning of quality_tier_modifiers
+    // never rewrites logged history. Only the two scores are multiplied —
+    // macros stay truthful (energy/protein are what they are).
+    const tier = mealTiers.find(t => t.tier === foodTier)
+      || FOOD_TIERS_FALLBACK.find(t => t.tier === foodTier);
+    const tierMult = tier ? tier.scoreMultiplier : 1;
     const item = {
       food_id: selected.id,
       grams: g,
       name: selected.description,
-      portionLabel: portionLabel || `${g} g`,
+      portionLabel: `${portionLabel || `${g} g`} · ${tier ? tier.badge : cap(foodTier)}`,
       kj100: selected.kj100,
       protein100: selected.protein100,
       carbs100: selected.carbs100,
       fat100: selected.fat100,
       fibre100: selected.fibre100,
-      percentileScore: selected.percentileScore,
+      percentileScore: selected.percentileScore != null ? Number((selected.percentileScore * tierMult).toFixed(1)) : null,
       scoreAxes: selected.scoreAxes,
-      densityPerKj: selected.densityPerKj,
-      scoreAxesKj: selected.scoreAxesKj
+      densityPerKj: selected.densityPerKj != null ? Number((selected.densityPerKj * tierMult).toFixed(1)) : null,
+      scoreAxesKj: selected.scoreAxesKj,
+      qualityTier: foodTier,
+      scoreMultiplier: tierMult
     };
     const res = await saveNutritionLog({ items: [item], athlete: athleteName, email: userEmail });
     setSaving(false);
@@ -613,7 +656,7 @@ export default function AthleteNutrition() {
     setMeal(m);
     setSearchQuery('');
     setDebouncedQuery('');
-    setMealTier('fresh');     // fresh = 1.00 is the reference tier (§5.2)
+    setMealTier('supermarket'); // default tier (§5.2): supermarket, where nearly everybody gets their food
     setMealPortion('normal'); // normal = the base_grams serve
   };
 
@@ -677,6 +720,28 @@ export default function AthleteNutrition() {
     acc.fibre += (Number(it.fibre100) || 0) * g / 100;
     return acc;
   }, { kj: 0, protein: 0, carbs: 0, fat: 0, fibre: 0 });
+
+  // Day-quality indicator (v1.9.9): energy-weighted mean of the tier-adjusted
+  // scores stored on today's items (per-kJ headline, per-100 g fallback —
+  // same priority as the badges). Quality tiers are applied at log time
+  // (§5.2), so this answers "how good was the nutrition actually eaten?" —
+  // nutrient-dense food logged as Processed cannot read green. Items without
+  // a score are skipped; items without kJ weight by grams.
+  const dayQuality = useMemo(() => {
+    let wsum = 0, ssum = 0;
+    items.forEach(it => {
+      const s = it.densityPerKj != null ? Number(it.densityPerKj)
+        : (it.percentileScore != null ? Number(it.percentileScore) : null);
+      if (s == null) return;
+      const kj = (Number(it.kj100) || 0) * (Number(it.grams) || 0) / 100;
+      const w = kj > 0 ? kj : (Number(it.grams) || 0);
+      if (w <= 0) return;
+      wsum += w;
+      ssum += s * w;
+    });
+    return wsum > 0 ? ssum / wsum : null;
+  }, [items]);
+  const dayBand = qualityBand(dayQuality);
 
   const fmt = (v) => v > 0 ? (v < 10 ? v.toFixed(1) : Math.round(v)) : '—';
 
@@ -748,8 +813,14 @@ export default function AthleteNutrition() {
       {/* Daily totals */}
       <div className="an-card">
         <div className="an-totals">
-          <div className="an-total-box">
-            <div className="an-total-value">{totals.kj > 0 ? Math.round(totals.kj).toLocaleString() : '—'}</div>
+          <div
+            className="an-total-box"
+            style={dayQuality != null ? { background: dayBand.bg } : undefined}
+            title={dayQuality != null
+              ? `Today's logged nutrition quality: ${Math.round(dayQuality)} — energy-weighted average of your logged scores with quality tiers applied. Green = top quartile of the food database with good quality tiers.`
+              : "Log foods or meals to see today's nutrition quality."}
+          >
+            <div className="an-total-value" style={dayQuality != null ? { color: dayBand.fg } : undefined}>{totals.kj > 0 ? Math.round(totals.kj).toLocaleString() : '—'}</div>
             <div className="an-total-label"><Flame size={11} color="#f59e0b" /> kJ</div>
           </div>
           <div className="an-total-box">
@@ -1093,6 +1164,19 @@ export default function AthleteNutrition() {
                   ≈ {preview('kj') != null ? `${preview('kj')} kJ` : ''}{preview('protein') != null ? ` · ${preview('protein')} g protein` : ''}
                 </span>
               )}
+            </div>
+            <div style={{ fontWeight: 600, fontSize: 13, color: '#334155', marginBottom: 8 }}>How was it prepared?</div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+              {(mealTiers.length ? mealTiers : FOOD_TIERS_FALLBACK).map(t => (
+                <button
+                  key={t.tier}
+                  className={`an-chip ${foodTier === t.tier ? 'selected' : ''}`}
+                  onClick={() => setFoodTier(t.tier)}
+                  title={`Score multiplier ×${t.scoreMultiplier}`}
+                >
+                  {t.badge}
+                </button>
+              ))}
             </div>
             <button className="an-add-btn" onClick={tapAdd} disabled={saving || !(parseFloat(grams) > 0)}>
               {saving ? 'Adding…' : justLogged ? <><CheckCircle size={16} /> Added!</> : 'Add to Log'}
