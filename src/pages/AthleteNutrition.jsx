@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, Fragment } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Search, Utensils, CheckCircle, Trash2, Flame, Beef, Wheat, Droplet, Loader2, Star, Salad, Activity, ArrowRight } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
@@ -173,10 +173,11 @@ const qualityBand = (headline) => {
   return { bg: '#fee2e2', fg: '#b91c1c' };                     // bottom quartile
 };
 
-const scoreBadge = (score, axes, kjScore) => {
+const scoreBadge = (score, axes, kjScore, componentsText) => {
   const parts = [];
   if (kjScore != null) parts.push(`Per 100 kJ: ${Math.round(kjScore)}`);
   if (score != null) parts.push(`Per 100 g: ${Math.round(score)}${axes != null ? ` (${axes}/17 axes)` : ''}`);
+  if (componentsText) parts.push(`What's in it: ${componentsText}`);
   const title = parts.length ? parts.join(' · ') : 'Not scored';
   const headline = kjScore != null ? kjScore : score;
   if (headline == null) return { bg: '#e2e8f0', fg: '#64748b', label: '—', title };
@@ -305,6 +306,7 @@ export default function AthleteNutrition() {
   const [mealTiers, setMealTiers] = useState([]);   // quality tier multipliers
   const [mealPortions, setMealPortions] = useState([]); // portion multipliers
   const [meal, setMeal] = useState(null);           // archetype chosen for step 2
+  const [expandedMealId, setExpandedMealId] = useState(null); // v1.9.11: meal row with the ingredients strip open
   const [mealTier, setMealTier] = useState('supermarket'); // default tier (§5.2): supermarket, where nearly everybody gets their food
   const [mealPortion, setMealPortion] = useState('normal');
   const [loadingMeals, setLoadingMeals] = useState(true);
@@ -556,27 +558,52 @@ export default function AthleteNutrition() {
   // same layout everywhere a meal or food appears, so starring is consistent.
   const renderMealRow = (m) => {
     const starred = mealFavSet.has(m.id);
-    const b = scoreBadge(m.percentileScore, null, m.densityPerKj);
+    const b = scoreBadge(m.percentileScore, null, m.densityPerKj, m.componentsText);
+    const expanded = expandedMealId === m.id;
     return (
-      <div key={m.id} className="an-result" onClick={() => tapMeal(m)}>
-        <div style={{ minWidth: 0 }}>
-          <div className="an-result-name">{m.name}</div>
-          <div className="an-result-sub">
-            {m.mealSlots?.length > 0 ? `${m.mealSlots.map(s => s.replace(/_/g, ' ')).join(', ')} · ` : ''}
-            Normal serve{m.energyKj != null ? ` · ${Math.round(m.energyKj).toLocaleString()} kJ` : ''}{m.proteinG != null ? ` · ${m.proteinG} g protein` : ''}
+      <Fragment key={m.id}>
+        <div className="an-result" onClick={() => tapMeal(m)}>
+          <div style={{ minWidth: 0 }}>
+            <div className="an-result-name">{m.name}</div>
+            <div className="an-result-sub">
+              {m.mealSlots?.length > 0 ? `${m.mealSlots.map(s => s.replace(/_/g, ' ')).join(', ')} · ` : ''}
+              Normal serve{m.energyKj != null ? ` · ${Math.round(m.energyKj).toLocaleString()} kJ` : ''}{m.proteinG != null ? ` · ${m.proteinG} g protein` : ''}
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+            <button
+              className="an-fav-btn"
+              onClick={(e) => { e.stopPropagation(); toggleMealFav(m); }}
+              title={starred ? 'Remove from Quick meals' : 'Pin to Quick meals'}
+            >
+              <Star size={16} color={starred ? '#f59e0b' : '#cbd5e1'} fill={starred ? '#f59e0b' : 'none'} />
+            </button>
+            {/* v1.9.11: tap the score to see what's in the meal — the badge is
+                the one element that already carries the quality signal, so it
+                doubles as the "learn more" affordance. stopPropagation keeps
+                the row's own tap (open meal step) unaffected. */}
+            <span
+              className="an-badge"
+              style={{ background: b.bg, color: b.fg, cursor: m.componentsText ? 'pointer' : undefined }}
+              title={b.title}
+              onClick={(e) => {
+                if (!m.componentsText) return;
+                e.stopPropagation();
+                setExpandedMealId(expanded ? null : m.id);
+              }}
+            >Score {b.label}</span>
           </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-          <button
-            className="an-fav-btn"
-            onClick={(e) => { e.stopPropagation(); toggleMealFav(m); }}
-            title={starred ? 'Remove from Quick meals' : 'Pin to Quick meals'}
+        {expanded && m.componentsText && (
+          <div
+            style={{ fontSize: 12, color: '#475569', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '6px 10px', marginTop: -4, marginBottom: 8, lineHeight: 1.5, cursor: 'pointer' }}
+            onClick={() => setExpandedMealId(null)}
+            title="Tap to hide"
           >
-            <Star size={16} color={starred ? '#f59e0b' : '#cbd5e1'} fill={starred ? '#f59e0b' : 'none'} />
-          </button>
-          <span className="an-badge" style={{ background: b.bg, color: b.fg }} title={b.title}>Score {b.label}</span>
-        </div>
-      </div>
+            What's in it: {m.componentsText}
+          </div>
+        )}
+      </Fragment>
     );
   };
 
@@ -720,6 +747,9 @@ export default function AthleteNutrition() {
       archetype_id: meal.id,
       grams,
       name: meal.name,
+      // v1.9.11: snapshot the recipe at log time (§5.3 — what was logged is
+      // what was logged), so Today's Log entries can show what was in it.
+      components: meal.componentsText || null,
       portionLabel: `${cap(mealPortion)} serve · ${tier ? tier.badge : cap(mealTier)}`,
       kj100: per100(meal.energyKj),
       protein100: per100(meal.proteinG),
@@ -980,7 +1010,7 @@ export default function AthleteNutrition() {
           <div className="an-empty">Nothing logged yet — add your first food below.</div>
         ) : (
           items.map((it, idx) => {
-            const b = scoreBadge(it.percentileScore, it.scoreAxes, it.densityPerKj);
+            const b = scoreBadge(it.percentileScore, it.scoreAxes, it.densityPerKj, it.components);
             const g = Number(it.grams) || 0;
             const kj = it.kj100 != null ? Math.round(it.kj100 * g / 100) : null;
             const p = it.protein100 != null ? Math.round(it.protein100 * g / 10) / 10 : null;
@@ -993,7 +1023,7 @@ export default function AthleteNutrition() {
                   </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span className="an-badge" style={{ background: b.bg, color: b.fg }}>{b.label}</span>
+                  <span className="an-badge" style={{ background: b.bg, color: b.fg }} title={b.title}>{b.label}</span>
                   <button className="an-icon-btn" onClick={() => removeItem(idx)} disabled={removing} title="Remove item">
                     <Trash2 size={16} />
                   </button>
@@ -1051,6 +1081,11 @@ export default function AthleteNutrition() {
               {meal.percentileScore != null ? ` · Score ${Math.round(meal.percentileScore)}` : ''}
               {meal.componentCount != null ? ` (${meal.scoredComponents}/${meal.componentCount} components scored)` : ''}
             </div>
+            {meal.componentsText && (
+              <div style={{ fontSize: 13, color: '#64748b', marginBottom: 12, lineHeight: 1.5 }}>
+                What's in it: {meal.componentsText}
+              </div>
+            )}
             <div style={{ fontWeight: 600, fontSize: 13, color: '#334155', marginBottom: 8 }}>How was it prepared?</div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
               {mealTiers.map(t => (

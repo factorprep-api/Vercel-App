@@ -559,7 +559,7 @@ export const removeMealFavorite = async (archetypeId) => {
 export const fetchMealArchetypes = async () => {
   try {
     const [metaRes, scoresRes, nutrientsRes, tiersRes, portionsRes] = await Promise.all([
-      supabase.from('meal_archetypes').select('id, slug, name, meal_slots, display_order').eq('active', true),
+      supabase.from('meal_archetypes').select('id, slug, name, meal_slots, component_labels, component_weights, display_order').eq('active', true),
       supabase.from('v_archetype_scores').select('archetype_id, percentile_score, density_per_kj, component_count, scored_components'),
       supabase.from('v_archetype_nutrients').select('archetype_id, base_grams, energy_kj, protein_g, carbohydrate_g, fat_g, fibre_g'),
       supabase.from('quality_tier_modifiers').select('tier, score_multiplier, display_badge'),
@@ -573,10 +573,20 @@ export const fetchMealArchetypes = async () => {
       .map(m => {
         const s = scoreById.get(m.id);
         const n = nutById.get(m.id);
+        // v1.9.11: surface the recipe. component_labels/weights are parallel
+        // arrays ("Eggs (whole)" ×3); rendered as one text line so the meal
+        // picker and meal step can show what's in it without a new query.
+        const comps = (Array.isArray(m.component_labels)
+          && Array.isArray(m.component_weights)
+          && m.component_labels.length > 0
+          && m.component_labels.length === m.component_weights.length)
+          ? m.component_labels.map((label, i) => ({ label, weight: Number(m.component_weights[i]) }))
+          : null;
         return {
           id: m.id,
           slug: m.slug,
           name: m.name,
+          componentsText: comps ? comps.map(c => `${c.label} ×${c.weight}`).join(' · ') : null,
           mealSlots: Array.isArray(m.meal_slots) ? m.meal_slots : [],
           displayOrder: m.display_order,
           baseGrams: n?.base_grams != null ? Number(n.base_grams) : null,
