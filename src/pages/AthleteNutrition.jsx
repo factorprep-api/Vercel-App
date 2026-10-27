@@ -240,6 +240,37 @@ const energyBalance = (bodyData, sessions, loggedKj) => {
   };
 };
 
+// ---- Recommended macronutrient targets (v1.9.10) ----
+// Sports nutrition consensus (ACSM/AND/DC 2016 joint position statement;
+// ISSN position stand on protein, 2017), kept honest to the app's own
+// energy model: the three targets must add up to the same estimated needs
+// the Energy balance card shows — one consistent story, not three numbers.
+//
+//   Protein — 1.6 g/kg, the midpoint of the consensus 1.4–2.0 g/kg range.
+//
+//   Carbs — scaled by today's hardest training session (consensus 3–10
+//     g/kg by load): rest/light 4, moderate 6, vigorous 8, very hard 10.
+//     Deliberately NOT 5 on rest days: at the app's rest-day energy
+//     (BMR × 1.2), 1.6 g/kg protein + 5 g/kg carbs already consume ~95%
+//     of the energy, leaving fat at ~5% — below the healthy ~20% floor.
+//     The consensus carb floor on light days exists precisely to leave
+//     room for fat; 4 g/kg lands fat at ~20% of needs.
+//
+//   Fat — the remainder of estimated needs (consensus frames fat as
+//     20–35% of energy), floored at 20% so the three targets never imply
+//     an unhealthy minimum on heavy-carb days.
+const TARGET_PROTEIN_G_PER_KG = 1.6;
+const TARGET_CARB_G_PER_KG = [
+  { maxRpe: 2, gPerKg: 4, label: 'rest / light day' },
+  { maxRpe: 5, gPerKg: 6, label: 'moderate training day' },
+  { maxRpe: 7, gPerKg: 8, label: 'vigorous training day' },
+  { maxRpe: 10, gPerKg: 10, label: 'very hard training day' }
+];
+// Atwater factors (SI-rounded): protein 17 kJ/g, carb 17 kJ/g, fat 37 kJ/g.
+const KJ_PER_G = { protein: 17, carb: 17, fat: 37 };
+const FAT_MIN_SHARE = 0.20; // consensus floor: fat ≥ 20% of estimated needs
+
+
 
 export default function AthleteNutrition() {
   const { userEmail, athleteName } = useAuth();
@@ -748,6 +779,29 @@ export default function AthleteNutrition() {
   // Energy balance card input — recompute when the log changes (a new item
   // moves the intake side) without waiting for a full reload.
   const eb = useMemo(() => energyBalance(bodyData, todaySessions, totals.kj), [bodyData, todaySessions, totals.kj]);
+
+  // Recommended macro targets (v1.9.10) — derived from the same estimated
+  // needs as the Energy balance card. Renders nothing without the complete
+  // body profile (same gate as eb — no invented numbers, per v1.9.5).
+  const macroTargets = useMemo(() => {
+    if (eb == null || bodyData?.weightKg == null) return null;
+    const kg = bodyData.weightKg;
+    const maxRpe = eb.trainingSessions.reduce((m, s) => Math.max(m, s.actualRpe || 0), 0);
+    const carbBand = TARGET_CARB_G_PER_KG.find(b => maxRpe <= b.maxRpe)
+      || TARGET_CARB_G_PER_KG[TARGET_CARB_G_PER_KG.length - 1];
+    const protein = TARGET_PROTEIN_G_PER_KG * kg;
+    const carbs = carbBand.gPerKg * kg;
+    const fatKj = eb.totalNeeds - protein * KJ_PER_G.protein - carbs * KJ_PER_G.carb;
+    const fat = Math.max(fatKj / KJ_PER_G.fat, (eb.totalNeeds * FAT_MIN_SHARE) / KJ_PER_G.fat);
+    return {
+      protein: Math.round(protein),
+      carbs: Math.round(carbs),
+      fat: Math.round(fat),
+      carbPerKg: carbBand.gPerKg,
+      carbBand: carbBand.label,
+      fatShare: Math.round((fat * KJ_PER_G.fat) / eb.totalNeeds * 100)
+    };
+  }, [eb, bodyData]);
   const fmtKj = (v) => Math.round(v).toLocaleString();
 
   return (
@@ -823,16 +877,22 @@ export default function AthleteNutrition() {
             <div className="an-total-value" style={dayQuality != null ? { color: dayBand.fg } : undefined}>{totals.kj > 0 ? Math.round(totals.kj).toLocaleString() : '—'}</div>
             <div className="an-total-label"><Flame size={11} color="#f59e0b" /> kJ</div>
           </div>
-          <div className="an-total-box">
-            <div className="an-total-value">{fmt(totals.protein)}</div>
+          <div className="an-total-box" title={macroTargets != null
+            ? `Recommended: ${TARGET_PROTEIN_G_PER_KG} g per kg body weight (${macroTargets.protein} g) — midpoint of the sports nutrition consensus 1.4–2.0 g/kg (ACSM/AND/DC 2016; ISSN 2017).`
+            : 'Add your body profile (My Progress) to see a recommended target.'}>
+            <div className="an-total-value">{fmt(totals.protein)}{macroTargets != null && <span style={{ color: '#94a3b8', fontWeight: 700, fontSize: 13 }}> / {macroTargets.protein}</span>}</div>
             <div className="an-total-label"><Beef size={11} color="#ef4444" /> protein g</div>
           </div>
-          <div className="an-total-box">
-            <div className="an-total-value">{fmt(totals.carbs)}</div>
+          <div className="an-total-box" title={macroTargets != null
+            ? `Recommended: ${macroTargets.carbs} g (${macroTargets.carbPerKg} g/kg for a ${macroTargets.carbBand}) — consensus range 3–10 g/kg, scaled by training load.`
+            : 'Add your body profile (My Progress) to see a recommended target.'}>
+            <div className="an-total-value">{fmt(totals.carbs)}{macroTargets != null && <span style={{ color: '#94a3b8', fontWeight: 700, fontSize: 13 }}> / {macroTargets.carbs}</span>}</div>
             <div className="an-total-label"><Wheat size={11} color="#f59e0b" /> carbs g</div>
           </div>
-          <div className="an-total-box">
-            <div className="an-total-value">{fmt(totals.fat)}</div>
+          <div className="an-total-box" title={macroTargets != null
+            ? `Recommended: what remains of today's estimated needs after protein and carbs — ${macroTargets.fat} g ≈ ${macroTargets.fatShare}% of needs (consensus: fat 20–35% of energy).`
+            : 'Add your body profile (My Progress) to see a recommended target.'}>
+            <div className="an-total-value">{fmt(totals.fat)}{macroTargets != null && <span style={{ color: '#94a3b8', fontWeight: 700, fontSize: 13 }}> / {macroTargets.fat}</span>}</div>
             <div className="an-total-label"><Droplet size={11} color="#f59e0b" /> fat g</div>
           </div>
         </div>
