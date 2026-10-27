@@ -255,6 +255,12 @@ const energyBalance = (bodyData, sessions, loggedKj) => {
 //     of the energy, leaving fat at ~5% — below the healthy ~20% floor.
 //     The consensus carb floor on light days exists precisely to leave
 //     room for fat; 4 g/kg lands fat at ~20% of needs.
+//     CAVEAT (v1.9.10 fix): the consensus g/kg bands assume energy
+//     sufficiency. For a heavy athlete whose estimated needs are lower
+//     than protein + band carbs (e.g. 90 kg on a very-hard day at
+//     13,400 kJ), the band overshoots the day's energy. Carbs are
+//     therefore capped by what remains after protein and the fat floor,
+//     so the three targets always sum to the estimated needs.
 //
 //   Fat — the remainder of estimated needs (consensus frames fat as
 //     20–35% of energy), floored at 20% so the three targets never imply
@@ -790,15 +796,24 @@ export default function AthleteNutrition() {
     const carbBand = TARGET_CARB_G_PER_KG.find(b => maxRpe <= b.maxRpe)
       || TARGET_CARB_G_PER_KG[TARGET_CARB_G_PER_KG.length - 1];
     const protein = TARGET_PROTEIN_G_PER_KG * kg;
-    const carbs = carbBand.gPerKg * kg;
+    // Band carbs, capped by energy: the consensus g/kg targets assume
+    // energy sufficiency, so when protein + band carbs would push fat
+    // below the healthy 20% floor, carbs take what remains instead.
+    const fatFloorKj = eb.totalNeeds * FAT_MIN_SHARE;
+    const carbCapKj = Math.max(eb.totalNeeds - fatFloorKj - protein * KJ_PER_G.protein, 0);
+    const bandCarbsKj = carbBand.gPerKg * kg * KJ_PER_G.carb;
+    const capped = bandCarbsKj > carbCapKj;
+    const carbs = (capped ? carbCapKj : bandCarbsKj) / KJ_PER_G.carb;
     const fatKj = eb.totalNeeds - protein * KJ_PER_G.protein - carbs * KJ_PER_G.carb;
-    const fat = Math.max(fatKj / KJ_PER_G.fat, (eb.totalNeeds * FAT_MIN_SHARE) / KJ_PER_G.fat);
+    const fat = Math.max(fatKj / KJ_PER_G.fat, fatFloorKj / KJ_PER_G.fat);
     return {
       protein: Math.round(protein),
       carbs: Math.round(carbs),
       fat: Math.round(fat),
       carbPerKg: carbBand.gPerKg,
+      bandCarbs: Math.round(carbBand.gPerKg * kg),
       carbBand: carbBand.label,
+      capped,
       fatShare: Math.round((fat * KJ_PER_G.fat) / eb.totalNeeds * 100)
     };
   }, [eb, bodyData]);
@@ -884,7 +899,9 @@ export default function AthleteNutrition() {
             <div className="an-total-label"><Beef size={11} color="#ef4444" /> protein g</div>
           </div>
           <div className="an-total-box" title={macroTargets != null
-            ? `Recommended: ${macroTargets.carbs} g (${macroTargets.carbPerKg} g/kg for a ${macroTargets.carbBand}) — consensus range 3–10 g/kg, scaled by training load.`
+            ? `Recommended: ${macroTargets.capped
+              ? `${macroTargets.carbs} g — capped by today's estimated energy needs (the ${macroTargets.carbPerKg} g/kg ${macroTargets.carbBand} target would be ${macroTargets.bandCarbs} g, more energy than the day allows).`
+              : `${macroTargets.carbs} g (${macroTargets.carbPerKg} g/kg for a ${macroTargets.carbBand}) — consensus range 3–10 g/kg, scaled by training load.`}`
             : 'Add your body profile (My Progress) to see a recommended target.'}>
             <div className="an-total-value">{fmt(totals.carbs)}{macroTargets != null && <span style={{ color: '#94a3b8', fontWeight: 700, fontSize: 13 }}> / {macroTargets.carbs}</span>}</div>
             <div className="an-total-label"><Wheat size={11} color="#f59e0b" /> carbs g</div>
