@@ -411,6 +411,21 @@ The shipped system intentionally differs from the specification above. Each item
 
 ---
 
+## Amendment A11 — Energy balance card (v1.9.7)
+
+**What shipped:** the "Energy balance" card on the nutrition page, right after the Daily totals card. Inputs: the athlete's body profile (sex / birth year / height / latest weight — v1.9.5) and today's `session_logs` actuals.
+
+**Model (deliberately coarse, per the open decisions):**
+
+- **BMR** — Mifflin-St Jeor from the profile. If any of sex / birth year / height / latest weight is missing, the card renders **no numbers** and instead prompts to set up in My Progress. This is the promised product decision: no midpoint estimates.
+- **Training expenditure** — RPE→MET coarse bands (open decision §9.3, "coarse bands acceptable for v1"): RPE 1–2 → 4.0 METs, 3–5 → 7.0, 6–7 → 9.5, 8–10 → 12.5. kJ/min = MET × 3.5 × kg / 200 (the ACSM kcal formula), × minutes, × 4.184.
+- **Rest-of-day** — BMR × 1.2 (the standard sedentary multiplier). Total needs = BMR × 1.2 + training.
+- **Balance** — logged intake − estimated needs. Three plain-language bands: >1,500 kJ short ("worth a snack or a bigger meal"), within ~1,500 kJ ("roughly fuelled"), >1,500 kJ above. Every number is labelled an estimate and the card never judges — the pod is estimation, not measurement (§1).
+
+**Where:** `src/pages/AthleteNutrition.jsx` (helpers `mifflinStJeorKj`, `sessionEnergyKj`, `energyBalance`; card JSX after the Daily totals card); `src/api.js` (`fetchTodayTraining` — today's session_logs actuals for the athlete). Client-side only, per the "no server rollups" pattern of Daily totals.
+
+---
+
 # Verification
 
 Two independent implementations of the scoring must agree.

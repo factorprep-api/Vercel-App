@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Search, Utensils, CheckCircle, Trash2, Flame, Beef, Wheat, Droplet, Loader2, Star, Salad } from 'lucide-react';
+import { ArrowLeft, Search, Utensils, CheckCircle, Trash2, Flame, Beef, Wheat, Droplet, Loader2, Star, Salad, Activity, ArrowRight } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
-import { fetchFoodDatabase, fetchFoodFavorites, addFoodFavorite, removeFoodFavorite, saveNutritionLog, fetchNutritionLogs, updateNutritionItems, fetchMealArchetypes, fetchMealFavorites, addMealFavorite, removeMealFavorite } from '../api';
+import { fetchFoodDatabase, fetchFoodFavorites, addFoodFavorite, removeFoodFavorite, saveNutritionLog, fetchNutritionLogs, updateNutritionItems, fetchMealArchetypes, fetchMealFavorites, addMealFavorite, removeMealFavorite, fetchAthleteBodyData, fetchTodayTraining } from '../api';
 import { ymd } from '../utils/cycleMath';
 
 // Exercise-library search pattern: full database loaded once (cached), then
@@ -151,6 +151,64 @@ const scoreBadge = (score, axes, kjScore) => {
   return { bg: '#fee2e2', fg: '#b91c1c', label: `${Math.round(headline)}`, title };
 };
 
+// ---- Energy balance (v1.9.7): BMR + training vs logged intake ----
+// Estimation, not measurement (plan §1). Two deliberately coarse pieces:
+//
+// 1. BMR — Mifflin-St Jeor, the standard predictive equation, from the
+//    athlete's profile (sex / birth year / height / latest body weight).
+//    If ANY of those is missing the card does not render a number — no
+//    midpoint estimates (product decision, v1.9.5 migration note).
+// 2. Training expenditure — RPE→MET coarse bands (open decision §9.3:
+//    "coarse bands acceptable for v1"). kJ/min = MET × 3.5 × kg / 200
+//    (the ACSM kilocalorie formula), × minutes, × 4.184 kcal→kJ.
+//    RPE 1–2 → 4.0 METs, 3–5 → 7.0, 6–7 → 9.5, 8–10 → 12.5.
+//
+// Rest-of-day activity = BMR × 1.2 (the standard sedentary multiplier).
+// Every number shown is labelled an estimate; the card never judges —
+// it answers "am I roughly fuelling the day I actually trained?"
+const RPE_MET_BANDS = [
+  { max: 2, mets: 4.0, label: 'light' },
+  { max: 5, mets: 7.0, label: 'moderate' },
+  { max: 7, mets: 9.5, label: 'vigorous' },
+  { max: 10, mets: 12.5, label: 'very hard' }
+];
+const KCAL_TO_KJ = 4.184;
+
+const mifflinStJeorKj = (bodyData) => {
+  if (!bodyData?.sex || bodyData?.birthYear == null || bodyData?.heightCm == null || bodyData?.weightKg == null) return null;
+  const age = new Date().getFullYear() - bodyData.birthYear;
+  const kcal = 10 * bodyData.weightKg + 6.25 * bodyData.heightCm - 5 * age
+    + (bodyData.sex === 'male' ? 5 : -161);
+  if (!Number.isFinite(kcal) || kcal <= 0) return null;
+  return kcal * KCAL_TO_KJ;
+};
+
+const sessionEnergyKj = (session, weightKg) => {
+  const band = RPE_MET_BANDS.find(b => session.actualRpe >= 1 && session.actualRpe <= b.max)
+    || RPE_MET_BANDS[RPE_MET_BANDS.length - 1];
+  const kcalPerMin = band.mets * 3.5 * weightKg / 200;
+  return { kj: kcalPerMin * session.actualMins * KCAL_TO_KJ, band: band.label };
+};
+
+const energyBalance = (bodyData, sessions, loggedKj) => {
+  const bmr = mifflinStJeorKj(bodyData);
+  if (bmr == null) return null;
+  const trainingKj = sessions.reduce((acc, s) => {
+    if (!s.actualMins || s.actualMins <= 0) return acc;
+    return acc + sessionEnergyKj(s, bodyData.weightKg).kj;
+  }, 0);
+  const totalNeeds = bmr * 1.2 + trainingKj;
+  return {
+    bmr,
+    trainingKj,
+    trainingSessions: sessions.filter(s => s.actualMins > 0),
+    totalNeeds,
+    loggedKj: loggedKj || 0,
+    balance: (loggedKj || 0) - totalNeeds
+  };
+};
+
+
 export default function AthleteNutrition() {
   const { userEmail, athleteName } = useAuth();
   const navigate = useNavigate();
@@ -164,6 +222,10 @@ export default function AthleteNutrition() {
   const [selected, setSelected] = useState(null);   // food chosen for portion step
   const [grams, setGrams] = useState('');
   const [portionLabel, setPortionLabel] = useState('');
+
+  // Energy balance (v1.9.7): body profile + latest weight + today's training.
+  const [bodyData, setBodyData] = useState(null);
+  const [todaySessions, setTodaySessions] = useState([]);
 
   // Meal archetypes (v1.9): the three-tap meal path — meal → tier + portion → add.
   const [meals, setMeals] = useState([]);           // the ten archetypes
@@ -195,10 +257,12 @@ export default function AthleteNutrition() {
   // Load today's log row + favourites + recently logged foods (30 days).
   // Recents are derived client-side from existing logs — no extra table.
   const loadNutritionData = async () => {
-    const [logRes, favRes, mealFavRes] = await Promise.all([
+    const [logRes, favRes, mealFavRes, bodyRes, trainRes] = await Promise.all([
       fetchNutritionLogs(30),
       fetchFoodFavorites().catch(() => ({ foods: [] })),
-      fetchMealFavorites().catch(() => ({ ids: [] }))
+      fetchMealFavorites().catch(() => ({ ids: [] })),
+      fetchAthleteBodyData(athleteName).catch(() => null),
+      fetchTodayTraining(athleteName).catch(() => ({ sessions: [] }))
     ]);
     if (logRes.error) { setPageError(logRes.error); return; }
     const today = ymd(new Date());
@@ -207,6 +271,8 @@ export default function AthleteNutrition() {
     setItems(row ? row.items : []);
     setFavourites(favRes.foods || []);
     setMealFavs(mealFavRes.ids || []);
+    setBodyData(bodyRes && bodyRes.status === 'Success' ? bodyRes : null);
+    setTodaySessions(trainRes.sessions || []);
 
     // Meal usage: how often each archetype appears in the 30-day window —
     // ranks the unstarred generic meals in Quick meals by actual use.
@@ -598,6 +664,11 @@ export default function AthleteNutrition() {
 
   const fmt = (v) => v > 0 ? (v < 10 ? v.toFixed(1) : Math.round(v)) : '—';
 
+  // Energy balance card input — recompute when the log changes (a new item
+  // moves the intake side) without waiting for a full reload.
+  const eb = useMemo(() => energyBalance(bodyData, todaySessions, totals.kj), [bodyData, todaySessions, totals.kj]);
+  const fmtKj = (v) => Math.round(v).toLocaleString();
+
   return (
     <div className="an-container">
       <style>{`
@@ -678,6 +749,64 @@ export default function AthleteNutrition() {
             <div className="an-total-label"><Droplet size={11} color="#f59e0b" /> fat g</div>
           </div>
         </div>
+      </div>
+
+      {/* Energy balance (v1.9.7) — estimation, not measurement. Renders only
+          when the body profile is complete (sex / birth year / height / latest
+          weight); otherwise it prompts to set it up — no midpoint estimates. */}
+      <div className="an-card">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 15, color: '#334155', marginBottom: 10 }}>
+          <Activity size={16} color="#10b981" /> Energy balance
+        </div>
+        {eb == null ? (
+          <>
+            <div style={{ fontSize: 13, color: '#64748b', marginBottom: 12 }}>
+              Add your body profile (sex, birth year, height) and a body weight in My Progress to see your estimated daily energy needs next to what you log here.
+            </div>
+            <button
+              onClick={() => navigate('/progress')}
+              style={{ width: '100%', background: '#f1f5f9', color: '#334155', border: 'none', padding: '12px', borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+            >
+              Set up in My Progress <ArrowRight size={15} />
+            </button>
+          </>
+        ) : (
+          <>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 6, fontSize: 13.5, color: '#334155' }}>
+              <span title="Mifflin-St Jeor estimate from your body profile — what your body needs at complete rest.">BMR (rest, est.)</span>
+              <span style={{ fontWeight: 700 }}>{fmtKj(eb.bmr)} kJ</span>
+              {eb.trainingSessions.length > 0 && (
+                <>
+                  <span title="Estimated from today's logged sessions: minutes × intensity (RPE) using coarse MET bands — an approximation, not a measurement.">
+                    Training ({eb.trainingSessions.length} session{eb.trainingSessions.length > 1 ? 's' : ''}, est.)
+                  </span>
+                  <span style={{ fontWeight: 700 }}>+{fmtKj(eb.trainingKj)} kJ</span>
+                </>
+              )}
+              <span style={{ borderTop: '1px solid #f1f5f9', paddingTop: 4 }} title="BMR × 1.2 (light daytime activity) plus today's training estimate.">Estimated needs today</span>
+              <span style={{ fontWeight: 700, borderTop: '1px solid #f1f5f9', paddingTop: 4 }}>{fmtKj(eb.totalNeeds)} kJ</span>
+              <span title="The energy total from everything you logged today.">Logged so far</span>
+              <span style={{ fontWeight: 700 }}>{eb.loggedKj > 0 ? fmtKj(eb.loggedKj) + ' kJ' : '—'}</span>
+            </div>
+            {eb.trainingSessions.length > 0 && (
+              <div style={{ fontSize: 12, color: '#64748b', marginTop: 6 }}>
+                {eb.trainingSessions.map(s => {
+                  const est = sessionEnergyKj(s, bodyData.weightKg);
+                  return `${s.sessionType}: ${s.actualMins} min @ RPE ${s.actualRpe} (${est.band}) ≈ ${fmtKj(est.kj)} kJ`;
+                }).join(' · ')}
+              </div>
+            )}
+            <div style={{ marginTop: 12, background: '#f1f5f9', borderRadius: 10, padding: '12px 14px', fontSize: 13.5, fontWeight: 600, color: '#334155' }}>
+              {eb.loggedKj === 0
+                ? <>Nothing logged yet — estimated needs for today ≈ {fmtKj(eb.totalNeeds)} kJ.</>
+                : eb.balance < -1500
+                  ? <>≈ {fmtKj(-eb.balance)} kJ <span style={{ color: '#b45309' }}>short</span> of estimated needs — worth a snack or a bigger meal.</>
+                  : eb.balance <= 1500
+                    ? <>Roughly fuelled — within ~1,500 kJ of estimated needs. <span style={{ fontWeight: 400, color: '#64748b' }}>Estimates, not exact numbers.</span></>
+                    : <>≈ {fmtKj(eb.balance)} kJ <span style={{ color: '#15803d' }}>above</span> estimated needs today.</>}
+            </div>
+          </>
+        )}
       </div>
 
       {/* Today's log */}

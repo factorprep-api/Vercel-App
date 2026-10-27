@@ -1243,6 +1243,34 @@ export const saveBodyWeight = async (athleteName, kg, date) => {
   } catch (err) { return { status: 'Error', message: err.message }; }
 };
 
+// ---- Today's training (v1.9.7): actuals for the energy balance card ----
+// session_logs rows for the athlete on today's local calendar date. RLS lets
+// the athlete read their own rows; actual_load is a generated column
+// (actual_mins × actual_rpe) and is never written here.
+export const fetchTodayTraining = async (athleteName) => {
+  try {
+    const athleteId = await resolveAthleteRow(athleteName);
+    if (!athleteId) return { sessions: [] };
+    const today = ymd(new Date());
+    const { data, error } = await supabase.from('session_logs')
+      .select('id, session_type, actual_mins, actual_rpe, actual_load')
+      .eq('athlete_id', athleteId)
+      .eq('date', today)
+      .is('deleted_at', null)
+      .order('created_at', { ascending: true });
+    if (error) return { sessions: [] };
+    return {
+      sessions: (data || []).map(s => ({
+        id: s.id,
+        sessionType: s.session_type || 'Session',
+        actualMins: s.actual_mins ?? 0,
+        actualRpe: s.actual_rpe ?? 0,
+        actualLoad: s.actual_load ?? 0
+      }))
+    };
+  } catch { return { sessions: [] }; }
+};
+
 export const getLastLoggedWeight = async (athleteName, exerciseName) => {
   try {
     const athleteId = await resolveAthleteRow(athleteName);
