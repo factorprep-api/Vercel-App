@@ -8,6 +8,8 @@
 //
 //   node scripts/simulate_scores.mjs            # full report
 //   node scripts/simulate_scores.mjs --food lasagne
+//   node scripts/simulate_scores.mjs --compare            # + per-kJ measure
+//   node scripts/simulate_scores.mjs --bands 61,53,42     # override band cutoffs
 //
 // What it reproduces (plan §4.3/§4.6 + the v1.8.2 amendments):
 //  · 17 directional axes — 14 §4.1 vitamins/minerals + 3 fatty-acid
@@ -174,6 +176,49 @@ function main() {
     }
     printCompare(all);
   }
+
+  // ---- Quartile cutoffs (badge calibration) ----------------------------
+  // The score distribution is fixed at ETL time (percentile ranks over the
+  // whole active population), so these quartiles are the stable calibration
+  // for the green/yellow/amber/red badge bands in scoreBadge() in
+  // src/pages/AthleteNutrition.jsx. Re-run this script whenever the scoring
+  // population changes (import, activation, axis set) and re-derive.
+  const quartiles = (arr) => {
+    const s = [...arr].sort((a, b) => a - b);
+    const q = (p) => {
+      const idx = (s.length - 1) * p;
+      const lo = Math.floor(idx), hi = Math.ceil(idx);
+      return s[lo] + (s[hi] - s[lo]) * (idx - lo);
+    };
+    return { q1: q(0.25), q2: q(0.5), q3: q(0.75) };
+  };
+  const ps100 = all.map(r => r.percentile_score).filter(v => v != null);
+  const psKj = all.map(r => r.score_kj).filter(v => v != null);
+  console.log('\n=== quartile cutoffs (badge calibration) ===');
+  const q100 = quartiles(ps100);
+  console.log(`  per-100g: q1=${q100.q1.toFixed(1)}  q2=${q100.q2.toFixed(1)}  q3=${q100.q3.toFixed(1)}  (n=${ps100.length})`);
+  if (psKj.length) {
+    const qKj = quartiles(psKj);
+    console.log(`  per-kJ:   q1=${qKj.q1.toFixed(1)}  q2=${qKj.q2.toFixed(1)}  q3=${qKj.q3.toFixed(1)}  (n=${psKj.length})`);
+  }
+  // Band counts at the cutoffs shipped in scoreBadge() (61 / 53 / 42).
+  // The badge headline is per-kJ with a per-100g fallback, so the primary
+  // numbers here are the per-kJ ones; the per-100g column shows how the
+  // fallback rows land. Override the cutoffs with --bands green,yellow,amber
+  // (descending) to test alternatives before editing scoreBadge().
+  const bandsArg = args.includes('--bands') ? args[args.indexOf('--bands') + 1] : null;
+  const [bGreen, bYellow, bAmber] = bandsArg
+    ? bandsArg.split(',').map(Number)
+    : [61, 53, 42];
+  const bandCounts = (scores) => scores.reduce((acc, v) => {
+    if (v >= bGreen) acc.green++; else if (v >= bYellow) acc.yellow++; else if (v >= bAmber) acc.amber++; else acc.red++;
+    return acc;
+  }, { green: 0, yellow: 0, amber: 0, red: 0 });
+  const bKj = bandCounts(psKj);
+  const b100 = bandCounts(ps100);
+  const pct = (b, n) => `${(100 * b / n).toFixed(1)}%`;
+  console.log(`  bands @${bGreen}/${bYellow}/${bAmber} per-kJ:   green=${bKj.green} (${pct(bKj.green, psKj.length)})  yellow=${bKj.yellow} (${pct(bKj.yellow, psKj.length)})  amber=${bKj.amber} (${pct(bKj.amber, psKj.length)})  red=${bKj.red} (${pct(bKj.red, psKj.length)})`);
+  console.log(`  bands @${bGreen}/${bYellow}/${bAmber} per-100g: green=${b100.green} (${pct(b100.green, ps100.length)})  yellow=${b100.yellow} (${pct(b100.yellow, ps100.length)})  amber=${b100.amber} (${pct(b100.amber, ps100.length)})  red=${b100.red} (${pct(b100.red, ps100.length)})`);
 
   const nF = all.filter(r => r.source === 'FNDDS').length;
   const nA = all.filter(r => r.source === 'AUSNUT').length;

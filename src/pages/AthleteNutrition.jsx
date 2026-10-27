@@ -139,6 +139,21 @@ const resolveStaples = (foods) => {
 // food is not presented as if it were compared like-for-like with a 17/17
 // one. Falls back to the per-100 g score when a row (older log items) has
 // no per-kJ measure.
+//
+// Calibration (v1.9.8, recalibrated 2026-10-27): percentile-based, four
+// equal bands. The score distribution is fixed at ETL time — percentile
+// ranks over the whole active population — so the quartile cutoffs are
+// stable until the dataset changes. Measured from the shipped FNDDS+AUSNUT
+// datasets (node scripts/simulate_scores.mjs --compare, "quartile cutoffs"):
+//   per-100g: q1=41.9  q2=54.6  q3=63.4   (n=9336)
+//   per-kJ:   q1=42.5  q2=52.6  q3=61.1   (n=9293)
+// The headline is per-kJ (with a per-100g fallback only for older log
+// items), so the cutoffs are the per-kJ quartiles: green ≥ 61, yellow ≥ 53,
+// amber ≥ 42. Band shares at these cutoffs:
+//   per-kJ:   green 25.3%  yellow 23.7%  amber 26.8%  red 24.1%
+//   per-100g: green 31.6%  yellow 23.0%  amber 20.3%  red 25.1%
+// Re-derive via scripts/simulate_scores.mjs if the scoring population
+// changes (import, activation, axis set).
 const scoreBadge = (score, axes, kjScore) => {
   const parts = [];
   if (kjScore != null) parts.push(`Per 100 kJ: ${Math.round(kjScore)}`);
@@ -146,9 +161,10 @@ const scoreBadge = (score, axes, kjScore) => {
   const title = parts.length ? parts.join(' · ') : 'Not scored';
   const headline = kjScore != null ? kjScore : score;
   if (headline == null) return { bg: '#e2e8f0', fg: '#64748b', label: '—', title };
-  if (headline >= 70) return { bg: '#dcfce7', fg: '#15803d', label: `${Math.round(headline)}`, title };
-  if (headline >= 40) return { bg: '#fef3c7', fg: '#b45309', label: `${Math.round(headline)}`, title };
-  return { bg: '#fee2e2', fg: '#b91c1c', label: `${Math.round(headline)}`, title };
+  if (headline >= 61) return { bg: '#dcfce7', fg: '#15803d', label: `${Math.round(headline)}`, title }; // top quartile
+  if (headline >= 53) return { bg: '#fef9c3', fg: '#854d0e', label: `${Math.round(headline)}`, title }; // 2nd quartile
+  if (headline >= 42) return { bg: '#ffedd5', fg: '#c2410c', label: `${Math.round(headline)}`, title }; // 3rd quartile
+  return { bg: '#fee2e2', fg: '#b91c1c', label: `${Math.round(headline)}`, title }; // bottom quartile
 };
 
 // ---- Energy balance (v1.9.7): BMR + training vs logged intake ----
