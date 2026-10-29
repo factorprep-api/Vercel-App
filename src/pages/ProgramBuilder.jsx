@@ -226,8 +226,8 @@ export default function ProgramBuilder() {
         
         await new Promise(resolve => setTimeout(resolve, 1500));
         await refreshData();
-      } else { 
-        showToast('Save failed', true); 
+      } else {
+        showToast(res.message || 'Save failed', true);
       }
     } catch { 
       showToast('Network error', true); 

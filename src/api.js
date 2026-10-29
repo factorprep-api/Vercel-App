@@ -61,24 +61,39 @@ export const fetchPrograms = async () => {
     const currentUserEmail = user ? user.email : '';
     const currentUserId = user ? user.id : '';
 
-    const { data, error } = await supabase
-      .from('programs')
-      .select(`
-        name, category, privacy, media_url, notes,
-        owner_user_id,
-        program_exercises (
-          sets, reps, intensity_pct, tempo, rest, phase, advanced,
-          exercises (exercise_name)
-        )
-      `) // CHANGED: exercises (name) -> exercises (exercise_name)
-      .order('created_at', { ascending: false });
-      
-    if (error) return { programs: [], error: error.message };
+    // Supabase/PostgREST caps each request at 1000 rows, so paginate until a
+    // page comes back short (same pattern as fetchLibrary). Defensive: the
+    // programs table is small today, but nothing here should silently
+    // truncate when it grows past the cap.
+    const PAGE_SIZE = 1000;
+    const allPrograms = [];
+    let from = 0;
+    let page = null;
+    do {
+      const { data, error } = await supabase
+        .from('programs')
+        .select(`
+          name, category, privacy, media_url, notes,
+          owner_user_id,
+          program_exercises (
+            sets, reps, intensity_pct, tempo, rest, phase, advanced,
+            exercises (exercise_name)
+          )
+        `) // CHANGED: exercises (name) -> exercises (exercise_name)
+        .order('created_at', { ascending: false })
+        .range(from, from + PAGE_SIZE - 1);
+
+      if (error) return { programs: [], error: error.message };
+
+      page = data || [];
+      allPrograms.push(...page);
+      from += PAGE_SIZE;
+    } while (page.length === PAGE_SIZE);
 
     const PROGRAM_HEADER = ['Program Name', 'Category', 'Phase', 'Exercise Name', 'Sets', 'Reps', 'Intensity', 'Tempo', 'Rest Time', 'Notes', 'PrivacyLevel', 'OwnerEmail', 'MediaUrl', 'Advanced'];
-    
+
     const rows = [PROGRAM_HEADER];
-    for (const prog of (data || [])) {
+    for (const prog of allPrograms) {
       const ownerEmail = prog.owner_user_id === currentUserId ? currentUserEmail : 'other@example.com';
       const privacy = (prog.privacy || 'PUBLIC').toUpperCase();
       const media = prog.media_url || '';
@@ -335,6 +350,391 @@ export const deleteCycleLog = async (id) => {
     if (error) return { status: 'Error', message: error.message };
     return { status: 'Success' };
   } catch (err) { return { status: 'Error', message: err.message }; }
+};
+
+// ==========================================
+// NUTRITION POD PIPES (v1.8.2)
+// ==========================================
+// foods / v_food_scores are REFERENCE data (9,365 FNDDS + AUSNUT foods,
+// scored over 17 directional nutrient axes — see scripts/nutrition_etl.mjs
+// and scripts/simulate_scores.mjs).
+// nutrition_logs stores items DENORMALIZED: each item carries the per-100g
+// nutrient values + score captured at log time, so athlete/coach views
+// compute daily totals client-side with zero joins (per plan §3).
+// Item shape: { food_id, grams, name, portionLabel, kj100, protein100,
+//               carbs100, fat100, fibre100, percentileScore, scoreAxes }
+// raw_score is deliberately NOT in the client payload (view-only, for
+// debug_scores.mjs): it is an audit/continuity figure, not a ranking.
+// ==========================================
+
+// Full food database for client-side search — the exercise-library pattern:
+// load all 9,3xx FNDDS + AUSNUT foods once (merged with their percentile
+// scores), cache in localStorage, then pages filter instantly with
+// multi-word tokens. Foods only change when the ETL re-imports, and the
+// background refetch on every page load keeps the cache self-healing.
+// v1.9.4: fetchAllPages walks both tables in 1,000-row .range() chunks.
+// PostgREST caps every response at Max Rows (1,000 live), so a single
+// select silently truncated the database to its first 1,000 alphabetical
+// rows — "Abalone … Bread, oatmeal" — and everything past it (lasagna
+// included) never reached the client. id ordering keeps the walk stable;
+// callers sort by description afterwards. A hard page stop guards against
+// a runaway loop if a where-less fetch ever misbehaves.
+
+const FOOD_DB_PAGE_SIZE = 1000; // live Supabase Max Rows
+const FOOD_DB_MAX_PAGES = 50;   // hard stop: 50 × 1,000 = 50,000 rows
+
+const fetchAllPages = async (table, select, orderCol = 'id') => {
+  const rows = [];
+  for (let page = 0; page < FOOD_DB_MAX_PAGES; page++) {
+    const from = page * FOOD_DB_PAGE_SIZE;
+    const { data, error } = await supabase
+      .from(table)
+      .select(select)
+      .order(orderCol)
+      .range(from, from + FOOD_DB_PAGE_SIZE - 1);
+    if (error) return { rows: null, error: error.message };
+    if (data) rows.push(...data);
+    if (!data || data.length < FOOD_DB_PAGE_SIZE) break; // short page = last page
+  }
+  return { rows, error: null };
+};
+
+export const fetchFoodDatabase = async () => {
+  try {
+    const [foodsRes, scoresRes] = await Promise.all([
+      fetchAllPages('foods', 'id, source, description, category, portion_label, portion_grams, energy_kj, protein_g, carbohydrate_g, fat_total_g, fibre_g'),
+      fetchAllPages('v_food_scores', 'id, percentile_score, score_axes, density_per_kj, score_axes_kj')
+    ]);
+    if (foodsRes.error) return { foods: [], error: foodsRes.error.message };
+    if (scoresRes.error) return { foods: [], error: scoresRes.error.message };
+    const scoreById = new Map((scoresRes.rows || []).map(s => [s.id, s]));
+    const foods = (foodsRes.rows || []).map(f => ({
+      id: f.id,
+      description: f.description,
+      source: f.source,
+      category: f.category || '',
+      portionLabel: f.portion_label || '',
+      portionGrams: f.portion_grams != null ? Number(f.portion_grams) : null,
+      kj100: f.energy_kj != null ? Number(f.energy_kj) : null,
+      protein100: f.protein_g != null ? Number(f.protein_g) : null,
+      carbs100: f.carbohydrate_g != null ? Number(f.carbohydrate_g) : null,
+      fat100: f.fat_total_g != null ? Number(f.fat_total_g) : null,
+      fibre100: f.fibre_g != null ? Number(f.fibre_g) : null,
+      percentileScore: scoreById.get(f.id)?.percentile_score ?? null,
+      scoreAxes: scoreById.get(f.id)?.score_axes ?? null,
+      densityPerKj: scoreById.get(f.id)?.density_per_kj ?? null,
+      scoreAxesKj: scoreById.get(f.id)?.score_axes_kj ?? null
+    })).sort((a, b) => a.description.localeCompare(b.description));
+    return { foods, error: null };
+  } catch (err) { return { foods: [], error: err.message }; }
+};
+
+// ---- Favourites (v1.8.1): starred foods for one-tap repeat logging ----
+// Same food shape as fetchFoodDatabase items so the page can treat them
+// identically. Scores come from v_food_scores (no FK to a materialized
+// view, so it's a second query keyed by id).
+// NOTE: fat_total_g must be in the join — without it every favourite logged
+// from a chip carried fat100: undefined, so fat totals silently under-counted.
+
+export const fetchFoodFavorites = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('nutrition_favorites')
+      .select('id, food_id, created_at, foods(description, source, category, portion_label, portion_grams, energy_kj, protein_g, carbohydrate_g, fat_total_g, fibre_g)')
+      .order('created_at', { ascending: false });
+    if (error) return { foods: [], error: error.message };
+    const rows = data || [];
+    const ids = rows.map(r => r.food_id).filter(Boolean);
+    const scoreById = new Map();
+    if (ids.length > 0) {
+      const { data: scores, error: sErr } = await supabase
+        .from('v_food_scores')
+        .select('id, percentile_score, score_axes, density_per_kj, score_axes_kj')
+        .in('id', ids);
+      if (!sErr) (scores || []).forEach(s => scoreById.set(s.id, s));
+    }
+    const foods = rows
+      .map(r => {
+        const f = r.foods;
+        if (!f) return null;
+        return {
+          id: r.food_id,
+          description: f.description,
+          source: f.source,
+          category: f.category || '',
+          portionLabel: f.portion_label || '',
+          portionGrams: f.portion_grams != null ? Number(f.portion_grams) : null,
+          kj100: f.energy_kj != null ? Number(f.energy_kj) : null,
+          protein100: f.protein_g != null ? Number(f.protein_g) : null,
+          carbs100: f.carbohydrate_g != null ? Number(f.carbohydrate_g) : null,
+          fat100: f.fat_total_g != null ? Number(f.fat_total_g) : null,
+          fibre100: f.fibre_g != null ? Number(f.fibre_g) : null,
+          percentileScore: scoreById.get(r.food_id)?.percentile_score ?? null,
+          scoreAxes: scoreById.get(r.food_id)?.score_axes ?? null,
+          densityPerKj: scoreById.get(r.food_id)?.density_per_kj ?? null,
+          scoreAxesKj: scoreById.get(r.food_id)?.score_axes_kj ?? null
+        };
+      })
+      .filter(Boolean);
+    return { foods, error: null };
+  } catch (err) { return { foods: [], error: err.message }; }
+};
+
+export const addFoodFavorite = async (foodId) => {
+  try {
+    if (!foodId) return { status: 'Error', message: 'Missing food ID.' };
+    let athleteId = null;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { data: mine } = await supabase.from('athletes').select('id').eq('user_id', user.id).maybeSingle();
+      if (mine) athleteId = mine.id;
+    }
+    if (!athleteId) return { status: 'Error', message: 'Athlete not found' };
+    const { error } = await supabase
+      .from('nutrition_favorites')
+      .upsert({ athlete_id: athleteId, food_id: foodId }, { onConflict: 'athlete_id,food_id', ignoreDuplicates: true });
+    if (error) return { status: 'Error', message: error.message };
+    return { status: 'Success' };
+  } catch (err) { return { status: 'Error', message: err.message }; }
+};
+
+export const removeFoodFavorite = async (foodId) => {
+  try {
+    if (!foodId) return { status: 'Error', message: 'Missing food ID.' };
+    // RLS (nf_delete) restricts the delete to the owning athlete.
+    const { error } = await supabase
+      .from('nutrition_favorites')
+      .delete()
+      .eq('food_id', foodId);
+    if (error) return { status: 'Error', message: error.message };
+    return { status: 'Success' };
+  } catch (err) { return { status: 'Error', message: err.message }; }
+};
+
+// ---- Meal favourites (v1.9.4): starred archetypes for Quick meals ----
+// meal_favorites holds starred MEAL ARCHETYPES only; starred FOODS stay in
+// nutrition_favorites (one source of truth per kind). Ids return newest
+// star first so the Quick meals list reads most-recently-pinned at top.
+// The page merges these ids with the full archetype list from
+// fetchMealArchetypes — no join needed here.
+
+export const fetchMealFavorites = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('meal_favorites')
+      .select('archetype_id')
+      .order('created_at', { ascending: false });
+    if (error) return { ids: [], error: error.message };
+    return { ids: (data || []).map(r => r.archetype_id), error: null };
+  } catch (err) { return { ids: [], error: err.message }; }
+};
+
+export const addMealFavorite = async (archetypeId) => {
+  try {
+    if (!archetypeId) return { status: 'Error', message: 'Missing meal ID.' };
+    let athleteId = null;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { data: mine } = await supabase.from('athletes').select('id').eq('user_id', user.id).maybeSingle();
+      if (mine) athleteId = mine.id;
+    }
+    if (!athleteId) return { status: 'Error', message: 'Athlete not found' };
+    const { error } = await supabase
+      .from('meal_favorites')
+      .upsert({ athlete_id: athleteId, archetype_id: archetypeId }, { onConflict: 'athlete_id,archetype_id', ignoreDuplicates: true });
+    if (error) return { status: 'Error', message: error.message };
+    return { status: 'Success' };
+  } catch (err) { return { status: 'Error', message: err.message }; }
+};
+
+export const removeMealFavorite = async (archetypeId) => {
+  try {
+    if (!archetypeId) return { status: 'Error', message: 'Missing meal ID.' };
+    // RLS (mf_delete) restricts the delete to the owning athlete.
+    const { error } = await supabase
+      .from('meal_favorites')
+      .delete()
+      .eq('archetype_id', archetypeId);
+    if (error) return { status: 'Error', message: error.message };
+    return { status: 'Success' };
+  } catch (err) { return { status: 'Error', message: err.message }; }
+};
+
+// ---- Meal archetypes (v1.9): the three-tap meal path ----
+// One round-trip of five small reference queries, merged client-side:
+//   meal_archetypes        — id/name/meal_slots/display_order (active only)
+//   v_archetype_scores     — weighted percentile_score + density_per_kj
+//   v_archetype_nutrients  — kJ/protein/carbs/fat/fibre per NORMAL serve
+//   quality_tier_modifiers — five tier multipliers (§5.2)
+//   portion_size_scalars   — small/normal/large multipliers (worksheet §4)
+// All reference data: no user scoping, RLS grants read to authenticated.
+// The UI resolves grams at log time as base_grams × portion multiplier and
+// snapshots the multipliers on the item (§5.3), so retuning the tables
+// later never rewrites logged history.
+export const fetchMealArchetypes = async () => {
+  try {
+    const [metaRes, scoresRes, nutrientsRes, tiersRes, portionsRes] = await Promise.all([
+      supabase.from('meal_archetypes').select('id, slug, name, meal_slots, component_labels, component_weights, display_order').eq('active', true),
+      supabase.from('v_archetype_scores').select('archetype_id, percentile_score, density_per_kj, component_count, scored_components'),
+      supabase.from('v_archetype_nutrients').select('archetype_id, base_grams, energy_kj, protein_g, carbohydrate_g, fat_g, fibre_g'),
+      supabase.from('quality_tier_modifiers').select('tier, score_multiplier, display_badge'),
+      supabase.from('portion_size_scalars').select('portion_size, multiplier')
+    ]);
+    const firstErr = [metaRes, scoresRes, nutrientsRes, tiersRes, portionsRes].find(r => r.error)?.error;
+    if (firstErr) return { archetypes: [], tiers: [], portions: [], error: firstErr.message };
+    const scoreById = new Map((scoresRes.data || []).map(s => [s.archetype_id, s]));
+    const nutById = new Map((nutrientsRes.data || []).map(n => [n.archetype_id, n]));
+    const archetypes = (metaRes.data || [])
+      .map(m => {
+        const s = scoreById.get(m.id);
+        const n = nutById.get(m.id);
+        // v1.9.11: surface the recipe. component_labels/weights are parallel
+        // arrays ("Eggs (whole)" ×3); rendered as one text line so the meal
+        // picker and meal step can show what's in it without a new query.
+        const comps = (Array.isArray(m.component_labels)
+          && Array.isArray(m.component_weights)
+          && m.component_labels.length > 0
+          && m.component_labels.length === m.component_weights.length)
+          ? m.component_labels.map((label, i) => ({ label, weight: Number(m.component_weights[i]) }))
+          : null;
+        return {
+          id: m.id,
+          slug: m.slug,
+          name: m.name,
+          componentsText: comps ? comps.map(c => `${c.label} ×${c.weight}`).join(' · ') : null,
+          mealSlots: Array.isArray(m.meal_slots) ? m.meal_slots : [],
+          displayOrder: m.display_order,
+          baseGrams: n?.base_grams != null ? Number(n.base_grams) : null,
+          energyKj: n?.energy_kj != null ? Number(n.energy_kj) : null,
+          proteinG: n?.protein_g != null ? Number(n.protein_g) : null,
+          carbsG: n?.carbohydrate_g != null ? Number(n.carbohydrate_g) : null,
+          fatG: n?.fat_g != null ? Number(n.fat_g) : null,
+          fibreG: n?.fibre_g != null ? Number(n.fibre_g) : null,
+          percentileScore: s?.percentile_score != null ? Number(s.percentile_score) : null,
+          densityPerKj: s?.density_per_kj != null ? Number(s.density_per_kj) : null,
+          componentCount: s?.component_count != null ? Number(s.component_count) : null,
+          scoredComponents: s?.scored_components != null ? Number(s.scored_components) : null
+        };
+      })
+      .sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0) || a.name.localeCompare(b.name));
+    const tiers = (tiersRes.data || [])
+      .map(t => ({ tier: t.tier, scoreMultiplier: Number(t.score_multiplier), badge: t.display_badge }));
+    // Canonical display order for the quality chips (v1.9.12 ladder, low →
+    // high leverage): processed → supermarket → local → organic → homegrown.
+    // DB row order is not stable across re-seeds, so the order is enforced
+    // here rather than relied on from the database.
+    const TIER_ORDER = { processed: 0, supermarket: 1, local: 2, organic: 3, homegrown: 4 };
+    tiers.sort((a, b) => (TIER_ORDER[a.tier] ?? 99) - (TIER_ORDER[b.tier] ?? 99));
+    const portions = (portionsRes.data || [])
+      .map(p => ({ portionSize: p.portion_size, multiplier: Number(p.multiplier) }))
+      .sort((a, b) => a.multiplier - b.multiplier);
+    return { archetypes, tiers, portions, error: null };
+  } catch (err) { return { archetypes: [], tiers: [], portions: [], error: err.message }; }
+};
+
+// Append items to today's free-form nutrition log (creates the day's row on
+// first save, merges into it afterwards). Date is the LOCAL calendar day —
+// the same ymd() fix that keeps wellness logs on the athlete's actual day.
+// sessionLogId is reserved for session-anchored fueling (plan §7.1); the
+// athlete UI passes null for now.
+export const saveNutritionLog = async ({ items, athlete, sessionLogId, date }) => {
+  try {
+    if (!Array.isArray(items) || items.length === 0) {
+      return { status: 'Error', message: 'Nothing to log.' };
+    }
+    let athleteId = null;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { data: mine } = await supabase.from('athletes').select('id').eq('user_id', user.id).maybeSingle();
+      if (mine) athleteId = mine.id;
+    }
+    if (!athleteId && athlete) {
+      const { data: byName } = await supabase.from('athletes').select('id').ilike('name', athlete).limit(1);
+      if (byName && byName.length > 0) athleteId = byName[0].id;
+    }
+    if (!athleteId) return { status: 'Error', message: 'Athlete not found' };
+
+    const entryDate = date || ymd(new Date());
+
+    // Find today's free-form row (session-anchored entries live separately)
+    let q = supabase
+      .from('nutrition_logs')
+      .select('id, items')
+      .eq('athlete_id', athleteId)
+      .eq('entry_date', entryDate)
+      .is('deleted_at', null);
+    if (sessionLogId) q = q.eq('session_log_id', sessionLogId);
+    else q = q.is('session_log_id', null);
+    const { data: found } = await q.maybeSingle();
+    const existing = found;
+
+    if (existing) {
+      const merged = [...(Array.isArray(existing.items) ? existing.items : []), ...items];
+      const { error } = await supabase
+        .from('nutrition_logs')
+        .update({ items: merged })
+        .eq('id', existing.id);
+      if (error) return { status: 'Error', message: error.message };
+      return { status: 'Success', items: merged };
+    }
+
+    const { data: inserted, error } = await supabase
+      .from('nutrition_logs')
+      .insert({
+        athlete_id: athleteId,
+        entry_date: entryDate,
+        session_log_id: sessionLogId || null,
+        items
+      })
+      .select('id, items')
+      .single();
+    if (error) return { status: 'Error', message: error.message };
+    return { status: 'Success', items: inserted ? inserted.items : items };
+  } catch (err) { return { status: 'Error', message: err.message }; }
+};
+
+// Rewrite the items array of a specific log row (used by the per-item delete
+// in the athlete UI). RLS (nl_update) only allows the owning athlete.
+export const updateNutritionItems = async (logId, items) => {
+  try {
+    if (!logId) return { status: 'Error', message: 'Missing log ID.' };
+    const { error } = await supabase
+      .from('nutrition_logs')
+      .update({ items })
+      .eq('id', logId);
+    if (error) return { status: 'Error', message: error.message };
+    return { status: 'Success' };
+  } catch (err) { return { status: 'Error', message: err.message }; }
+};
+
+// Recent nutrition logs visible to the signed-in user (RLS handles scoping:
+// athletes see their own, coaches see their athletes'). Joins the athlete's
+// name so coach pages can attribute logs. Items are denormalized, so views
+// compute totals client-side. sessionLogId present on session-anchored entries.
+export const fetchNutritionLogs = async (days = 30) => {
+  try {
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+    const { data, error } = await supabase
+      .from('nutrition_logs')
+      .select('id, entry_date, session_log_id, items, notes, athlete_id, athletes(name)')
+      .is('deleted_at', null)
+      .gte('entry_date', ymd(since))
+      .order('entry_date', { ascending: false });
+    if (error) return { logs: [], error: error.message };
+    return {
+      logs: (data || []).map(l => ({
+        id: l.id,
+        athleteId: l.athlete_id,
+        athleteName: l.athletes ? l.athletes.name : null,
+        date: l.entry_date,
+        sessionLogId: l.session_log_id,
+        items: Array.isArray(l.items) ? l.items : [],
+        notes: l.notes
+      })),
+      error: null
+    };
+  } catch (err) { return { logs: [], error: err.message }; }
 };
 
 // ==========================================
@@ -808,6 +1208,99 @@ export const saveAthleteMax = async (athleteName, exerciseName, oneRmKg, date) =
   } catch (err) { return { status: 'Error', message: err.message }; }
 };
 
+// ---- Body data (v1.9.5): athlete profile + dated body weights ----
+// sex/birth_year/height_cm live on the athletes row (athlete-settable —
+// the admin-field protection trigger only guards role/primary_club_id);
+// weights live in body_measurements (each entry a dated row, newest wins).
+// Both feed the BMR-based energy balance on the nutrition page. RLS
+// (bm_select) lets coaches of the athlete's teams read weights; the
+// profile is athlete-owned and only ever written by the athlete here.
+
+export const fetchAthleteBodyData = async (athleteName) => {
+  try {
+    const athleteId = await resolveAthleteRow(athleteName);
+    if (!athleteId) return { status: 'Error', message: 'Athlete not found' };
+    const [{ data: prof, error: profErr }, { data: wt, error: wtErr }] = await Promise.all([
+      supabase.from('athletes').select('sex, birth_year, height_cm').eq('id', athleteId).maybeSingle(),
+      supabase.from('body_measurements').select('weight_kg, entry_date')
+        .eq('athlete_id', athleteId).is('deleted_at', null)
+        .order('entry_date', { ascending: false })
+        .order('created_at', { ascending: false })
+        .limit(1)
+    ]);
+    if (profErr) return { status: 'Error', message: profErr.message };
+    if (wtErr) return { status: 'Error', message: wtErr.message };
+    const w = (wt || [])[0] || null;
+    return {
+      status: 'Success',
+      sex: prof?.sex ?? null,
+      birthYear: prof?.birth_year ?? null,
+      heightCm: prof?.height_cm != null ? Number(prof.height_cm) : null,
+      weightKg: w ? Number(w.weight_kg) : null,
+      weightDate: w ? w.entry_date : null
+    };
+  } catch (err) { return { status: 'Error', message: err.message }; }
+};
+
+export const saveAthleteProfile = async (athleteName, profile) => {
+  try {
+    const athleteId = await resolveAthleteRow(athleteName);
+    if (!athleteId) return { status: 'Error', message: 'Athlete not found' };
+    const upd = {};
+    if (profile.sex != null) upd.sex = profile.sex;
+    if (profile.birthYear != null) upd.birth_year = profile.birthYear;
+    if (profile.heightCm != null) upd.height_cm = profile.heightCm;
+    if (Object.keys(upd).length === 0) return { status: 'Success' };
+    const { error } = await supabase.from('athletes').update(upd).eq('id', athleteId);
+    if (error) return { status: 'Error', message: error.message };
+    return { status: 'Success' };
+  } catch (err) { return { status: 'Error', message: err.message }; }
+};
+
+export const saveBodyWeight = async (athleteName, kg, date) => {
+  try {
+    const athleteId = await resolveAthleteRow(athleteName);
+    if (!athleteId) return { status: 'Error', message: 'Athlete not found' };
+    const val = parseFloat(kg);
+    if (!Number.isFinite(val) || val <= 0 || val >= 500) return { status: 'Error', message: 'Please enter a valid body weight in kg.' };
+    const { error } = await supabase.from('body_measurements').insert({
+      athlete_id: athleteId,
+      weight_kg: Math.round(val * 10) / 10,
+      entry_date: date || new Date().toISOString().split('T')[0]
+    });
+    if (error) return { status: 'Error', message: error.message };
+    return { status: 'Success' };
+  } catch (err) { return { status: 'Error', message: err.message }; }
+};
+
+// ---- Today's training (v1.9.7): actuals for the energy balance card ----
+// session_logs rows for the athlete on today's local calendar date. RLS lets
+// the athlete read their own rows; actual_load is a generated column
+// (actual_mins × actual_rpe) and is never written here.
+export const fetchTodayTraining = async (athleteName) => {
+  try {
+    const athleteId = await resolveAthleteRow(athleteName);
+    if (!athleteId) return { sessions: [] };
+    const today = ymd(new Date());
+    const { data, error } = await supabase.from('session_logs')
+      .select('id, session_type, actual_mins, actual_rpe, actual_load')
+      .eq('athlete_id', athleteId)
+      .eq('date', today)
+      .is('deleted_at', null)
+      .order('created_at', { ascending: true });
+    if (error) return { sessions: [] };
+    return {
+      sessions: (data || []).map(s => ({
+        id: s.id,
+        sessionType: s.session_type || 'Session',
+        actualMins: s.actual_mins ?? 0,
+        actualRpe: s.actual_rpe ?? 0,
+        actualLoad: s.actual_load ?? 0
+      }))
+    };
+  } catch { return { sessions: [] }; }
+};
+
 export const getLastLoggedWeight = async (athleteName, exerciseName) => {
   try {
     const athleteId = await resolveAthleteRow(athleteName);
@@ -1048,14 +1541,60 @@ export const updateAssignment = async (athleteName, assignment) => {
   } catch (err) { return { status: 'Error', message: err.message }; }
 };
 
+// PostgREST caps each request at 1000 rows regardless of the range requested,
+// so paginate until a page comes back short — the same pattern fetchLibrary
+// uses. Returns the full name→id map over the whole exercises table.
+const fetchAllExercises = async () => {
+  const PAGE_SIZE = 1000;
+  const all = [];
+  let from = 0;
+  let page = null;
+  do {
+    const { data, error } = await supabase
+      .from('exercises')
+      .select('id, exercise_name')
+      .order('exercise_name', { ascending: true })
+      .range(from, from + PAGE_SIZE - 1);
+    if (error) return { error: error.message };
+    page = data || [];
+    all.push(...page);
+    from += PAGE_SIZE;
+  } while (page.length === PAGE_SIZE);
+  return { all };
+};
+
+// Resolve every draft exercise name against the FULL exercise library.
+// Returns { exMap, missing, error }. A missing name is a FATAL save
+// condition: the old code fetched the exercises table without pagination
+// (PostgREST caps at 1000 rows — the table holds 3,000+) and silently
+// skipped any exercise whose id wasn't in the truncated map (`if (!exId)
+// continue`), which is how programs saved incomplete with no error shown.
+const resolveProgramExercises = async (programRows) => {
+  const { all, error } = await fetchAllExercises();
+  if (error) return { exMap: {}, missing: [], error };
+  const exMap = {};
+  (all || []).forEach(e => { exMap[e.exercise_name.toLowerCase()] = e.id; });
+  const missing = [];
+  for (const r of programRows) {
+    const exName = (r[3] || '').trim();
+    if (exName && !exMap[exName.toLowerCase()]) missing.push(exName);
+  }
+  return { exMap, missing };
+};
+
 export const saveFullProgram = async (programRows) => {
   try {
     if (!programRows || programRows.length === 0) return { status: 'Error', message: 'No rows provided' };
 
     const { data: { user } } = await supabase.auth.getUser();
-    const { data: exercises } = await supabase.from('exercises').select('id, exercise_name'); // CHANGED
-    const exMap = {};
-    (exercises || []).forEach(e => { exMap[e.exercise_name.toLowerCase()] = e.id; }); // CHANGED
+
+    // Resolve every exercise BEFORE creating the program row. Fail LOUDLY
+    // if any draft exercise is unknown — never silently drop a movement.
+    const { exMap, missing, error: exErr } = await resolveProgramExercises(programRows);
+    if (exErr) return { status: 'Error', message: `Could not load exercise library: ${exErr}` };
+    if (missing.length > 0) {
+      return { status: 'Error', message: `Exercise not found in library: ${[...new Set(missing)].join(', ')}` };
+    }
 
     const firstRow = programRows[0];
     const progName = firstRow[0];
@@ -1081,7 +1620,10 @@ export const saveFullProgram = async (programRows) => {
       const exName = (r[3] || '').trim();
       if (!exName) continue;
       const exId = exMap[exName.toLowerCase()];
-      if (!exId) continue;
+      // Every name was validated above, so exId must exist — an unknown id
+      // here is a code bug, not a data condition, so let it throw rather
+      // than silently skip the row (the old silent-drop behaviour).
+      if (!exId) throw new Error(`Exercise not found in library: ${exName}`);
 
       let adv = {};
       try { adv = typeof r[13] === 'string' ? JSON.parse(r[13]) : (r[13] || {}); } catch { /* ignore */ }
@@ -1164,13 +1706,17 @@ export const addExerciseToLibrary = async (exerciseData) => {
     else if (exerciseData.formula === 'distance') metricType = 'distance';
     else if (exerciseData.formula === 'reps_only') metricType = 'reps_only';
 
+    // isPublic: true -> shared public library row (no owner, visible to
+    // everyone via ex_select). Only the admin can request this; the DB
+    // policy ex_admin_public_insert rejects public inserts from anyone else.
+    const isPublic = exerciseData.isPublic === true;
     const { error } = await supabase.from('exercises').insert({
       exercise_name: exerciseData.name, // CHANGED
       muscle_category: exerciseData.muscle || 'Other',
       video_url: exerciseData.video || '',
       metric_type: metricType,
-      is_public: false,
-      owner_user_id: user ? user.id : null
+      is_public: isPublic,
+      owner_user_id: isPublic ? null : (user ? user.id : null)
     });
     if (error) return { status: 'Error', message: error.message };
     return { status: 'Success' };
@@ -1221,6 +1767,15 @@ export const fetchHelpVideos = async () => {
 
 export const updateProgram = async (oldName, programRows) => {
   try {
+    // Validate the new rows FIRST (all exercises resolve, nothing missing)
+    // before deleting the old program — a failed save must never leave the
+    // program deleted. The old order deleted first, so a mid-save failure
+    // destroyed the program the user was editing.
+    const { missing, error } = await resolveProgramExercises(programRows);
+    if (error) return { status: 'Error', message: `Could not load exercise library: ${error}` };
+    if (missing.length > 0) {
+      return { status: 'Error', message: `Exercise not found in library: ${[...new Set(missing)].join(', ')}` };
+    }
     const { error: delErr } = await supabase.from('programs').delete().eq('name', oldName);
     if (delErr) return { status: 'Error', message: delErr.message };
     return await saveFullProgram(programRows);

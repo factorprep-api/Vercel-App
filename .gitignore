@@ -24,3 +24,9 @@ dist-ssr
 *.sw?
 *.bak
 .env
+
+# Nutrition ETL datasets (re-downloadable, ~40MB extracted)
+data/
+
+# One-off generated test images
+test.png

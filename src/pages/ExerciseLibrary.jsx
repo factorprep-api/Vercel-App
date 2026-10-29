@@ -9,6 +9,10 @@ import HelpButton from '../components/HelpButton';
 
 const ITEMS_PER_PAGE = 50;
 
+// ADMIN "GOD MODE" EMAIL - same account as the shop admin (ProgramLibrary).
+// Only this account can publish exercises to the shared Public Library.
+const ADMIN_EMAIL = 'crusty@hotmail.com';
+
 function buildGrouped(data) {
   const map = {};
   data.forEach(ex => {
@@ -394,10 +398,13 @@ export default function ExerciseLibrary({ viewMode: propViewMode = 'athlete' }) 
           userEmail={userEmail}
           athleteName={athleteName}
           existingCategories={existingCategories}
+          isAdmin={userEmail && userEmail.toLowerCase() === ADMIN_EMAIL.toLowerCase()}
           onClose={() => setAdding(false)}
-          onSuccess={async () => {
+          onSuccess={async (isPublic) => {
             setAdding(false);
-            showToast('Exercise added! It will appear with a • Coach badge.');
+            showToast(isPublic
+              ? 'Exercise added to the Public Library! Everyone can see and use it.'
+              : 'Exercise added! It will appear with a • Coach badge.');
             await reloadLibrary();
           }}
           onError={(msg) => showToast(msg, true)}
@@ -499,7 +506,7 @@ export default function ExerciseLibrary({ viewMode: propViewMode = 'athlete' }) 
 }
 
 // FIX: Completely rebuilt the modal props and logic
-function AddExerciseModal({ userEmail, athleteName, existingCategories, onClose, onSuccess, onError }) {
+function AddExerciseModal({ userEmail, athleteName, existingCategories, isAdmin, onClose, onSuccess, onError }) {
   // Dynamically default to the Coach's name, just like the Drill Designer
   const coachCategoryName = athleteName ? `${athleteName} Exercises` : 'Coach Exercises';
 
@@ -516,20 +523,29 @@ function AddExerciseModal({ userEmail, athleteName, existingCategories, onClose,
     return [...baseCats].sort();
   }, [existingCategories, coachCategoryName]);
 
+  const helperText = isAdmin
+    ? `Pick where the exercise lives: "${coachCategoryName}" is visible only to you, "Public Library" is visible to every coach and athlete.`
+    : `Defaults to "${coachCategoryName}". Type or select existing categories.`;
+
   async function handleSave() {
     if (!name.trim()) { (onError || alert)('Exercise name is required.'); return; }
     if (!userEmail) { (onError || alert)('Not authenticated. Please sign in again.'); return; }
     setSaving(true);
     try {
+      // Admin-only: selecting "Public Library" publishes the exercise to the
+      // shared library (is_public = true, no owner). The DB RLS policy
+      // enforces this even if the frontend is bypassed.
+      const isPublic = isAdmin && muscle.trim().toLowerCase() === 'public library';
       const res = await addExerciseToLibrary({
         name: name.trim(),
         video: video.trim(),
         muscle: muscle.trim() || coachCategoryName,
         formula: isFormula, // Pass "yes" or "" directly to api.js
-        ownerEmail: userEmail
+        ownerEmail: userEmail,
+        isPublic
       });
       if (res.status === 'Success') {
-        await onSuccess();
+        await onSuccess(isPublic);
       } else {
         (onError || alert)('Add failed: ' + (res.message || 'Unknown error'));
       }
@@ -558,12 +574,21 @@ function AddExerciseModal({ userEmail, athleteName, existingCategories, onClose,
         </div>
         
         <div className="exlib-add-field">
-          <label className="exlib-add-label">Muscle / Category:</label>
-          <input className="exlib-add-input" list="exlib-muscle-list" value={muscle} onChange={e => setMuscle(e.target.value)} placeholder="e.g. Chest" />
-          <datalist id="exlib-muscle-list">
-            {categoryOptions.map(cat => <option key={cat} value={cat} />)}
-          </datalist>
-          <p style={{ fontSize: 11, color: '#888', margin: '4px 0 0 0' }}>Defaults to "{coachCategoryName}". Type or select existing categories.</p>
+          <label className="exlib-add-label">Exercise Library:</label>
+          {isAdmin ? (
+            <select className="exlib-add-input" value={muscle} onChange={e => setMuscle(e.target.value)}>
+              <option value={coachCategoryName}>{coachCategoryName} (only you)</option>
+              <option value="Public Library">Public Library (everyone)</option>
+            </select>
+          ) : (
+            <>
+              <input className="exlib-add-input" list="exlib-muscle-list" value={muscle} onChange={e => setMuscle(e.target.value)} placeholder="e.g. Chest" />
+              <datalist id="exlib-muscle-list">
+                {categoryOptions.map(cat => <option key={cat} value={cat} />)}
+              </datalist>
+            </>
+          )}
+          <p style={{ fontSize: 11, color: '#888', margin: '4px 0 0 0' }}>{helperText}</p>
         </div>
         
         {/* FIX: New Dropdown replacing BaseLift/Multiplier */}

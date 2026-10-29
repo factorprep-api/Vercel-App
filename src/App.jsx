@@ -23,6 +23,7 @@ const ManageShop = lazy(() => import('./pages/ManageShop'));
 const AthleteWellness = lazy(() => import('./pages/AthleteWellness'));
 const AthleteMedical = lazy(() => import('./pages/AthleteMedical'));
 const AthleteSchedule = lazy(() => import('./pages/AthleteSchedule'));
+const AthleteNutrition = lazy(() => import('./pages/AthleteNutrition'));
 const CoachSchedule = lazy(() => import('./pages/CoachSchedule'));
 
 
@@ -174,6 +175,12 @@ export default function App() {
         <Route path="/athlete-schedule" element={
           <ProtectedRoute allowedRoles={['athlete', 'coach']}>
             <Suspense fallback={<LoadingFallback />}><AthleteSchedule /></Suspense>
+          </ProtectedRoute>
+        } />
+
+        <Route path="/athlete-nutrition" element={
+          <ProtectedRoute allowedRoles={['athlete', 'coach']}>
+            <Suspense fallback={<LoadingFallback />}><AthleteNutrition /></Suspense>
           </ProtectedRoute>
         } />
       </Routes>
