@@ -24,13 +24,17 @@
 -- ============ 1. QUALITY TIER MODIFIERS (§5.2) ============
 -- Uneven spacing is deliberate: leverage sits at the bottom of the scale,
 -- because the tier's job is to counter density scores that processed food
--- inflates through fortification and concentration. fresh = 1.00 is the
+-- inflates through fortification and concentration. organic = 1.00 is the
 -- reference point. Revisit after launch using observed athlete data —
 -- §5.3 snapshots the resolved multiplier on the log row, so tuning never
 -- rewrites history.
+-- v1.9.12: 'fresh' renamed to 'organic' (same ×1.00 reference multiplier);
+-- items logged before the rename keep their stored multiplier, so history
+-- is unaffected. Canonical display order (enforced client-side in api.js):
+-- processed → supermarket → local → organic → homegrown.
 create table if not exists public.quality_tier_modifiers (
   tier text primary key
-    check (tier in ('processed', 'supermarket', 'fresh', 'local', 'homegrown')),
+    check (tier in ('processed', 'supermarket', 'local', 'organic', 'homegrown')),
   score_multiplier numeric not null check (score_multiplier > 0),
   display_badge text not null,
   updated_at timestamptz not null default now()
@@ -39,8 +43,8 @@ create table if not exists public.quality_tier_modifiers (
 insert into public.quality_tier_modifiers (tier, score_multiplier, display_badge) values
   ('processed',   0.60, 'Processed'),
   ('supermarket', 0.80, 'Supermarket'),
-  ('fresh',       1.00, 'Fresh'),
   ('local',       1.10, 'Local'),
+  ('organic',     1.00, 'Organic'),
   ('homegrown',   1.15, 'Homegrown')
 on conflict (tier) do update
   set score_multiplier = excluded.score_multiplier,

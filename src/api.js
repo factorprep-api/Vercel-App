@@ -603,8 +603,13 @@ export const fetchMealArchetypes = async () => {
       })
       .sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0) || a.name.localeCompare(b.name));
     const tiers = (tiersRes.data || [])
-      .map(t => ({ tier: t.tier, scoreMultiplier: Number(t.score_multiplier), badge: t.display_badge }))
-      .sort((a, b) => a.scoreMultiplier - b.scoreMultiplier);
+      .map(t => ({ tier: t.tier, scoreMultiplier: Number(t.score_multiplier), badge: t.display_badge }));
+    // Canonical display order for the quality chips (v1.9.12 ladder, low →
+    // high leverage): processed → supermarket → local → organic → homegrown.
+    // DB row order is not stable across re-seeds, so the order is enforced
+    // here rather than relied on from the database.
+    const TIER_ORDER = { processed: 0, supermarket: 1, local: 2, organic: 3, homegrown: 4 };
+    tiers.sort((a, b) => (TIER_ORDER[a.tier] ?? 99) - (TIER_ORDER[b.tier] ?? 99));
     const portions = (portionsRes.data || [])
       .map(p => ({ portionSize: p.portion_size, multiplier: Number(p.multiplier) }))
       .sort((a, b) => a.multiplier - b.multiplier);

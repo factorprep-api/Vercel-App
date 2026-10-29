@@ -137,8 +137,8 @@ const resolveStaples = (foods) => {
 const FOOD_TIERS_FALLBACK = [
   { tier: 'processed', scoreMultiplier: 0.60, badge: 'Processed' },
   { tier: 'supermarket', scoreMultiplier: 0.80, badge: 'Supermarket' },
-  { tier: 'fresh', scoreMultiplier: 1.00, badge: 'Fresh' },
   { tier: 'local', scoreMultiplier: 1.10, badge: 'Local' },
+  { tier: 'organic', scoreMultiplier: 1.00, badge: 'Organic' },
   { tier: 'homegrown', scoreMultiplier: 1.15, badge: 'Homegrown' }
 ];
 
@@ -377,6 +377,9 @@ export default function AthleteNutrition() {
         // Supermarket.
         const mult = it.scoreMultiplier != null ? Number(it.scoreMultiplier) : null;
         const raw = (v) => (v == null ? null : (mult && mult !== 1 ? Number((v / mult).toFixed(2)) : Number(v)));
+        // v1.9.12: 'fresh' is the pre-rename name of the ×1.00 reference tier
+        // (now 'organic', same multiplier) — map it so re-logging a recent
+        // keeps its tier chip and reproduces the stored values exactly.
         seen.set(it.food_id, {
           id: it.food_id,
           description: it.name,
@@ -392,7 +395,7 @@ export default function AthleteNutrition() {
           scoreAxes: it.scoreAxes != null ? Number(it.scoreAxes) : null,
           densityPerKj: raw(it.densityPerKj),
           scoreAxesKj: it.scoreAxesKj != null ? Number(it.scoreAxesKj) : null,
-          qualityTier: it.qualityTier || null
+          qualityTier: it.qualityTier === 'fresh' ? 'organic' : (it.qualityTier || null)
         });
       });
     });
