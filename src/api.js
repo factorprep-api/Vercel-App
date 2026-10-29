@@ -61,24 +61,39 @@ export const fetchPrograms = async () => {
     const currentUserEmail = user ? user.email : '';
     const currentUserId = user ? user.id : '';
 
-    const { data, error } = await supabase
-      .from('programs')
-      .select(`
-        name, category, privacy, media_url, notes,
-        owner_user_id,
-        program_exercises (
-          sets, reps, intensity_pct, tempo, rest, phase, advanced,
-          exercises (exercise_name)
-        )
-      `) // CHANGED: exercises (name) -> exercises (exercise_name)
-      .order('created_at', { ascending: false });
-      
-    if (error) return { programs: [], error: error.message };
+    // Supabase/PostgREST caps each request at 1000 rows, so paginate until a
+    // page comes back short (same pattern as fetchLibrary). Defensive: the
+    // programs table is small today, but nothing here should silently
+    // truncate when it grows past the cap.
+    const PAGE_SIZE = 1000;
+    const allPrograms = [];
+    let from = 0;
+    let page = null;
+    do {
+      const { data, error } = await supabase
+        .from('programs')
+        .select(`
+          name, category, privacy, media_url, notes,
+          owner_user_id,
+          program_exercises (
+            sets, reps, intensity_pct, tempo, rest, phase, advanced,
+            exercises (exercise_name)
+          )
+        `) // CHANGED: exercises (name) -> exercises (exercise_name)
+        .order('created_at', { ascending: false })
+        .range(from, from + PAGE_SIZE - 1);
+
+      if (error) return { programs: [], error: error.message };
+
+      page = data || [];
+      allPrograms.push(...page);
+      from += PAGE_SIZE;
+    } while (page.length === PAGE_SIZE);
 
     const PROGRAM_HEADER = ['Program Name', 'Category', 'Phase', 'Exercise Name', 'Sets', 'Reps', 'Intensity', 'Tempo', 'Rest Time', 'Notes', 'PrivacyLevel', 'OwnerEmail', 'MediaUrl', 'Advanced'];
-    
+
     const rows = [PROGRAM_HEADER];
-    for (const prog of (data || [])) {
+    for (const prog of allPrograms) {
       const ownerEmail = prog.owner_user_id === currentUserId ? currentUserEmail : 'other@example.com';
       const privacy = (prog.privacy || 'PUBLIC').toUpperCase();
       const media = prog.media_url || '';
@@ -1526,14 +1541,60 @@ export const updateAssignment = async (athleteName, assignment) => {
   } catch (err) { return { status: 'Error', message: err.message }; }
 };
 
+// PostgREST caps each request at 1000 rows regardless of the range requested,
+// so paginate until a page comes back short — the same pattern fetchLibrary
+// uses. Returns the full name→id map over the whole exercises table.
+const fetchAllExercises = async () => {
+  const PAGE_SIZE = 1000;
+  const all = [];
+  let from = 0;
+  let page = null;
+  do {
+    const { data, error } = await supabase
+      .from('exercises')
+      .select('id, exercise_name')
+      .order('exercise_name', { ascending: true })
+      .range(from, from + PAGE_SIZE - 1);
+    if (error) return { error: error.message };
+    page = data || [];
+    all.push(...page);
+    from += PAGE_SIZE;
+  } while (page.length === PAGE_SIZE);
+  return { all };
+};
+
+// Resolve every draft exercise name against the FULL exercise library.
+// Returns { exMap, missing, error }. A missing name is a FATAL save
+// condition: the old code fetched the exercises table without pagination
+// (PostgREST caps at 1000 rows — the table holds 3,000+) and silently
+// skipped any exercise whose id wasn't in the truncated map (`if (!exId)
+// continue`), which is how programs saved incomplete with no error shown.
+const resolveProgramExercises = async (programRows) => {
+  const { all, error } = await fetchAllExercises();
+  if (error) return { exMap: {}, missing: [], error };
+  const exMap = {};
+  (all || []).forEach(e => { exMap[e.exercise_name.toLowerCase()] = e.id; });
+  const missing = [];
+  for (const r of programRows) {
+    const exName = (r[3] || '').trim();
+    if (exName && !exMap[exName.toLowerCase()]) missing.push(exName);
+  }
+  return { exMap, missing };
+};
+
 export const saveFullProgram = async (programRows) => {
   try {
     if (!programRows || programRows.length === 0) return { status: 'Error', message: 'No rows provided' };
 
     const { data: { user } } = await supabase.auth.getUser();
-    const { data: exercises } = await supabase.from('exercises').select('id, exercise_name'); // CHANGED
-    const exMap = {};
-    (exercises || []).forEach(e => { exMap[e.exercise_name.toLowerCase()] = e.id; }); // CHANGED
+
+    // Resolve every exercise BEFORE creating the program row. Fail LOUDLY
+    // if any draft exercise is unknown — never silently drop a movement.
+    const { exMap, missing, error: exErr } = await resolveProgramExercises(programRows);
+    if (exErr) return { status: 'Error', message: `Could not load exercise library: ${exErr}` };
+    if (missing.length > 0) {
+      return { status: 'Error', message: `Exercise not found in library: ${[...new Set(missing)].join(', ')}` };
+    }
 
     const firstRow = programRows[0];
     const progName = firstRow[0];
@@ -1559,7 +1620,10 @@ export const saveFullProgram = async (programRows) => {
       const exName = (r[3] || '').trim();
       if (!exName) continue;
       const exId = exMap[exName.toLowerCase()];
-      if (!exId) continue;
+      // Every name was validated above, so exId must exist — an unknown id
+      // here is a code bug, not a data condition, so let it throw rather
+      // than silently skip the row (the old silent-drop behaviour).
+      if (!exId) throw new Error(`Exercise not found in library: ${exName}`);
 
       let adv = {};
       try { adv = typeof r[13] === 'string' ? JSON.parse(r[13]) : (r[13] || {}); } catch { /* ignore */ }
@@ -1703,6 +1767,15 @@ export const fetchHelpVideos = async () => {
 
 export const updateProgram = async (oldName, programRows) => {
   try {
+    // Validate the new rows FIRST (all exercises resolve, nothing missing)
+    // before deleting the old program — a failed save must never leave the
+    // program deleted. The old order deleted first, so a mid-save failure
+    // destroyed the program the user was editing.
+    const { missing, error } = await resolveProgramExercises(programRows);
+    if (error) return { status: 'Error', message: `Could not load exercise library: ${error}` };
+    if (missing.length > 0) {
+      return { status: 'Error', message: `Exercise not found in library: ${[...new Set(missing)].join(', ')}` };
+    }
     const { error: delErr } = await supabase.from('programs').delete().eq('name', oldName);
     if (delErr) return { status: 'Error', message: delErr.message };
     return await saveFullProgram(programRows);
