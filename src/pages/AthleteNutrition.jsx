@@ -137,9 +137,9 @@ const resolveStaples = (foods) => {
 const FOOD_TIERS_FALLBACK = [
   { tier: 'processed', scoreMultiplier: 0.60, badge: 'Processed' },
   { tier: 'supermarket', scoreMultiplier: 0.80, badge: 'Supermarket' },
-  { tier: 'local', scoreMultiplier: 1.10, badge: 'Local' },
-  { tier: 'organic', scoreMultiplier: 1.00, badge: 'Organic' },
-  { tier: 'homegrown', scoreMultiplier: 1.15, badge: 'Homegrown' }
+  { tier: 'local', scoreMultiplier: 1.00, badge: 'Local' },
+  { tier: 'organic', scoreMultiplier: 1.10, badge: 'Organic' },
+  { tier: 'homegrown', scoreMultiplier: 1.20, badge: 'Homegrown' }
 ];
 
 // Score badge colors — headline is the per-kJ measure (what the calories

@@ -212,9 +212,9 @@ The tier concept is approved; specific multiplier values are not yet defined by 
 |---|---|---|
 | processed | 0.6 | Added fats/sodium/sugars degrade nutrient bioavailability and add anti-quality factors |
 | supermarket | 0.8 | Storage/transport time reduces freshness-linked nutrients |
-| fresh | 1.0 | Reference point |
-| local | 1.1 | Shorter farm-to-table interval |
-| homegrown | 1.15 | Peak ripeness harvest, known provenance |
+| local | 1.0 | Reference point (v1.9.15 re-stagger; was 1.1 before the ladder was reordered) |
+| organic | 1.1 | Certified growing standards, shorter supply chain |
+| homegrown | 1.2 | Peak ripeness harvest, known provenance |
 
 The developer should implement modifiers as data (`quality_tier_modifiers` table), not code constants, so the product owner can tune them without deploys.
 
@@ -283,7 +283,7 @@ Follow existing project patterns:
 
 | # | Decision | Owner | Status |
 |---|---|---|---|
-| 1 | Quality tier multiplier values | Product owner | **Resolved — 0.60 / 0.80 / 1.00 / 1.10 / 1.15**, seeded by `nutrition_archetypes_v1.9.0.sql` |
+| 1 | Quality tier multiplier values | Product owner | **Resolved — 0.60 / 0.80 / 1.00 / 1.10 / 1.20** (v1.9.15 re-stagger, `nutrition_tier_reorder_v1.9.15.sql`; originally 0.60 / 0.80 / 1.00 / 1.10 / 1.15), seeded by `nutrition_archetypes_v1.9.0.sql` |
 | 2 | Initial archetype list + component foods | Product owner | **Resolved — 10 archetypes / 39 components**, seeded by `nutrition_archetypes_v1.9.0.sql` |
 | 3 | Load→fueling expectation model for planned-intake loop | Joint | Pending; coarse bands acceptable for v1 |
 | 4 | Include long-chain ω-3 (EPA/DHA) in the 19? Currently excluded though present in source data | Product owner | Pending |
@@ -457,6 +457,24 @@ The shipped system intentionally differs from the specification above. Each item
 **Logging:** tapping a custom meal runs the identical tier → portion → add pipeline as an archetype. The item carries `custom_meal_id` (instead of `archetype_id`) so the 30-day usage counter ranks it, and the tier multiplier applies to the snapshot scores at log time exactly as §5.3 prescribes.
 
 **Where:** `src/databases/nutrition_custom_meals_v1.9.14.sql` (run once in the Supabase SQL Editor), `src/api.js` (four functions after the meal-favourites block), `src/pages/AthleteNutrition.jsx` (builder mode in the search card, merged meals pool, star/delete on custom rows).
+
+---
+
+## Amendment A14 — Tier multiplier re-stagger (v1.9.15)
+
+**What shipped:** when the pill ladder was reordered in v1.9.12 (processed → supermarket → local → organic → homegrown), the multipliers kept the old fresh-era staggering (organic 1.00 < local 1.10), so the numbers no longer rose with the ladder the athlete sees. The tiers are now re-staggered monotonically to match the pills:
+
+| Tier | Old | New |
+|---|---|---|
+| processed | 0.60 | 0.60 (unchanged) |
+| supermarket | 0.80 | 0.80 (unchanged) |
+| local | 1.10 | **1.00** (reference tier) |
+| organic | 1.00 | **1.10** |
+| homegrown | 1.15 | **1.20** |
+
+**History-safety (§5.3):** every logged item snapshots its resolved multiplier at log time, so meals logged before this change keep their stored values (local ×1.10, organic ×1.00, homegrown ×1.15) — re-tuning the table never rewrites logged history. Only new logs use the new numbers.
+
+**Where:** `src/databases/nutrition_tier_reorder_v1.9.15.sql` (run once in the Supabase SQL Editor); `src/pages/AthleteNutrition.jsx` (`FOOD_TIERS_FALLBACK` mirrors the new values — live values always come from `quality_tier_modifiers`).
 
 ---
 
