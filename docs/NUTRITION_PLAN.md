@@ -426,6 +426,40 @@ The shipped system intentionally differs from the specification above. Each item
 
 ---
 
+## Amendment A12 — Planned fueling for the athlete (v1.9.13)
+
+**What shipped:** the athlete's nutrition page now reads *planned* sessions (`schedule_sessions`), not just logged actuals. Two changes, both client-side:
+
+1. **Energy balance planned fallback.** Before this, an athlete opening the nutrition page in the morning of a hard session saw rest-day needs (BMR × 1.2) until they logged the session. Now: if no `session_logs` actuals exist for today but a `schedule_sessions` proposal does, the training estimate — and therefore the macro targets' carb band (v1.9.10) — derives from the plan (`proposed_mins` × `proposed_rpe`) with the same RPE→MET bands, and the card carries a small "planned" badge. The "Nothing logged yet" line reads "based on your planned session". Proposals with `proposed_rpe = 0` (intensity never set) are skipped — no invented intensity. Once actuals are logged the card silently switches to them (no badge).
+
+2. **"Fuel ahead" card** — sits between the Daily totals and Energy balance cards. Window is **today + tomorrow** (the most actionable window, product-owner decision; not 7 or 14 days). Each day shows: date label · planned sessions (type — planned mins @ RPE) · estimated needs (BMR × 1.2 + planned training) · the consensus carb band for the day's hardest planned RPE (g/kg). Protein stays 1.6 g/kg and fat is the remainder of needs — the identical math as the v1.9.10 macro targets, driven by planned inputs. Days with nothing planned show "Rest day — fuelling baseline only" at the BMR × 1.2 baseline. A planned session with a linked completion (`session_logs.session_id`) shows the "✓ logged" state instead of estimates, marking the planned → actual transition. The card hides entirely without a complete body profile (no invented numbers, v1.9.5) or when nothing is planned in the window.
+
+**Deliberate non-goals:** the coach sees actuals vs estimated needs only — the planned-requirements view is an athlete-only feature. The window is a hard 2 days: a big session 3+ days out never appears in the fueling view until the day before; accepted for minimalism (extend `fetchPlannedSessions` with a `days` parameter if that changes).
+
+**Where:** `src/api.js` (`fetchPlannedSessions` — today+tomorrow proposals from `schedule_sessions` with linked-completion detection via `session_logs.session_id`); `src/pages/AthleteNutrition.jsx` (planned fallback inside the `eb` memo; `fuelAhead` memo; card JSX between Daily totals and Energy balance).
+
+---
+
+## Amendment A13 — Custom meals (v1.9.14)
+
+**What shipped:** athletes can build their own meals — a daily smoothie, a go-to bowl — from the same food database the search uses, and those meals live alongside the ten ETL-derived archetypes everywhere meals appear (Quick meals, unified search, popular picks, the three-tap log path).
+
+**Storage:** new `custom_meals` table (`nutrition_custom_meals_v1.9.14.sql`, pattern of `meal_favorites`: idempotent, `current_athlete_id()` RLS, admin cleanup on delete). Rows are strictly athlete-owned — coaches never see them in any meal picker; they surface only once logged, inside the logged items. Key decisions:
+
+- `items` is a jsonb **snapshot** of the constituent foods at save time (`food_id, name, grams, kj100, protein100, carbs100, fat100, fibre100, percentile_score, density_per_kj`). If the food database is re-imported or a food disappears, saved meals keep their numbers — a saved meal is a recipe card, not a live view.
+- `totals` are resolved client-side at save (gram-weighted means — score = Σ grams·score / Σ scored grams, the same math as `v_archetype_scores`) and snapshotted on the row, so meal cards never recompute from stale parts.
+- `starred` is a boolean **on the row**, not a separate favourites table — one source of truth per custom meal, no FK gymnastics. Archetype stars stay in `meal_favorites`.
+
+**API:** `fetchCustomMeals` / `saveCustomMeal` / `removeCustomMeal` / `toggleCustomMealStar` in `src/api.js`. The mapped shape mirrors the archetype objects from `fetchMealArchetypes` exactly, so they merge into the same `meals` pool in `AthleteNutrition.jsx` — search, starring, usage-ranking and the log path work without a single branch.
+
+**Builder:** "＋ Build your own meal" in the Quick meals card opens a builder inside the same search card — it reuses the page's search state (food database, filtering, pagination, badges); tapping a result adds it at 100 g, grams are edited inline on the ingredient row, and a live totals strip shows energy/macros/score as you build. Create + delete + star only — **editing saved recipes is deliberately deferred** (a row is immutable after save; build a new one instead).
+
+**Logging:** tapping a custom meal runs the identical tier → portion → add pipeline as an archetype. The item carries `custom_meal_id` (instead of `archetype_id`) so the 30-day usage counter ranks it, and the tier multiplier applies to the snapshot scores at log time exactly as §5.3 prescribes.
+
+**Where:** `src/databases/nutrition_custom_meals_v1.9.14.sql` (run once in the Supabase SQL Editor), `src/api.js` (four functions after the meal-favourites block), `src/pages/AthleteNutrition.jsx` (builder mode in the search card, merged meals pool, star/delete on custom rows).
+
+---
+
 # Verification
 
 Two independent implementations of the scoring must agree.

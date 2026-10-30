@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo, Fragment } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Search, Utensils, CheckCircle, Trash2, Flame, Beef, Wheat, Droplet, Loader2, Star, Salad, Activity, ArrowRight } from 'lucide-react';
+import { ArrowLeft, Search, Utensils, CheckCircle, Trash2, Flame, Beef, Wheat, Droplet, Loader2, Star, Salad, Activity, ArrowRight, CalendarDays, Plus, X } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
-import { fetchFoodDatabase, fetchFoodFavorites, addFoodFavorite, removeFoodFavorite, saveNutritionLog, fetchNutritionLogs, updateNutritionItems, fetchMealArchetypes, fetchMealFavorites, addMealFavorite, removeMealFavorite, fetchAthleteBodyData, fetchTodayTraining } from '../api';
+import { fetchFoodDatabase, fetchFoodFavorites, addFoodFavorite, removeFoodFavorite, saveNutritionLog, fetchNutritionLogs, updateNutritionItems, fetchMealArchetypes, fetchMealFavorites, addMealFavorite, removeMealFavorite, fetchCustomMeals, saveCustomMeal, removeCustomMeal, toggleCustomMealStar, fetchAthleteBodyData, fetchTodayTraining, fetchPlannedSessions } from '../api';
 import { ymd } from '../utils/cycleMath';
 
 // Exercise-library search pattern: full database loaded once (cached), then
@@ -298,8 +298,10 @@ export default function AthleteNutrition() {
   const [foodTier, setFoodTier] = useState('supermarket');
 
   // Energy balance (v1.9.7): body profile + latest weight + today's training.
+  // Planned fueling (v1.9.13): today + tomorrow proposals from schedule_sessions.
   const [bodyData, setBodyData] = useState(null);
   const [todaySessions, setTodaySessions] = useState([]);
+  const [planned, setPlanned] = useState({ today: null, tomorrow: null, sessions: [] });
 
   // Meal archetypes (v1.9): the three-tap meal path — meal → tier + portion → add.
   const [meals, setMeals] = useState([]);           // the ten archetypes
@@ -317,6 +319,14 @@ export default function AthleteNutrition() {
   const [mealFavs, setMealFavs] = useState([]);
   const [mealUsage, setMealUsage] = useState(new Map());
   const [showMoreMeals, setShowMoreMeals] = useState(false);
+  // v1.9.14 custom meals: athlete-built recipes merged into the same meals
+  // pool (search, starring, usage-ranking). The builder reuses the page's
+  // search state, so the food database and result rendering are shared.
+  const [customMeals, setCustomMeals] = useState([]);
+  const [showBuilder, setShowBuilder] = useState(false);
+  const [builderName, setBuilderName] = useState('');
+  const [builderItems, setBuilderItems] = useState([]);
+  const [savingCustom, setSavingCustom] = useState(false);
 
   const [logId, setLogId] = useState(null);          // today's log row
   const [items, setItems] = useState([]);            // today's items
@@ -332,12 +342,13 @@ export default function AthleteNutrition() {
   // Load today's log row + favourites + recently logged foods (30 days).
   // Recents are derived client-side from existing logs — no extra table.
   const loadNutritionData = async () => {
-    const [logRes, favRes, mealFavRes, bodyRes, trainRes] = await Promise.all([
+    const [logRes, favRes, mealFavRes, bodyRes, trainRes, plannedRes] = await Promise.all([
       fetchNutritionLogs(30),
       fetchFoodFavorites().catch(() => ({ foods: [] })),
       fetchMealFavorites().catch(() => ({ ids: [] })),
       fetchAthleteBodyData(athleteName).catch(() => null),
-      fetchTodayTraining(athleteName).catch(() => ({ sessions: [] }))
+      fetchTodayTraining(athleteName).catch(() => ({ sessions: [] })),
+      fetchPlannedSessions(athleteName).catch(() => ({ sessions: [] }))
     ]);
     if (logRes.error) { setPageError(logRes.error); return; }
     const today = ymd(new Date());
@@ -348,14 +359,18 @@ export default function AthleteNutrition() {
     setMealFavs(mealFavRes.ids || []);
     setBodyData(bodyRes && bodyRes.status === 'Success' ? bodyRes : null);
     setTodaySessions(trainRes.sessions || []);
+    setPlanned(plannedRes || { today: null, tomorrow: null, sessions: [] });
 
     // Meal usage: how often each archetype appears in the 30-day window —
     // ranks the unstarred generic meals in Quick meals by actual use.
     const usage = new Map();
     (logRes.logs || []).forEach(l => {
       (l.items || []).forEach(it => {
-        if (!it.archetype_id) return;
-        usage.set(it.archetype_id, (usage.get(it.archetype_id) || 0) + 1);
+        // v1.9.14: custom meals are counted by custom_meal_id — ids are
+        // unique across both tables, so one Map ranks both kinds.
+        const mealId = it.archetype_id || it.custom_meal_id;
+        if (!mealId) return;
+        usage.set(mealId, (usage.get(mealId) || 0) + 1);
       });
     });
     setMealUsage(usage);
@@ -410,7 +425,13 @@ export default function AthleteNutrition() {
     if (!userEmail) return;
     let isMounted = true;
     (async () => {
-      const res = await fetchMealArchetypes();
+      // v1.9.14: custom meals ride the same load round as the archetypes.
+      // They're athlete-owned (RLS scopes them to the signed-in athlete),
+      // so a failure just means none are shown — never a broken meal list.
+      const [res, customRes] = await Promise.all([
+        fetchMealArchetypes(),
+        fetchCustomMeals().catch(() => ({ meals: [] }))
+      ]);
       if (!isMounted) return;
       if (res.error) setMealsError(res.error);
       else {
@@ -419,6 +440,7 @@ export default function AthleteNutrition() {
         setMealPortions(res.portions);
         setMealsError(null);
       }
+      setCustomMeals(customRes.meals || []);
       setLoadingMeals(false);
     })();
     return () => { isMounted = false; };
@@ -435,11 +457,22 @@ export default function AthleteNutrition() {
     }
   };
 
-  // Star / unstar a meal archetype for Quick meals. Optimistic like toggleFav;
+  // Star / unstar a meal for Quick meals. Optimistic like toggleFav;
   // a new star goes to the top of the starred block (fetchMealFavorites
   // returns newest-first, so the optimistic array mirrors that order).
+  // v1.9.14: custom meals keep their star ON the row (custom_meals.starred)
+  // instead of a meal_favorites row — the optimistic branch mirrors that.
   const toggleMealFav = async (m) => {
-    const isFav = mealFavs.includes(m.id);
+    const isFav = mealFavSet.has(m.id);
+    if (m.custom) {
+      setCustomMeals(prev => prev.map(c => c.id === m.id ? { ...c, starred: !isFav } : c));
+      const res = await toggleCustomMealStar(m.id, !isFav);
+      if (res.status !== 'Success') {
+        setCustomMeals(prev => prev.map(c => c.id === m.id ? { ...c, starred: isFav } : c));
+        setPageError(res.message || 'Could not update favourite.');
+      }
+      return;
+    }
     setMealFavs(isFav ? mealFavs.filter(id => id !== m.id) : [m.id, ...mealFavs]);
     const res = isFav ? await removeMealFavorite(m.id) : await addMealFavorite(m.id);
     if (res.status !== 'Success') {
@@ -509,20 +542,31 @@ export default function AthleteNutrition() {
   const handleSearch = (e) => { setSearchQuery(e.target.value); setCurrentPage(1); };
   const handlePageChange = (page) => { setCurrentPage(page); };
 
-  // ---- Quick meals ordering (v1.9.4) ----
+  // ---- Quick meals ordering (v1.9.4, extended v1.9.14) ----
   // Starred meals first in star order (newest star at top), then the generic
   // archetypes ranked by 30-day usage — so meals you actually eat surface
   // while ones you never log sink behind the "More meals" collapse.
-  const mealFavSet = useMemo(() => new Set(mealFavs), [mealFavs]);
+  // v1.9.14: custom meals merge into the same pool as the archetypes, so
+  // search, starring, usage-ranking and the three-tap log path all work
+  // unchanged — allMeals is what every meals memo below reads.
+  const allMeals = useMemo(() => [...meals, ...customMeals], [meals, customMeals]);
+  const customFavIds = useMemo(
+    () => customMeals.filter(c => c.starred).map(c => c.id),
+    [customMeals]
+  );
+  const mealFavSet = useMemo(
+    () => new Set([...mealFavs, ...customFavIds]),
+    [mealFavs, customFavIds]
+  );
   const starredMeals = useMemo(
-    () => mealFavs.map(id => meals.find(m => m.id === id)).filter(Boolean),
-    [meals, mealFavs]
+    () => [...mealFavs, ...customFavIds].map(id => allMeals.find(m => m.id === id)).filter(Boolean),
+    [allMeals, mealFavs, customFavIds]
   );
   const genericMeals = useMemo(
-    () => meals
+    () => allMeals
       .filter(m => !mealFavSet.has(m.id))
       .sort((a, b) => (mealUsage.get(b.id) || 0) - (mealUsage.get(a.id) || 0)),
-    [meals, mealFavSet, mealUsage]
+    [allMeals, mealFavSet, mealUsage]
   );
   const visibleGenericMeals = showMoreMeals ? genericMeals : genericMeals.slice(0, 3);
 
@@ -534,12 +578,11 @@ export default function AthleteNutrition() {
   const isPicking = debouncedQuery.trim().length < 2;
   const popularMeals = useMemo(() => {
     if (!isPicking) return [];
-    const exclude = new Set(mealFavs);
-    return [...meals]
-      .filter(m => !exclude.has(m.id))
+    return [...allMeals]
+      .filter(m => !mealFavSet.has(m.id))
       .sort((a, b) => (b.densityPerKj ?? -1) - (a.densityPerKj ?? -1) || String(a.name).localeCompare(String(b.name)))
       .slice(0, 4);
-  }, [isPicking, meals, mealFavs]);
+  }, [isPicking, allMeals, mealFavSet]);
   const popularStaples = useMemo(() => {
     if (!isPicking || loadingDb || dbError) return [];
     const exclude = new Set([...favIds, ...items.filter(it => it.food_id).map(it => it.food_id)]);
@@ -551,11 +594,11 @@ export default function AthleteNutrition() {
   const mealMatches = useMemo(() => {
     if (debouncedQuery.trim().length < 2) return [];
     const tokens = debouncedQuery.toLowerCase().split(/\s+/);
-    return meals.filter(m => {
+    return allMeals.filter(m => {
       const hay = (m.name + ' ' + (m.mealSlots || []).join(' ')).toLowerCase();
       return tokens.every(t => hay.includes(t));
     }).slice(0, 3);
-  }, [meals, debouncedQuery]);
+  }, [allMeals, debouncedQuery]);
 
   // Row renderers shared by the Quick meals card and the search results —
   // same layout everywhere a meal or food appears, so starring is consistent.
@@ -574,6 +617,17 @@ export default function AthleteNutrition() {
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+            {/* v1.9.14: custom meals can be deleted from the row — archetypes
+                are curated reference data and cannot. */}
+            {m.custom && (
+              <button
+                className="an-fav-btn"
+                onClick={(e) => { e.stopPropagation(); removeCustom(m); }}
+                title="Delete this custom meal"
+              >
+                <Trash2 size={16} color="#dc2626" />
+              </button>
+            )}
             <button
               className="an-fav-btn"
               onClick={(e) => { e.stopPropagation(); toggleMealFav(m); }}
@@ -716,6 +770,108 @@ export default function AthleteNutrition() {
     else setPageError(res.message || 'Could not remove item.');
   };
 
+  // ---- Custom meals (v1.9.14): build / star / delete ----
+  // Tapping a search result in builder mode adds the food at 100 g; grams
+  // are edited inline on the ingredient row. Raw (untiered) scores are kept
+  // on the item — the quality tier is chosen at log time exactly like an
+  // archetype, so a saved meal is tier-neutral.
+  const builderAddFood = (f) => {
+    setBuilderItems(prev => [
+      ...prev,
+      {
+        food_id: f.id,
+        name: f.description,
+        grams: 100,
+        kj100: f.kj100,
+        protein100: f.protein100,
+        carbs100: f.carbs100,
+        fat100: f.fat100,
+        fibre100: f.fibre100,
+        percentileScore: f.percentileScore != null ? Number(f.percentileScore) : null,
+        densityPerKj: f.densityPerKj != null ? Number(f.densityPerKj) : null
+      }
+    ]);
+    setSearchQuery('');
+    setDebouncedQuery('');
+    setCurrentPage(1);
+  };
+
+  const builderSetGrams = (idx, value) => {
+    const n = parseFloat(value);
+    setBuilderItems(prev => prev.map((it, i) => (i === idx ? { ...it, grams: isNaN(n) || n <= 0 ? 0 : n } : it)));
+  };
+
+  const builderRemoveItem = (idx) => {
+    setBuilderItems(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const builderClose = () => {
+    setShowBuilder(false);
+    setBuilderName('');
+    setBuilderItems([]);
+    setSearchQuery('');
+    setDebouncedQuery('');
+    setCurrentPage(1);
+  };
+
+  // Save-time totals: per-serve macros are Σ (per-100g × grams)/100, and the
+  // meal score is the gram-weighted mean of the ingredient scores — the same
+  // math as v_archetype_scores (Σ grams·score / Σ scored grams), with
+  // unscored ingredients simply excluded from the mean.
+  const builderTotals = useMemo(() => {
+    const active = builderItems.filter(it => (Number(it.grams) || 0) > 0);
+    const sumGrams = active.reduce((s, it) => s + Number(it.grams), 0);
+    if (sumGrams <= 0) return null;
+    const acc = active.reduce((a, it) => {
+      const g = Number(it.grams);
+      a.kj += (Number(it.kj100) || 0) * g / 100;
+      a.protein += (Number(it.protein100) || 0) * g / 100;
+      a.carbs += (Number(it.carbs100) || 0) * g / 100;
+      a.fat += (Number(it.fat100) || 0) * g / 100;
+      a.fibre += (Number(it.fibre100) || 0) * g / 100;
+      if (it.percentileScore != null) { a.scoreW += g; a.score += Number(it.percentileScore) * g; }
+      if (it.densityPerKj != null) { a.kjW += g; a.kjScore += Number(it.densityPerKj) * g; }
+      return a;
+    }, { kj: 0, protein: 0, carbs: 0, fat: 0, fibre: 0, score: 0, scoreW: 0, kjScore: 0, kjW: 0 });
+    return {
+      baseGrams: Math.round(sumGrams),
+      energyKj: Math.round(acc.kj),
+      proteinG: Math.round(acc.protein),
+      carbsG: Math.round(acc.carbs),
+      fatG: Math.round(acc.fat),
+      fibreG: Math.round(acc.fibre),
+      percentileScore: acc.scoreW > 0 ? Number((acc.score / acc.scoreW).toFixed(1)) : null,
+      densityPerKj: acc.kjW > 0 ? Number((acc.kjScore / acc.kjW).toFixed(1)) : null
+    };
+  }, [builderItems]);
+
+  const tapSaveCustom = async () => {
+    const name = builderName.trim();
+    if (!name || builderItems.length === 0) return;
+    if (builderItems.some(it => !(Number(it.grams) > 0))) return;
+    setSavingCustom(true);
+    const res = await saveCustomMeal({ name, items: builderItems, totals: builderTotals });
+    setSavingCustom(false);
+    if (res.status === 'Success' && res.meal) {
+      setCustomMeals(prev => [res.meal, ...prev]);
+      builderClose();
+    } else {
+      setPageError(res.message || 'Could not save meal.');
+    }
+  };
+
+  // Delete a custom meal. Optimistic like the star toggle, reverted on error.
+  const removeCustom = async (m) => {
+    if (!window.confirm(`Delete “${m.name}”? This can't be undone.`)) return;
+    const prev = customMeals;
+    setCustomMeals(prev.filter(c => c.id !== m.id));
+    const res = await removeCustomMeal(m.id);
+    if (res.status !== 'Success') {
+      setCustomMeals(prev);
+      setPageError(res.message || 'Could not delete meal.');
+    }
+  };
+
   // ---- Meal path: same save pipeline as a food, different payload ----
   // Clearing the query mirrors tapFood, so the tier/portion step replaces the
   // result list instead of the results staying underneath it.
@@ -747,7 +903,10 @@ export default function AthleteNutrition() {
     // quality_tier_modifiers never rewrites logged history (§5.3).
     const item = {
       food_id: null,
-      archetype_id: meal.id,
+      // v1.9.14: custom meals carry custom_meal_id instead of archetype_id,
+      // so the usage counter (and coach-facing logged items) see the right meal.
+      archetype_id: meal.custom ? null : meal.id,
+      custom_meal_id: meal.custom ? meal.id : null,
       grams,
       name: meal.name,
       // v1.9.11: snapshot the recipe at log time (§5.3 — what was logged is
@@ -817,7 +976,34 @@ export default function AthleteNutrition() {
 
   // Energy balance card input — recompute when the log changes (a new item
   // moves the intake side) without waiting for a full reload.
-  const eb = useMemo(() => energyBalance(bodyData, todaySessions, totals.kj), [bodyData, todaySessions, totals.kj]);
+  //
+  // Planned fallback (v1.9.13): before today's session is logged, the card
+  // would show rest-day needs even on a hard training day. If nothing is
+  // logged yet but a session is planned for today, derive the estimate from
+  // the plan (same RPE→MET math) and mark it "planned" — it silently
+  // switches to actuals once the athlete logs the session. Proposals with
+  // planned_rpe = 0 (intensity never set) are skipped: no invented intensity.
+  const todayYmd = ymd(new Date());
+  const tomorrowYmd = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    return ymd(d);
+  }, []);
+  const plannedToday = useMemo(
+    () => planned.sessions.find(s => s.date === todayYmd && !s.hasLog && s.plannedMins > 0 && s.plannedRpe >= 1) || null,
+    [planned.sessions, todayYmd]
+  );
+  const eb = useMemo(() => {
+    const base = energyBalance(bodyData, todaySessions, totals.kj);
+    if (base == null || base.trainingSessions.length > 0 || plannedToday == null) return base;
+    const p = energyBalance(bodyData, [{
+      sessionType: plannedToday.sessionType,
+      actualMins: plannedToday.plannedMins,
+      actualRpe: plannedToday.plannedRpe,
+      planned: true
+    }], totals.kj);
+    return p ? { ...p, plannedSource: true } : base;
+  }, [bodyData, todaySessions, totals.kj, plannedToday]);
 
   // Recommended macro targets (v1.9.10) — derived from the same estimated
   // needs as the Energy balance card. Renders nothing without the complete
@@ -851,6 +1037,56 @@ export default function AthleteNutrition() {
     };
   }, [eb, bodyData]);
   const fmtKj = (v) => Math.round(v).toLocaleString();
+
+  // Fuel ahead (v1.9.13): what today + tomorrow are planned to demand — the
+  // same math as the Energy balance card and macro targets, driven by
+  // planned mins/RPE from schedule_sessions instead of logged actuals.
+  // Rest days (nothing planned) show the BMR × 1.2 baseline with the
+  // rest/light 4 g/kg band. A completed planned session (linked session_logs
+  // row) shows the ✓ logged state. Renders nothing without a complete body
+  // profile (no invented numbers, v1.9.5) or when nothing is planned in the
+  // window.
+  const fuelAhead = useMemo(() => {
+    const bmr = mifflinStJeorKj(bodyData);
+    if (bmr == null) return null;
+    const kg = bodyData.weightKg;
+    const protein = TARGET_PROTEIN_G_PER_KG * kg;
+    return [todayYmd, tomorrowYmd].map(date => {
+      const sessions = planned.sessions.filter(s => s.date === date && s.plannedMins > 0 && s.plannedRpe >= 1);
+      const trainingKj = sessions.reduce(
+        (acc, s) => acc + sessionEnergyKj({ actualMins: s.plannedMins, actualRpe: s.plannedRpe }, kg).kj, 0);
+      const totalNeeds = bmr * 1.2 + trainingKj;
+      const maxRpe = sessions.reduce((m, s) => Math.max(m, s.plannedRpe), 0);
+      const carbBand = TARGET_CARB_G_PER_KG.find(b => maxRpe <= b.maxRpe)
+        || TARGET_CARB_G_PER_KG[TARGET_CARB_G_PER_KG.length - 1];
+      // Same energy-capped carb logic as macroTargets (v1.9.10): band carbs
+      // take what remains after protein and the 20% fat floor.
+      const fatFloorKj = totalNeeds * FAT_MIN_SHARE;
+      const carbCapKj = Math.max(totalNeeds - fatFloorKj - protein * KJ_PER_G.protein, 0);
+      const bandCarbsKj = carbBand.gPerKg * kg * KJ_PER_G.carb;
+      const capped = bandCarbsKj > carbCapKj;
+      const carbs = (capped ? carbCapKj : bandCarbsKj) / KJ_PER_G.carb;
+      const fatKj = totalNeeds - protein * KJ_PER_G.protein - carbs * KJ_PER_G.carb;
+      const fat = Math.max(fatKj / KJ_PER_G.fat, fatFloorKj / KJ_PER_G.fat);
+      return {
+        date,
+        label: date === todayYmd
+          ? 'Today'
+          : `Tomorrow · ${new Date(date + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'short' })}`,
+        sessions,
+        done: sessions.length > 0 && sessions.every(s => s.hasLog),
+        rest: sessions.length === 0,
+        trainingKj,
+        totalNeeds,
+        carbPerKg: carbBand.gPerKg,
+        carbBand: carbBand.label,
+        protein: Math.round(protein),
+        carbs: Math.round(carbs),
+        fat: Math.round(fat)
+      };
+    });
+  }, [bodyData, planned.sessions, todayYmd, tomorrowYmd]);
+  const showFuelAhead = fuelAhead != null && fuelAhead.some(d => d.sessions.length > 0);
 
   return (
     <div className="an-container">
@@ -948,12 +1184,60 @@ export default function AthleteNutrition() {
         </div>
       </div>
 
+      {/* Fuel ahead (v1.9.13) — today + tomorrow, the most actionable window.
+          Planned sessions from schedule_sessions, same math as the Energy
+          balance card and macro targets. Hidden without a complete body
+          profile (no invented numbers) or when nothing is planned in the
+          window; a completed plan shows the ✓ logged state. */}
+      {showFuelAhead && (
+        <div className="an-card">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 15, color: '#334155', marginBottom: 6 }}>
+            <CalendarDays size={16} color="#10b981" /> Fuel ahead
+          </div>
+          <div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>
+            What today and tomorrow are planned to demand — estimates from your scheduled sessions, before you log them.
+          </div>
+          {fuelAhead.map(d => (
+            <div key={d.date} style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, padding: '10px 0', borderBottom: '1px solid #f1f5f9' }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: '#0f172a' }}>{d.label}</div>
+                <div style={{ fontSize: 12.5, color: d.done ? '#15803d' : '#64748b', marginTop: 2 }}>
+                  {d.done
+                    ? `${d.sessions.map(s => `${s.sessionType} (${s.plannedMins} min @ RPE ${s.plannedRpe})`).join(', ')} — ✓ logged`
+                    : d.rest
+                      ? 'Rest day — fuelling baseline only'
+                      : d.sessions.map(s => `${s.sessionType} — planned ${s.plannedMins} min @ RPE ${s.plannedRpe}`).join(', ')}
+                </div>
+              </div>
+              <div style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                {d.done ? (
+                  <CheckCircle size={18} color="#15803d" />
+                ) : (
+                  <>
+                    <div style={{ fontSize: 13.5, fontWeight: 700, color: '#0f172a' }}>≈ {fmtKj(d.totalNeeds)} kJ</div>
+                    <div style={{ fontSize: 11.5, color: '#64748b' }}>
+                      {d.carbPerKg} g/kg carbs{!d.rest && ` · ${d.carbBand}`}
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Energy balance (v1.9.7) — estimation, not measurement. Renders only
           when the body profile is complete (sex / birth year / height / latest
           weight); otherwise it prompts to set it up — no midpoint estimates. */}
       <div className="an-card">
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 15, color: '#334155', marginBottom: 10 }}>
           <Activity size={16} color="#10b981" /> Energy balance
+          {eb.plannedSource && (
+            <span
+              style={{ fontSize: 10.5, fontWeight: 700, color: '#0f766e', background: '#ccfbf1', borderRadius: 99, padding: '2px 8px' }}
+              title="No session logged yet — today's estimate comes from your planned session. It switches to actuals once you log it."
+            >planned</span>
+          )}
         </div>
         {eb == null ? (
           <>
@@ -974,8 +1258,12 @@ export default function AthleteNutrition() {
               <span style={{ fontWeight: 700 }}>{fmtKj(eb.bmr)} kJ</span>
               {eb.trainingSessions.length > 0 && (
                 <>
-                  <span title="Estimated from today's logged sessions: minutes × intensity (RPE) using coarse MET bands — an approximation, not a measurement.">
-                    Training ({eb.trainingSessions.length} session{eb.trainingSessions.length > 1 ? 's' : ''}, est.)
+                  <span title={eb.plannedSource
+                    ? "Estimated from today's planned session: minutes × planned intensity (RPE) using coarse MET bands — it switches to your logged actuals once you log the session."
+                    : "Estimated from today's logged sessions: minutes × intensity (RPE) using coarse MET bands — an approximation, not a measurement."}>
+                    {eb.plannedSource
+                      ? `Training (planned, ${eb.trainingSessions.length} session${eb.trainingSessions.length > 1 ? 's' : ''})`
+                      : `Training (${eb.trainingSessions.length} session${eb.trainingSessions.length > 1 ? 's' : ''}, est.)`}
                   </span>
                   <span style={{ fontWeight: 700 }}>+{fmtKj(eb.trainingKj)} kJ</span>
                 </>
@@ -989,13 +1277,15 @@ export default function AthleteNutrition() {
               <div style={{ fontSize: 12, color: '#64748b', marginTop: 6 }}>
                 {eb.trainingSessions.map(s => {
                   const est = sessionEnergyKj(s, bodyData.weightKg);
-                  return `${s.sessionType}: ${s.actualMins} min @ RPE ${s.actualRpe} (${est.band}) ≈ ${fmtKj(est.kj)} kJ`;
+                  return s.planned
+                    ? `${s.sessionType}: planned ${s.actualMins} min @ RPE ${s.actualRpe} (${est.band}) ≈ ${fmtKj(est.kj)} kJ`
+                    : `${s.sessionType}: ${s.actualMins} min @ RPE ${s.actualRpe} (${est.band}) ≈ ${fmtKj(est.kj)} kJ`;
                 }).join(' · ')}
               </div>
             )}
             <div style={{ marginTop: 12, background: '#f1f5f9', borderRadius: 10, padding: '12px 14px', fontSize: 13.5, fontWeight: 600, color: '#334155' }}>
               {eb.loggedKj === 0
-                ? <>Nothing logged yet — estimated needs for today ≈ {fmtKj(eb.totalNeeds)} kJ.</>
+                ? <>Nothing logged yet — estimated needs for today ≈ {fmtKj(eb.totalNeeds)} kJ{eb.plannedSource ? ', based on your planned session' : ''}.</>
                 : eb.balance < -1500
                   ? <>≈ {fmtKj(-eb.balance)} kJ <span style={{ color: '#b45309' }}>short</span> of estimated needs — worth a snack or a bigger meal.</>
                   : eb.balance <= 1500
@@ -1049,10 +1339,10 @@ export default function AthleteNutrition() {
               </div>
             )}
             {mealsError && <div style={{ color: '#b91c1c', fontSize: 13, padding: '10px 0' }}>Failed to load meals: {mealsError}</div>}
-            {!loadingMeals && !mealsError && meals.length === 0 && (
+            {!loadingMeals && !mealsError && allMeals.length === 0 && (
               <div className="an-empty">No meals available yet.</div>
             )}
-            {!loadingMeals && !mealsError && meals.length > 0 && (
+            {!loadingMeals && !mealsError && allMeals.length > 0 && (
               <>
                 {/* Your list: starred meals + starred foods (personal, newest first) */}
                 {starredMeals.length === 0 && favourites.length === 0 && (
@@ -1071,6 +1361,15 @@ export default function AthleteNutrition() {
                     </button>
                   </div>
                 )}
+                {/* v1.9.14: custom meal builder — opens its own card in place
+                    of the search card, reusing the same food search state. */}
+                <button
+                  className="an-add-btn"
+                  style={{ marginTop: 10, background: '#fff', color: '#047857', border: '2px dashed #10b981' }}
+                  onClick={() => { setShowBuilder(true); setSearchQuery(''); setDebouncedQuery(''); setCurrentPage(1); }}
+                >
+                  <Plus size={16} /> Build your own meal
+                </button>
               </>
             )}
           </>
@@ -1137,15 +1436,67 @@ export default function AthleteNutrition() {
       </div>
 
 
-      {/* Add food — tap 1: search, tap 2: portion, tap 3: add */}
+      {/* Add food — tap 1: search, tap 2: portion, tap 3: add.
+          v1.9.14: while the custom meal builder is open, this same card
+          builds a meal — same search state, food database, filtering,
+          pagination and badges; results add ingredients instead of
+          opening the portion step. */}
       <div className="an-card">
         {!selected ? (
           <>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 15, color: '#334155', marginBottom: 12 }}>
-              <Utensils size={16} color="#10b981" /> What did you eat?
-            </div>
+            {showBuilder ? (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, fontWeight: 700, fontSize: 15, color: '#334155', marginBottom: 8 }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Utensils size={16} color="#10b981" /> Build your own meal</span>
+                <button className="an-fav-btn" onClick={builderClose} title="Close builder">
+                  <X size={16} color="#64748b" />
+                </button>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 15, color: '#334155', marginBottom: 12 }}>
+                <Utensils size={16} color="#10b981" /> What did you eat?
+              </div>
+            )}
+            {showBuilder && (
+              <div style={{ fontSize: 12, color: '#64748b', marginBottom: 10 }}>
+                Name it, add the foods and grams — it lands in Quick meals and search alongside the standard meals. Private to you.
+              </div>
+            )}
+            {showBuilder && (
+              <div style={{ marginBottom: 12 }}>
+                <input
+                  className="an-search"
+                  placeholder="Meal name (e.g. My morning smoothie)"
+                  value={builderName}
+                  onChange={(e) => setBuilderName(e.target.value)}
+                  maxLength={60}
+                  autoComplete="off"
+                  style={{ marginBottom: 10 }}
+                />
+                {builderItems.length > 0 && builderItems.map((it, idx) => (
+                  <div key={`${it.food_id}-${idx}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: '1px solid #f1f5f9' }}>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div className="an-result-name">{it.name}</div>
+                    </div>
+                    <input
+                      className="an-search"
+                      style={{ maxWidth: 78, padding: '6px 8px', fontSize: 13, textAlign: 'right' }}
+                      type="number"
+                      min="1"
+                      inputMode="decimal"
+                      value={it.grams}
+                      onChange={(e) => builderSetGrams(idx, e.target.value)}
+                      title="Grams of this food in the meal"
+                    />
+                    <span style={{ fontSize: 12, color: '#64748b' }}>g</span>
+                    <button className="an-fav-btn" onClick={() => builderRemoveItem(idx)} title="Remove ingredient">
+                      <Trash2 size={14} color="#dc2626" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
             {/* Recents only here — starred foods now live in Quick meals above */}
-            {recents.length > 0 && (
+            {!showBuilder && recents.length > 0 && (
               <div style={{ marginBottom: 14 }}>
                 <div className="an-quick-title">🕘 Recent</div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -1161,7 +1512,9 @@ export default function AthleteNutrition() {
               <Search className="an-search-icon" size={16} />
               <input
                 className="an-search"
-                placeholder="Search meals and foods…"
+                placeholder={showBuilder
+                  ? (builderItems.length === 0 ? 'Search the food database to add the first ingredient…' : 'Search to add another ingredient…')
+                  : 'Search meals and foods…'}
                 value={searchQuery}
                 onChange={handleSearch}
                 autoComplete="off"
@@ -1177,7 +1530,7 @@ export default function AthleteNutrition() {
                 shown only while the search is empty. Deliberately curated —
                 global score ranking surfaces fortified powders. The paginated
                 category list appears only once you type. */}
-            {!loadingDb && !dbError && isPicking && (popularMeals.length > 0 || popularStaples.length > 0) && (
+            {!showBuilder && !loadingDb && !dbError && isPicking && (popularMeals.length > 0 || popularStaples.length > 0) && (
               <>
                 <div style={{ fontSize: 12, color: '#94a3b8', margin: '10px 0 4px' }}>
                   Popular picks — search to find anything else
@@ -1187,7 +1540,7 @@ export default function AthleteNutrition() {
               </>
             )}
             {/* v1.9.4 unified search: matching meals first, foods underneath */}
-            {!loadingDb && !dbError && mealMatches.length > 0 && (
+            {!showBuilder && !loadingDb && !dbError && mealMatches.length > 0 && (
               <>
                 <div className="an-cat-title" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                   <Salad size={11} color="#10b981" /> Meals
@@ -1195,8 +1548,8 @@ export default function AthleteNutrition() {
                 {mealMatches.map(renderMealRow)}
               </>
             )}
-            {!loadingDb && !dbError && !isPicking && pageGroups.length === 0 && mealMatches.length === 0 && (
-              <div className="an-empty">No meals or foods matched “{searchQuery}”.</div>
+            {!loadingDb && !dbError && !isPicking && pageGroups.length === 0 && (showBuilder || mealMatches.length === 0) && (
+              <div className="an-empty">No {showBuilder ? 'foods' : 'meals or foods'} matched “{searchQuery}”.</div>
             )}
             {!loadingDb && !dbError && !isPicking && pageGroups.map(group => (
               <div key={group.cat}>
@@ -1204,7 +1557,7 @@ export default function AthleteNutrition() {
                 {group.items.map(f => {
                   const b = scoreBadge(f.percentileScore, f.scoreAxes, f.densityPerKj);
                   return (
-                    <div key={f.id} className="an-result" onClick={() => tapFood(f)}>
+                    <div key={f.id} className="an-result" onClick={() => (showBuilder ? builderAddFood(f) : tapFood(f))}>
                       <div style={{ minWidth: 0 }}>
                         <div className="an-result-name">{f.description}</div>
                         <div className="an-result-sub">
@@ -1231,6 +1584,33 @@ export default function AthleteNutrition() {
                 <button className="an-page-btn" disabled={currentPage === 1} onClick={() => handlePageChange(currentPage - 1)}>Prev</button>
                 <PageButtons currentPage={currentPage} totalPages={totalPages} onChange={handlePageChange} />
                 <button className="an-page-btn" disabled={currentPage === totalPages} onClick={() => handlePageChange(currentPage + 1)}>Next</button>
+              </div>
+            )}
+            {/* v1.9.14: live totals + save — the score is the gram-weighted
+                mean of the ingredient scores, matching v_archetype_scores. */}
+            {showBuilder && (
+              <div style={{ marginTop: 10 }}>
+                {builderTotals && (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, background: '#f8fafc', borderRadius: 10, padding: '10px 12px', marginBottom: 8 }}>
+                    <div style={{ fontSize: 12.5, color: '#334155', minWidth: 0 }}>
+                      {builderTotals.baseGrams} g · {builderTotals.energyKj.toLocaleString()} kJ · {builderTotals.proteinG} g protein · {builderTotals.carbsG} g carbs · {builderTotals.fatG} g fat · {builderTotals.fibreG} g fibre
+                    </div>
+                    {(() => {
+                      const b = scoreBadge(builderTotals.percentileScore, null, builderTotals.densityPerKj);
+                      return <span className="an-badge" style={{ background: b.bg, color: b.fg, flexShrink: 0 }} title={b.title}>Score {b.label}</span>;
+                    })()}
+                  </div>
+                )}
+                <button
+                  className="an-add-btn"
+                  onClick={tapSaveCustom}
+                  disabled={savingCustom || !builderName.trim() || builderItems.length === 0 || builderItems.some(it => !(Number(it.grams) > 0))}
+                >
+                  {savingCustom ? 'Saving…' : 'Save meal'}
+                </button>
+                <div style={{ fontSize: 11.5, color: '#94a3b8', textAlign: 'center', marginTop: 8 }}>
+                  Custom meals are private to you. Star one to pin it to Quick meals.
+                </div>
               </div>
             )}
           </>
