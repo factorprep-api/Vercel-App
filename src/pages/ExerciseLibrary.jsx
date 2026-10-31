@@ -225,6 +225,14 @@ export default function ExerciseLibrary({ viewMode: propViewMode = 'athlete' }) 
     return [...cats].sort();
   }, [fullLibrary]);
 
+  // Categories already used by PUBLIC exercises (no owner). Suggested in the
+  // admin Add modal when publishing to the shared Public Library.
+  const publicCategories = useMemo(() => {
+    const cats = new Set();
+    fullLibrary.forEach(ex => { if (!ex.ownerEmail && ex.muscle) cats.add(ex.muscle); });
+    return [...cats].sort();
+  }, [fullLibrary]);
+
   const filteredForView = useMemo(() => {
     const allowedLibrary = fullLibrary.filter(ex => {
       if (!ex.ownerEmail) return true; 
@@ -398,6 +406,7 @@ export default function ExerciseLibrary({ viewMode: propViewMode = 'athlete' }) 
           userEmail={userEmail}
           athleteName={athleteName}
           existingCategories={existingCategories}
+          publicCategories={publicCategories}
           isAdmin={userEmail && userEmail.toLowerCase() === ADMIN_EMAIL.toLowerCase()}
           onClose={() => setAdding(false)}
           onSuccess={async (isPublic) => {
@@ -506,40 +515,64 @@ export default function ExerciseLibrary({ viewMode: propViewMode = 'athlete' }) 
 }
 
 // FIX: Completely rebuilt the modal props and logic
-function AddExerciseModal({ userEmail, athleteName, existingCategories, isAdmin, onClose, onSuccess, onError }) {
+// Admin: the destination (Public Library vs own private library) is separate
+// from the category text. Public exercises get a category the admin picks
+// from existing public categories or types as a brand-new one.
+function AddExerciseModal({ userEmail, athleteName, existingCategories, publicCategories, isAdmin, onClose, onSuccess, onError }) {
   // Dynamically default to the Coach's name, just like the Drill Designer
   const coachCategoryName = athleteName ? `${athleteName} Exercises` : 'Coach Exercises';
 
   const [name, setName] = useState('');
   const [video, setVideo] = useState('');
   const [muscle, setMuscle] = useState(coachCategoryName);
-  
+
+  // ADMIN ONLY: where the exercise lives. "coach" -> own private library
+  // (category fixed to coachCategoryName), "public" -> shared Public Library
+  // with a category chosen/typed below.
+  const [destination, setDestination] = useState('coach');
+  const [publicCategory, setPublicCategory] = useState('');
+
   // FIX: Replaced baseLift and multiplier with a single formula state
   const [isFormula, setIsFormula] = useState(''); // "" or "yes"
   const [saving, setSaving] = useState(false);
+
+  const isPublic = isAdmin && destination === 'public';
 
   const categoryOptions = useMemo(() => {
     const baseCats = new Set([coachCategoryName, ...existingCategories]);
     return [...baseCats].sort();
   }, [existingCategories, coachCategoryName]);
 
+  const publicCategoryOptions = useMemo(
+    () => [...new Set(publicCategories)].sort(),
+    [publicCategories]
+  );
+
   const helperText = isAdmin
-    ? `Pick where the exercise lives: "${coachCategoryName}" is visible only to you, "Public Library" is visible to every coach and athlete.`
+    ? (isPublic
+        ? 'Public Library: visible to every coach and athlete. Pick an existing category below or type a new one.'
+        : `"${coachCategoryName}" is visible only to you. Switch to "Public Library" to publish to everyone.`)
     : `Defaults to "${coachCategoryName}". Type or select existing categories.`;
 
   async function handleSave() {
     if (!name.trim()) { (onError || alert)('Exercise name is required.'); return; }
     if (!userEmail) { (onError || alert)('Not authenticated. Please sign in again.'); return; }
+    // Admin publishing to the shared Public Library must have a category
+    // (an existing one like Activation / Vertical Pull / Vertical Push, or a
+    // brand-new one - the typed text simply becomes the new category).
+    if (isPublic && !publicCategory.trim()) {
+      (onError || alert)('Please enter a category for this Public Library exercise (e.g. Vertical Push).');
+      return;
+    }
     setSaving(true);
     try {
-      // Admin-only: selecting "Public Library" publishes the exercise to the
-      // shared library (is_public = true, no owner). The DB RLS policy
-      // enforces this even if the frontend is bypassed.
-      const isPublic = isAdmin && muscle.trim().toLowerCase() === 'public library';
+      // isPublic: true -> shared public library row (is_public = true, no
+      // owner). The DB RLS policy enforces admin-only even if the frontend
+      // is bypassed. Category = muscle_category free text (existing or new).
       const res = await addExerciseToLibrary({
         name: name.trim(),
         video: video.trim(),
-        muscle: muscle.trim() || coachCategoryName,
+        muscle: isPublic ? publicCategory.trim() : coachCategoryName,
         formula: isFormula, // Pass "yes" or "" directly to api.js
         ownerEmail: userEmail,
         isPublic
@@ -576,9 +609,9 @@ function AddExerciseModal({ userEmail, athleteName, existingCategories, isAdmin,
         <div className="exlib-add-field">
           <label className="exlib-add-label">Exercise Library:</label>
           {isAdmin ? (
-            <select className="exlib-add-input" value={muscle} onChange={e => setMuscle(e.target.value)}>
-              <option value={coachCategoryName}>{coachCategoryName} (only you)</option>
-              <option value="Public Library">Public Library (everyone)</option>
+            <select className="exlib-add-input" value={destination} onChange={e => setDestination(e.target.value)}>
+              <option value="coach">{coachCategoryName} (only you)</option>
+              <option value="public">Public Library (everyone)</option>
             </select>
           ) : (
             <>
@@ -590,6 +623,26 @@ function AddExerciseModal({ userEmail, athleteName, existingCategories, isAdmin,
           )}
           <p style={{ fontSize: 11, color: '#888', margin: '4px 0 0 0' }}>{helperText}</p>
         </div>
+
+        {/* ADMIN: Public Library exercises need a category (existing or new) */}
+        {isPublic && (
+          <div className="exlib-add-field">
+            <label className="exlib-add-label">Category (Required):</label>
+            <input
+              className="exlib-add-input"
+              list="exlib-public-cat-list"
+              value={publicCategory}
+              onChange={e => setPublicCategory(e.target.value)}
+              placeholder="e.g. Vertical Push"
+            />
+            <datalist id="exlib-public-cat-list">
+              {publicCategoryOptions.map(cat => <option key={cat} value={cat} />)}
+            </datalist>
+            <p style={{ fontSize: 11, color: '#888', margin: '4px 0 0 0' }}>
+              Pick an existing category from the list, or type a new one to create it.
+            </p>
+          </div>
+        )}
         
         {/* FIX: New Dropdown replacing BaseLift/Multiplier */}
         <div className="exlib-add-field">
