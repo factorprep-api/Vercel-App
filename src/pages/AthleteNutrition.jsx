@@ -1232,7 +1232,11 @@ export default function AthleteNutrition() {
       <div className="an-card">
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 15, color: '#334155', marginBottom: 10 }}>
           <Activity size={16} color="#10b981" /> Energy balance
-          {eb.plannedSource && (
+          {/* eb is null when the body profile is incomplete — the card body
+              below handles that with the setup prompt. Optional-chain here so
+              the header never dereferences null (v1.9.17: this crashed the
+              whole page white for athletes without a complete profile). */}
+          {eb?.plannedSource && (
             <span
               style={{ fontSize: 10.5, fontWeight: 700, color: '#0f766e', background: '#ccfbf1', borderRadius: 99, padding: '2px 8px' }}
               title="No session logged yet — today's estimate comes from your planned session. It switches to actuals once you log it."

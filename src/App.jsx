@@ -2,6 +2,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { lazy, Suspense } from 'react';
 import { useAuth } from './hooks/useAuth';
 import AppShell from './components/AppShell';
+import ErrorBoundary from './components/ErrorBoundary';
 
 // Lazy load pages for code splitting
 const Login = lazy(() => import('./pages/Login'));
@@ -41,7 +42,9 @@ function ProtectedRoute({ allowedRoles, children }) {
   if (!isAuthenticated) return <Navigate to="/login" replace />;
   if (!allowedRoles.includes(role)) return <Navigate to="/" replace />;
   
-  return <AppShell>{children}</AppShell>;
+  // ErrorBoundary: a crash inside a lazy page must never blank the whole
+  // app — it degrades to a friendly error card on that page only.
+  return <AppShell><ErrorBoundary>{children}</ErrorBoundary></AppShell>;
 }
 
 export default function App() {
@@ -72,9 +75,11 @@ export default function App() {
         <Route path="/" element={
           isAuthenticated ? (
             <AppShell>
-              <Suspense fallback={<LoadingFallback />}>
-                {role === 'coach' ? <CoachHub /> : <AthleteHub />}
-              </Suspense>
+              <ErrorBoundary>
+                <Suspense fallback={<LoadingFallback />}>
+                  {role === 'coach' ? <CoachHub /> : <AthleteHub />}
+                </Suspense>
+              </ErrorBoundary>
             </AppShell>
           ) : (
             <Navigate to="/login" replace />
