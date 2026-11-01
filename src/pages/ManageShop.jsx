@@ -158,13 +158,19 @@ export default function ManageShop() {
   const grant = async () => {
     if (!grantAthlete || !grantProduct) { setMsg('Pick an athlete and a product.'); return; }
     const res = await adminGrantEntitlement(grantAthlete, grantProduct);
-    setMsg(res.error ? `Error: ${res.error}` : 'Entitlement granted (lifetime).');
+    // Mirrors the shop purchase path: coach-role products also elevate the
+    // athlete to 'coach', so the message confirms it when that happens.
+    setMsg(res.error
+      ? `Error: ${res.error}`
+      : res.roleChanged ? 'Entitlement granted (lifetime). Coach role applied.' : 'Entitlement granted (lifetime).');
     if (!res.error) reload();
   };
 
   const revoke = async (id) => {
     const res = await adminRevokeEntitlement(id);
-    setMsg(res.error ? `Error: ${res.error}` : 'Entitlement revoked.');
+    setMsg(res.error
+      ? `Error: ${res.error}`
+      : res.roleChanged ? 'Entitlement revoked. Coach role removed.' : 'Entitlement revoked.');
     if (!res.error) reload();
   };
 
