@@ -362,7 +362,7 @@ export default function ManageShop() {
           <div className="ms-section-title">Roster ({memberships.length})</div>
           <table className="ms-table">
             <thead>
-              <tr><th>Team</th><th>Athlete</th><th>Email</th><th>Joined</th><th>Legacy pods</th><th>Active</th><th></th></tr>
+              <tr><th>Team</th><th>Athlete</th><th>Email</th><th>Joined</th><th>Team pods (legacy)</th><th>Shop pods</th><th>Active</th><th></th></tr>
             </thead>
             <tbody>
               {memberships.map(m => (
@@ -372,6 +372,20 @@ export default function ManageShop() {
                   <td>{m.athletes?.email || '—'}</td>
                   <td>{new Date(m.joined_at).toLocaleDateString()}</td>
                   <td>{(m.active_pods || []).join(', ') || '—'}</td>
+                  <td>{(() => {
+                    // Shop pods = union of pods granted by this athlete's
+                    // active/lifetime entitlements (shop_products.grants_pods).
+                    // Mirrors the live union the app uses for hub access, so
+                    // '—' here genuinely means "no pod access via the shop".
+                    const shopPods = [];
+                    entitlements.forEach(e => {
+                      if (e.athlete_id !== m.athlete_id) return;
+                      (e.shop_products?.grants_pods || []).forEach(p => {
+                        if (!shopPods.includes(p)) shopPods.push(p);
+                      });
+                    });
+                    return shopPods.join(', ') || '—';
+                  })()}</td>
                   <td>{m.is_active ? 'yes' : 'no'}</td>
                   <td style={{ whiteSpace: 'nowrap' }}>
                     <button className="ms-btn ghost" onClick={() => toggleMemberActive(m)}>{m.is_active ? 'Deactivate' : 'Reactivate'}</button>{' '}
@@ -380,7 +394,7 @@ export default function ManageShop() {
                 </tr>
               ))}
               {memberships.length === 0 && (
-                <tr><td colSpan={7} style={{ color: '#64748b' }}>No members yet — create a team above, then add athletes.</td></tr>
+                <tr><td colSpan={8} style={{ color: '#64748b' }}>No members yet — create a team above, then add athletes.</td></tr>
               )}
             </tbody>
           </table>

@@ -2148,7 +2148,7 @@ export const adminListEntitlements = async () => {
   try {
     const { data, error } = await supabase
       .from('user_entitlements')
-      .select('id, athlete_id, product_id, status, purchased_at, canceled_at, athletes(name, email), shop_products(name, slug, product_type)')
+      .select('id, athlete_id, product_id, status, purchased_at, canceled_at, athletes(name, email), shop_products(name, slug, product_type, grants_pods)')
       .order('purchased_at', { ascending: false });
     if (error) return { entitlements: [], error: error.message };
     return { entitlements: data || [], error: null };
