@@ -250,7 +250,6 @@ export default function ManageShop() {
                 </label>
               </div>
             </div>
-            <div style={{ gridColumn: '1 / -1' }}>
             <div style={{ gridColumn: '1 / -1' }}><label>Grants pods (shop-managed pod access)</label>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, fontSize: 13 }}>
                 {POD_OPTIONS.map(pod => (
@@ -261,8 +260,6 @@ export default function ManageShop() {
               </div>
             </div>
             <div style={{ gridColumn: '1 / -1' }}>
-              <button className="ms-btn primary" onClick={saveProduct}>Save Product</button>
-            </div>
               <button className="ms-btn primary" onClick={saveProduct}>Save Product</button>
             </div>
           </div>
