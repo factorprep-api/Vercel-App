@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, memo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
-import { fetchAthletes, fetchSchedule, fetchWellnessLogs, saveScheduleSession, deleteScheduleSession, fetchAttachablePrograms, updateSessionLog, updateScheduleProposal } from '../api';
+import { fetchAthletes, fetchSchedule, fetchWellnessLogs, fetchNutritionDailyTotals, saveScheduleSession, deleteScheduleSession, fetchAttachablePrograms, updateSessionLog, updateScheduleProposal } from '../api';
 import { ArrowLeft, BarChart2, Plus, AlertCircle, CheckCircle, X, AlertTriangle, Users, Layers, CalendarDays, List, Trash2, ChevronLeft, ChevronRight, Paperclip } from 'lucide-react';
 import { BarChart, Bar, Cell, LineChart, Line, ComposedChart, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer } from 'recharts';
 
@@ -109,6 +109,9 @@ export default function CoachSchedule() {
   const [roster, setRoster] = useState([]);
   const [scheduleLogs, setScheduleLogs] = useState([]);
   const [wellnessLogs, setWellnessLogs] = useState([]);
+  // v1.9.27: daily kJ/macros totals per athlete (v_athlete_daily_nutrition —
+  // aggregate only; the coach never receives food items).
+  const [nutritionTotals, setNutritionTotals] = useState([]);
   const [expandedAthlete, setExpandedAthlete] = useState(null);
   const [hoveredAthlete, setHoveredAthlete] = useState(null);
   const [drilledAthlete, setDrilledAthlete] = useState(null);
@@ -307,7 +310,11 @@ export default function CoachSchedule() {
    async function loadData() {
     console.log('[Wellness] loadData() called, coachEmail:', coachEmail);
     try {
-      const [athRes, schedData, wellRes] = await Promise.all([ fetchAthletes(), fetchSchedule(), fetchWellnessLogs() ]);
+      // v1.9.27: daily kJ/macros totals (v_athlete_daily_nutrition — aggregate
+      // only; the coach never receives food items). Failure just means no
+      // nutrition badge shows.
+      const [athRes, schedData, wellRes, nutRes] = await Promise.all([ fetchAthletes(), fetchSchedule(), fetchWellnessLogs(), fetchNutritionDailyTotals(14).catch(() => ({ totals: [] })) ]);
+      setNutritionTotals(nutRes.totals || []);
       console.log('[Wellness] wellRes:', wellRes);
       
       const athletes = athRes.athletes || [];
@@ -761,6 +768,19 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
       };
     });
   }, [roster, logsByAthlete, wellnessByEmail]);
+
+  // v1.9.27 (Amendment A15): today's aggregate nutrition per athlete — kJ and
+  // macronutrients ONLY, from v_athlete_daily_nutrition. No food items are
+  // ever fetched for a coach view.
+  const nutritionTodayByName = useMemo(() => {
+    const now = new Date();
+    const todayYMD = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const map = {};
+    nutritionTotals.forEach(t => {
+      if (t.date === todayYMD) map[t.athleteName] = t;
+    });
+    return map;
+  }, [nutritionTotals]);
 
   // --- SESSION AUDIT GROUPING ---
   const groupedAuditSessions = useMemo(() => {
@@ -1242,6 +1262,15 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
                             ) : (
                               <span className="cs-badge" title={ath.wellnessTip || ''} style={{ backgroundColor: getWellnessColor(ath.wellnessComposite) + '15', color: getWellnessColor(ath.wellnessComposite), minWidth: '44px' }}>
                                 {ath.wellnessComposite.toFixed(1)}
+                              </span>
+                            )}
+                            {nutritionTodayByName[ath.name] && nutritionTodayByName[ath.name].kj != null && (
+                              <span
+                                className="cs-badge"
+                                title={`Today's logged intake — totals only (the coach view never shows food items): ${Math.round(nutritionTodayByName[ath.name].kj)} kJ · P ${Math.round(nutritionTodayByName[ath.name].protein)} g · C ${Math.round(nutritionTodayByName[ath.name].carbs)} g · F ${Math.round(nutritionTodayByName[ath.name].fat)} g`}
+                                style={{ backgroundColor: '#008ed315', color: '#008ed3', marginLeft: '4px', whiteSpace: 'nowrap' }}
+                              >
+                                {Math.round(nutritionTodayByName[ath.name].kj).toLocaleString()} kJ
                               </span>
                             )}
                           </td>
