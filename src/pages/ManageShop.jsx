@@ -6,13 +6,26 @@ import { supabase } from '../supabase';
 import {
   isShopAdmin, adminListShopProducts, adminUpsertShopProduct,
   adminDeleteShopProduct, adminListAthletes, adminListEntitlements,
-  adminGrantEntitlement, adminRevokeEntitlement
+  adminGrantEntitlement, adminRevokeEntitlement,
+  adminListTeams, adminCreateTeam, adminListTeamMemberships,
+  adminAddTeamMembership, adminRemoveTeamMembership, adminSetMembershipActive
 } from '../api';
+
+// Pods a product can grant. 'treatment' is withheld from the bundles for
+// now (not ticked on pods/coaching-kit) — ticking it later launches the
+// Treatment Room for every subscriber, no SQL needed.
+const POD_OPTIONS = [
+  { key: 'wellness', label: 'Wellness' },
+  { key: 'nutrition', label: 'Nutrition' },
+  { key: 'medical', label: 'Medical' },
+  { key: 'schedule', label: 'Schedule' },
+  { key: 'treatment', label: 'Treatment (withheld)' }
+];
 
 const EMPTY = {
   slug: '', name: '', blurb: '', product_type: 'one_time', fulfilment: 'auto',
   paddle_price_id: '', linked_program_id: '', price_display: '', price_usd: '',
-  grants_coach_role: false, is_active: true, sort_order: 50
+  grants_coach_role: false, is_active: true, sort_order: 50, grants_pods: []
 };
 
 export default function ManageShop() {
@@ -27,18 +40,35 @@ export default function ManageShop() {
   const [msg, setMsg] = useState('');
   const [grantAthlete, setGrantAthlete] = useState('');
   const [grantProduct, setGrantProduct] = useState('');
+  // Teams tab state (v1.9.18)
+  const [teams, setTeams] = useState([]);
+  const [memberships, setMemberships] = useState([]);
+  const [newTeamName, setNewTeamName] = useState('');
+  const [rosterTeam, setRosterTeam] = useState('');
+  const [rosterAthlete, setRosterAthlete] = useState('');
+
+  const togglePod = (key) => setForm(f => ({
+    ...f,
+    grants_pods: f.grants_pods.includes(key)
+      ? f.grants_pods.filter(x => x !== key)
+      : [...f.grants_pods, key]
+  }));
 
   const reload = useCallback(async () => {
-    const [p, a, e, g] = await Promise.all([
+    const [p, a, e, g, t, m] = await Promise.all([
       adminListShopProducts(),
       adminListAthletes(),
       adminListEntitlements(),
-      supabase.from('programs').select('id, name').order('name')
+      supabase.from('programs').select('id, name').order('name'),
+      adminListTeams(),
+      adminListTeamMemberships()
     ]);
     setProducts(p.products || []);
     setAthletes(a.athletes || []);
     setEntitlements(e.entitlements || []);
     setPrograms(g.data || []);
+    setTeams(t.teams || []);
+    setMemberships(m.memberships || []);
   }, []);
 
   useEffect(() => {
@@ -62,7 +92,8 @@ export default function ManageShop() {
       price_usd: form.price_usd === '' ? null : Number(form.price_usd),
       grants_coach_role: form.grants_coach_role,
       is_active: form.is_active,
-      sort_order: Number(form.sort_order) || 0
+      sort_order: Number(form.sort_order) || 0,
+      grants_pods: form.grants_pods.length > 0 ? form.grants_pods : null
     };
     if (!payload.slug || !payload.name || !payload.price_display) {
       setMsg('Slug, name and price display are required.');
@@ -79,10 +110,42 @@ export default function ManageShop() {
       product_type: p.product_type, fulfilment: p.fulfilment,
       paddle_price_id: p.paddle_price_id || '', linked_program_id: p.linked_program_id || '',
       price_display: p.price_display, price_usd: p.price_usd == null ? '' : String(p.price_usd),
-      grants_coach_role: !!p.grants_coach_role, is_active: !!p.is_active, sort_order: p.sort_order ?? 50
+      grants_coach_role: !!p.grants_coach_role, is_active: !!p.is_active, sort_order: p.sort_order ?? 50,
+      grants_pods: Array.isArray(p.grants_pods) ? [...p.grants_pods] : []
     });
     setTab('products');
     window.scrollTo({ top: 0 });
+  };
+
+  // ---------- Teams tab actions (v1.9.18) ----------
+  const createTeam = async () => {
+    if (!newTeamName.trim()) { setMsg('Enter a team name first.'); return; }
+    const res = await adminCreateTeam(newTeamName);
+    setMsg(res.error ? `Error: ${res.error}` : `Team "${res.team?.name || newTeamName.trim()}" created.`);
+    if (!res.error) { setNewTeamName(''); if (!res.team?.id) return; setRosterTeam(res.team.id); reload(); }
+  };
+
+  const addMember = async () => {
+    if (!rosterTeam || !rosterAthlete) { setMsg('Pick a team and an athlete.'); return; }
+    const res = await adminAddTeamMembership(rosterAthlete, rosterTeam);
+    setMsg(res.error
+      ? `Error: ${res.error}`
+      : 'Athlete added to the team. Remember to grant their pods via the Grants tab.');
+    if (!res.error) { setRosterAthlete(''); reload(); }
+  };
+
+  const removeMember = async (m) => {
+    const name = m.athletes?.name || m.athlete_id;
+    if (!window.confirm(`Remove ${name} from ${m.teams?.name || 'the team'}?`)) return;
+    const res = await adminRemoveTeamMembership(m.id);
+    setMsg(res.error ? `Error: ${res.error}` : `${name} removed from the team.`);
+    if (!res.error) reload();
+  };
+
+  const toggleMemberActive = async (m) => {
+    const res = await adminSetMembershipActive(m.id, !m.is_active);
+    setMsg(res.error ? `Error: ${res.error}` : (m.is_active ? 'Membership deactivated.' : 'Membership reactivated.'));
+    if (!res.error) reload();
   };
 
   const removeProduct = async (p) => {
@@ -144,6 +207,7 @@ export default function ManageShop() {
       <div className="ms-tabs">
         <button className={`ms-tab ${tab === 'products' ? 'active' : ''}`} onClick={() => setTab('products')}>Products & Plans</button>
         <button className={`ms-tab ${tab === 'grants' ? 'active' : ''}`} onClick={() => setTab('grants')}>Grants</button>
+        <button className={`ms-tab ${tab === 'teams' ? 'active' : ''}`} onClick={() => setTab('teams')}>Teams</button>
       </div>
 
       {msg && <div className="ms-msg">{msg}</div>}
@@ -184,6 +248,15 @@ export default function ManageShop() {
                 <label style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
                   <input type="checkbox" checked={form.is_active} onChange={e => setF('is_active', e.target.checked)} /> Active
                 </label>
+              </div>
+            </div>
+            <div style={{ gridColumn: '1 / -1' }}><label>Grants pods (shop-managed pod access)</label>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, fontSize: 13 }}>
+                {POD_OPTIONS.map(pod => (
+                  <label key={pod.key} style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <input type="checkbox" checked={form.grants_pods.includes(pod.key)} onChange={() => togglePod(pod.key)} /> {pod.label}
+                  </label>
+                ))}
               </div>
             </div>
             <div style={{ gridColumn: '1 / -1' }}>
@@ -256,6 +329,77 @@ export default function ManageShop() {
           </table>
           <p style={{ fontSize: 12, color: '#64748b', marginTop: 10 }}>
             Tip: to give someone pods by team membership instead, edit <code>athlete_team_memberships.active_pods</code> — the app unions both sources.
+          </p>
+        </>
+      )}
+      {tab === 'teams' && (
+        <>
+          <div className="ms-section-title">Create a team</div>
+          <div className="ms-form" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', alignItems: 'end' }}>
+            <div><label>Team name</label>
+              <input value={newTeamName} onChange={e => setNewTeamName(e.target.value)} placeholder="e.g. Development Team" />
+            </div>
+            <div><button className="ms-btn primary" onClick={createTeam}>Create team</button></div>
+          </div>
+
+          <div className="ms-section-title">Add an athlete to a team</div>
+          <div className="ms-form" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', alignItems: 'end' }}>
+            <div><label>Team</label>
+              <select value={rosterTeam} onChange={e => setRosterTeam(e.target.value)}>
+                <option value="">— pick a team —</option>
+                {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+            </div>
+            <div><label>Athlete</label>
+              <select value={rosterAthlete} onChange={e => setRosterAthlete(e.target.value)}>
+                <option value="">— pick an athlete —</option>
+                {athletes.map(a => <option key={a.id} value={a.id}>{a.name} ({a.email || 'no email'})</option>)}
+              </select>
+            </div>
+            <div><button className="ms-btn primary" onClick={addMember}>Add to team</button></div>
+          </div>
+
+          <div className="ms-section-title">Roster ({memberships.length})</div>
+          <table className="ms-table">
+            <thead>
+              <tr><th>Team</th><th>Athlete</th><th>Email</th><th>Joined</th><th>Team pods (legacy)</th><th>Shop pods</th><th>Active</th><th></th></tr>
+            </thead>
+            <tbody>
+              {memberships.map(m => (
+                <tr key={m.id}>
+                  <td>{m.teams ? m.teams.name : m.team_id}</td>
+                  <td>{m.athletes ? m.athletes.name : m.athlete_id}</td>
+                  <td>{m.athletes?.email || '—'}</td>
+                  <td>{new Date(m.joined_at).toLocaleDateString()}</td>
+                  <td>{(m.active_pods || []).join(', ') || '—'}</td>
+                  <td>{(() => {
+                    // Shop pods = union of pods granted by this athlete's
+                    // active/lifetime entitlements (shop_products.grants_pods).
+                    // Mirrors the live union the app uses for hub access, so
+                    // '—' here genuinely means "no pod access via the shop".
+                    const shopPods = [];
+                    entitlements.forEach(e => {
+                      if (e.athlete_id !== m.athlete_id) return;
+                      (e.shop_products?.grants_pods || []).forEach(p => {
+                        if (!shopPods.includes(p)) shopPods.push(p);
+                      });
+                    });
+                    return shopPods.join(', ') || '—';
+                  })()}</td>
+                  <td>{m.is_active ? 'yes' : 'no'}</td>
+                  <td style={{ whiteSpace: 'nowrap' }}>
+                    <button className="ms-btn ghost" onClick={() => toggleMemberActive(m)}>{m.is_active ? 'Deactivate' : 'Reactivate'}</button>{' '}
+                    <button className="ms-btn danger" onClick={() => removeMember(m)}><Trash2 size={13} /></button>
+                  </td>
+                </tr>
+              ))}
+              {memberships.length === 0 && (
+                <tr><td colSpan={8} style={{ color: '#64748b' }}>No members yet — create a team above, then add athletes.</td></tr>
+              )}
+            </tbody>
+          </table>
+          <p style={{ fontSize: 12, color: '#64748b', marginTop: 10 }}>
+            Membership is the coach-athlete link (lets coaches assign programs). Pods now come from the <b>Grants</b> tab — new members start with none until you grant their bundle. Legacy team-membership pods still work via the union.
           </p>
         </>
       )}

@@ -560,6 +560,129 @@ export const removeMealFavorite = async (archetypeId) => {
   } catch (err) { return { status: 'Error', message: err.message }; }
 };
 
+// ---- Custom meals (v1.9.14): athlete-built meals for Quick meals ----
+// custom_meals rows are athlete-owned recipes (RLS cm_select/cm_insert/
+// cm_star_update scope everything to the owning athlete; cm_delete also
+// allows admin cleanup). items is a snapshot of the constituent foods at
+// save time and totals were resolved client-side at save (gram-weighted
+// means, same math as v_archetype_scores), so a saved meal never shifts
+// when the food database is re-imported — a saved meal is a recipe card,
+// not a live view (plan §A13). The mapped shape mirrors the archetype
+// objects from fetchMealArchetypes exactly, so they merge into the same
+// meals list: search, starring, usage-ranking and the three-tap log path
+// all work without a single branch.
+
+const mapCustomMealRow = (m) => {
+  const t = (m.totals && typeof m.totals === 'object') ? m.totals : {};
+  const items = Array.isArray(m.items) ? m.items : [];
+  return {
+    id: m.id,
+    custom: true,
+    name: m.name,
+    componentsText: items.length > 0
+      ? items.map(i => `${i.name} ×${Math.round(Number(i.grams) || 0)} g`).join(' · ')
+      : null,
+    mealSlots: [],
+    baseGrams: t.base_grams != null ? Number(t.base_grams) : null,
+    energyKj: t.energy_kj != null ? Number(t.energy_kj) : null,
+    proteinG: t.protein_g != null ? Number(t.protein_g) : null,
+    carbsG: t.carbs_g != null ? Number(t.carbs_g) : null,
+    fatG: t.fat_g != null ? Number(t.fat_g) : null,
+    fibreG: t.fibre_g != null ? Number(t.fibre_g) : null,
+    percentileScore: t.percentile_score != null ? Number(t.percentile_score) : null,
+    densityPerKj: t.density_per_kj != null ? Number(t.density_per_kj) : null,
+    starred: !!m.starred
+  };
+};
+
+export const fetchCustomMeals = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('custom_meals')
+      .select('id, name, items, totals, starred, created_at')
+      .order('created_at', { ascending: false });
+    if (error) return { meals: [], error: error.message };
+    return { meals: (data || []).map(mapCustomMealRow), error: null };
+  } catch (err) { return { meals: [], error: err.message }; }
+};
+
+export const saveCustomMeal = async ({ name, items, totals }) => {
+  try {
+    if (!name || !String(name).trim()) return { status: 'Error', message: 'Give the meal a name.' };
+    if (!Array.isArray(items) || items.length === 0) return { status: 'Error', message: 'A meal needs at least one ingredient.' };
+    let athleteId = null;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { data: mine } = await supabase.from('athletes').select('id').eq('user_id', user.id).maybeSingle();
+      if (mine) athleteId = mine.id;
+    }
+    if (!athleteId) return { status: 'Error', message: 'Athlete not found' };
+    // Snapshot raw (untiered) per-item values — the quality tier is chosen
+    // at log time exactly like an archetype, so a saved meal is tier-neutral.
+    const rows = items.map(i => ({
+      food_id: i.food_id,
+      name: i.name,
+      grams: Number(i.grams) || 0,
+      kj100: i.kj100 != null ? Number(i.kj100) : null,
+      protein100: i.protein100 != null ? Number(i.protein100) : null,
+      carbs100: i.carbs100 != null ? Number(i.carbs100) : null,
+      fat100: i.fat100 != null ? Number(i.fat100) : null,
+      fibre100: i.fibre100 != null ? Number(i.fibre100) : null,
+      percentile_score: i.percentileScore != null ? Number(i.percentileScore) : null,
+      density_per_kj: i.densityPerKj != null ? Number(i.densityPerKj) : null
+    }));
+    const t = totals || {};
+    const { data, error } = await supabase
+      .from('custom_meals')
+      .insert({
+        athlete_id: athleteId,
+        name: String(name).trim(),
+        items: rows,
+        totals: {
+          base_grams: t.baseGrams != null ? Number(t.baseGrams) : null,
+          energy_kj: t.energyKj != null ? Number(t.energyKj) : null,
+          protein_g: t.proteinG != null ? Number(t.proteinG) : null,
+          carbs_g: t.carbsG != null ? Number(t.carbsG) : null,
+          fat_g: t.fatG != null ? Number(t.fatG) : null,
+          fibre_g: t.fibreG != null ? Number(t.fibreG) : null,
+          percentile_score: t.percentileScore != null ? Number(t.percentileScore) : null,
+          density_per_kj: t.densityPerKj != null ? Number(t.densityPerKj) : null
+        },
+        starred: false
+      })
+      .select('id, name, items, totals, starred, created_at')
+      .single();
+    if (error) return { status: 'Error', message: error.message };
+    return { status: 'Success', meal: data ? mapCustomMealRow(data) : null };
+  } catch (err) { return { status: 'Error', message: err.message }; }
+};
+
+export const removeCustomMeal = async (id) => {
+  try {
+    if (!id) return { status: 'Error', message: 'Missing meal ID.' };
+    // RLS (cm_delete) restricts the delete to the owning athlete (admins too).
+    const { error } = await supabase
+      .from('custom_meals')
+      .delete()
+      .eq('id', id);
+    if (error) return { status: 'Error', message: error.message };
+    return { status: 'Success' };
+  } catch (err) { return { status: 'Error', message: err.message }; }
+};
+
+export const toggleCustomMealStar = async (id, starred) => {
+  try {
+    if (!id) return { status: 'Error', message: 'Missing meal ID.' };
+    // RLS (cm_star_update): only the owning athlete can flip their star.
+    const { error } = await supabase
+      .from('custom_meals')
+      .update({ starred: !!starred, updated_at: new Date().toISOString() })
+      .eq('id', id);
+    if (error) return { status: 'Error', message: error.message };
+    return { status: 'Success' };
+  } catch (err) { return { status: 'Error', message: err.message }; }
+};
+
 // ---- Meal archetypes (v1.9): the three-tap meal path ----
 // One round-trip of five small reference queries, merged client-side:
 //   meal_archetypes        — id/name/meal_slots/display_order (active only)
@@ -1301,6 +1424,50 @@ export const fetchTodayTraining = async (athleteName) => {
   } catch { return { sessions: [] }; }
 };
 
+// ---- Planned fueling (v1.9.13): today + tomorrow proposals for the
+// "Fuel ahead" card and the Energy balance planned fallback. Reads
+// schedule_sessions (proposed_mins / proposed_rpe) for the athlete's next
+// two calendar days and flags which plans already have a linked completion
+// in session_logs (session_id), so the card can show "✓ logged". RLS lets
+// the athlete read their own proposals; no server rollups — the client
+// applies the same RPE→MET math as the actuals.
+export const fetchPlannedSessions = async (athleteName) => {
+  try {
+    const athleteId = await resolveAthleteRow(athleteName);
+    if (!athleteId) return { sessions: [] };
+    const today = ymd(new Date());
+    const tmrw = new Date();
+    tmrw.setDate(tmrw.getDate() + 1);
+    const window = [today, ymd(tmrw)];
+    const [sessRes, logRes] = await Promise.all([
+      supabase.from('schedule_sessions')
+        .select('id, date, session_type, proposed_mins, proposed_rpe')
+        .eq('athlete_id', athleteId)
+        .in('date', window)
+        .order('date', { ascending: true }),
+      supabase.from('session_logs')
+        .select('id, session_id')
+        .eq('athlete_id', athleteId)
+        .in('date', window)
+        .is('deleted_at', null)
+    ]);
+    if (sessRes.error) return { sessions: [] };
+    const logs = logRes.data || [];
+    return {
+      today,
+      tomorrow: ymd(tmrw),
+      sessions: (sessRes.data || []).map(s => ({
+        id: s.id,
+        date: s.date,
+        sessionType: s.session_type || 'Session',
+        plannedMins: s.proposed_mins ?? 0,
+        plannedRpe: s.proposed_rpe ?? 0,
+        hasLog: logs.some(l => l.session_id === s.id)
+      }))
+    };
+  } catch { return { sessions: [] }; }
+};
+
 export const getLastLoggedWeight = async (athleteName, exerciseName) => {
   try {
     const athleteId = await resolveAthleteRow(athleteName);
@@ -1981,7 +2148,7 @@ export const adminListEntitlements = async () => {
   try {
     const { data, error } = await supabase
       .from('user_entitlements')
-      .select('id, athlete_id, product_id, status, purchased_at, canceled_at, athletes(name, email), shop_products(name, slug, product_type)')
+      .select('id, athlete_id, product_id, status, purchased_at, canceled_at, athletes(name, email), shop_products(name, slug, product_type, grants_pods)')
       .order('purchased_at', { ascending: false });
     if (error) return { entitlements: [], error: error.message };
     return { entitlements: data || [], error: null };
@@ -2008,6 +2175,89 @@ export const adminGrantEntitlement = async (athleteId, productId) => {
 export const adminRevokeEntitlement = async (entitlementId) => {
   try {
     const { error } = await supabase.from('user_entitlements').delete().eq('id', entitlementId);
+    return { error: error ? error.message : null };
+  } catch (err) { return { error: err.message }; }
+};
+
+// ---------- ADMIN: TEAMS (v1.9.18) — Manage Shop → Teams tab ----------
+// RLS: atm_write / teams_update already allow club admins to manage teams
+// and athlete_team_memberships (see policies.sql) — no policy changes
+// needed for these. Team creation needed a new teams_insert policy
+// (teams_insert_policy_v1.9.18.sql) since clubs admin'd by the caller.
+
+// Teams in the caller's admin club(s).
+export const adminListTeams = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('teams')
+      .select('id, name, club_id, clubs(name)')
+      .order('name', { ascending: true });
+    if (error) return { teams: [], error: error.message };
+    return { teams: data || [], error: null };
+  } catch (err) { return { teams: [], error: err.message }; }
+};
+
+// Create a team under the caller's admin club. Anchored on the caller's
+// athlete row primary_club_id (same pattern as the treatment pod code).
+export const adminCreateTeam = async (name) => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { team: null, error: 'Not signed in' };
+    const { data: mine, error: mineErr } = await supabase
+      .from('athletes').select('primary_club_id').eq('user_id', user.id).maybeSingle();
+    if (mineErr) return { team: null, error: mineErr.message };
+    if (!mine?.primary_club_id) return { team: null, error: 'No club found for your account — create the team via SQL instead.' };
+    const { data, error } = await supabase
+      .from('teams')
+      .insert({ name: name.trim(), club_id: mine.primary_club_id })
+      .select('id, name, club_id')
+      .single();
+    if (error) return { team: null, error: error.message };
+    return { team: data, error: null };
+  } catch (err) { return { team: null, error: err.message }; }
+};
+
+// All athlete_team_memberships with athlete + team names (roster table).
+export const adminListTeamMemberships = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('athlete_team_memberships')
+      .select('id, athlete_id, team_id, active_pods, is_active, joined_at, athletes(name, email), teams(name, club_id)')
+      .order('joined_at', { ascending: true });
+    if (error) return { memberships: [], error: error.message };
+    return { memberships: data || [], error: null };
+  } catch (err) { return { memberships: [], error: err.message }; }
+};
+
+// Add an athlete to a team. active_pods starts EMPTY on purpose: pods are
+// shop-managed now (grants_pods + user_entitlements) — granting pods via
+// membership is the legacy path and only leads to two sources of truth.
+export const adminAddTeamMembership = async (athleteId, teamId) => {
+  try {
+    const { data, error } = await supabase
+      .from('athlete_team_memberships')
+      .insert({ athlete_id: athleteId, team_id: teamId, active_pods: [], is_active: true })
+      .select('id, athlete_id, team_id')
+      .single();
+    if (error) return { membership: null, error: error.message };
+    return { membership: data, error: null };
+  } catch (err) { return { membership: null, error: err.message }; }
+};
+
+export const adminRemoveTeamMembership = async (membershipId) => {
+  try {
+    const { error } = await supabase
+      .from('athlete_team_memberships')
+      .delete().eq('id', membershipId);
+    return { error: error ? error.message : null };
+  } catch (err) { return { error: err.message }; }
+};
+
+export const adminSetMembershipActive = async (membershipId, isActive) => {
+  try {
+    const { error } = await supabase
+      .from('athlete_team_memberships')
+      .update({ is_active: isActive }).eq('id', membershipId);
     return { error: error ? error.message : null };
   } catch (err) { return { error: err.message }; }
 };
