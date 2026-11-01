@@ -834,16 +834,36 @@ export const updateNutritionItems = async (logId, items) => {
 // athletes see their own, coaches see their athletes'). Joins the athlete's
 // name so coach pages can attribute logs. Items are denormalized, so views
 // compute totals client-side. sessionLogId present on session-anchored entries.
-export const fetchNutritionLogs = async (days = 30) => {
+//
+// v1.9.27 (Amendment A15): selfOnly mode for the athlete's own nutrition pod.
+// RLS (nl_select) DELIBERATELY returns club-wide rows to coaches/admins, and
+// the athlete pod must never mix other athletes' meals into today's row pick,
+// meal-usage ranking or Recents. Scoping is by athlete_id UUID resolved from
+// auth.uid() (athletes.user_id → athletes.id) — never by display name.
+export const fetchNutritionLogs = async (days = 30, { selfOnly = false } = {}) => {
   try {
+    let myAthleteId = null;
+    if (selfOnly) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return { logs: [], error: 'Not signed in' };
+      const { data: mine } = await supabase
+        .from('athletes')
+        .select('id')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      if (!mine) return { logs: [], error: null }; // signed-in user has no athlete row
+      myAthleteId = mine.id;
+    }
     const since = new Date();
     since.setDate(since.getDate() - days);
-    const { data, error } = await supabase
+    let q = supabase
       .from('nutrition_logs')
       .select('id, entry_date, session_log_id, items, notes, athlete_id, athletes(name)')
       .is('deleted_at', null)
       .gte('entry_date', ymd(since))
       .order('entry_date', { ascending: false });
+    if (myAthleteId) q = q.eq('athlete_id', myAthleteId);
+    const { data, error } = await q;
     if (error) return { logs: [], error: error.message };
     return {
       logs: (data || []).map(l => ({
@@ -858,6 +878,38 @@ export const fetchNutritionLogs = async (days = 30) => {
       error: null
     };
   } catch (err) { return { logs: [], error: err.message }; }
+};
+
+// Coach-side daily nutrition totals (v1.9.27, plan §7.4 / Amendment A15).
+// The coach view is deliberately AGGREGATE ONLY: kJ + macronutrients per
+// athlete per day, computed server-side from the denormalized items
+// snapshots. The view is security_invoker, so nutrition_logs RLS (nl_select)
+// still governs who sees which athletes' rows — but no food items, notes or
+// scores ever leave the database for a coach page.
+export const fetchNutritionDailyTotals = async (days = 14) => {
+  try {
+    const since = new Date();
+    since.setDate(since.getDate() - days);
+    const { data, error } = await supabase
+      .from('v_athlete_daily_nutrition')
+      .select('athlete_id, athlete_name, entry_date, log_count, total_kj, protein_g, carbs_g, fat_g')
+      .gte('entry_date', ymd(since))
+      .order('entry_date', { ascending: false });
+    if (error) return { totals: [], error: error.message };
+    return {
+      totals: (data || []).map(t => ({
+        athleteId: t.athlete_id,
+        athleteName: t.athlete_name,
+        date: t.entry_date,
+        logCount: t.log_count,
+        kj: t.total_kj != null ? Number(t.total_kj) : null,
+        protein: t.protein_g != null ? Number(t.protein_g) : null,
+        carbs: t.carbs_g != null ? Number(t.carbs_g) : null,
+        fat: t.fat_g != null ? Number(t.fat_g) : null
+      })),
+      error: null
+    };
+  } catch (err) { return { totals: [], error: err.message }; }
 };
 
 // ==========================================

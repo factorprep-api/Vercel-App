@@ -385,9 +385,9 @@ The shipped system intentionally differs from the specification above. Each item
 | §6 meal archetypes (the 3-tap flow) | **Seeded**: 10 archetypes, 39 components resolved to real `food_id`s, plus `v_archetype_scores`. Picker UI not built; interim fast path is favourites + recents. |
 | §7.1 "What did you refuel with?" prompt | Column + API parameter exist; no UI calls it. |
 | §7.3 planned-vs-logged | Blocked on §9.3 (band model). |
-| §7.4 coach density-vs-load chart | Not built. |
+| §7.4 coach density-vs-load chart | **Partially built (A15, v1.9.27):** daily kJ/macros totals per athlete shipped as a security_invoker view + coach-schedule badge. The density-vs-load chart itself remains open. |
 | §7.5 weight-adjusted messaging | Not built. |
-| §4.6 `v_archetype_scores`, `v_athlete_daily_nutrition` | Not built. Athlete rollups **must not** be materialized views — matviews bypass RLS. Use a `security_invoker` view. |
+| §4.6 `v_archetype_scores`, `v_athlete_daily_nutrition` | `v_athlete_daily_nutrition` **built** (A15, v1.9.27) as a `security_invoker` view exposing daily totals only. `v_archetype_scores` not built. Athlete rollups **must not** be materialized views — matviews bypass RLS. |
 | §9.4 EPA/DHA (AUSNUT cols 54–56, plus total LC ω-3 col 58) | Data already downloaded; excluded per spec until the owner decides. |
 
 ## A10. Two density measures — per 100 g and per kJ
@@ -475,6 +475,23 @@ The shipped system intentionally differs from the specification above. Each item
 **History-safety (§5.3):** every logged item snapshots its resolved multiplier at log time, so meals logged before this change keep their stored values (local ×1.10, organic ×1.00, homegrown ×1.15) — re-tuning the table never rewrites logged history. Only new logs use the new numbers.
 
 **Where:** `src/databases/nutrition_tier_reorder_v1.9.15.sql` (run once in the Supabase SQL Editor); `src/pages/AthleteNutrition.jsx` (`FOOD_TIERS_FALLBACK` mirrors the new values — live values always come from `quality_tier_modifiers`).
+
+
+---
+
+## Amendment A15 — Coach sees totals only; athlete pod self-scoping (v1.9.27)
+
+**Product-owner decision, now shipped spec (was tracked as open in A9):** the coach-facing view of the nutrition pod is **daily energy (kJ) and macronutrient totals per athlete per day — nothing else**. Coaches never receive food items, notes, per-food scores or quality tiers. The §7.3 intake-vs-output overlay against training output ships separately as v1.9.28; this amendment is the aggregate-only baseline.
+
+**Three changes:**
+
+1. **The dead full-payload fetch is gone.** v1.8.0 wired `fetchNutritionLogs()` into `CoachResults.jsx` and attached a `nutritionLogs` array per athlete that no component ever rendered — silently shipping every food item, per-100g value and note to the coach page on every load. Removed (import, call, grouping, field). Coach nutrition visibility lives on the coach schedule page only, via the totals view.
+
+2. **Server-side aggregate view.** `v_athlete_daily_nutrition` (security_invoker — the A9 rule: matviews bypass RLS) groups the `nutrition_logs.items` snapshots per athlete/day and exposes ONLY `athlete_id, athlete_name, entry_date, log_count, total_kj, protein_g, carbs_g, fat_g` — gram-weighted Σ grams · per-100g / 100, the exact math the athlete page computes client-side. RLS (`nl_select`) still governs which athletes' rows a coach/admin sees; the view guarantees the payload shape.
+
+3. **Athlete pod self-scoping (the leak fix).** `fetchNutritionLogs(30, { selfOnly: true })` on the athlete nutrition page resolves the signed-in user's athlete_id (auth.uid() → athletes.user_id → athletes.id) and filters by it — never by display name. Before this, RLS returned club-wide rows to a coach/admin account, so the athlete pod's today-row pick, meal-usage ranking and Recents silently mixed in other athletes' meals whenever a coach/admin opened their own nutrition page. Writes were always UUID-safe; this was display-only. Also fixes the HelpButton prop bug found during v1.9.26 help-video prep: the call passed a `page` prop the component never read (`pageName`), so nutrition help videos could never resolve.
+
+**Where:** `src/databases/nutrition_daily_totals_v1.9.27.sql` (run once in the Supabase SQL Editor, test + prod); `src/api.js` (`fetchNutritionLogs` selfOnly option; new `fetchNutritionDailyTotals`); `src/pages/AthleteNutrition.jsx` (selfOnly call; HelpButton `pageName="Athlete Nutrition"`); `src/pages/CoachSchedule.jsx` (today's kJ/macros badge per athlete); `src/pages/CoachResults.jsx` (dead fetch removed).
 
 ---
 

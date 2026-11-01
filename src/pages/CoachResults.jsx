@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
-import { fetchAthletes, fetchLogbookByAthlete, fetchWellnessLogs, fetchMedicalLogs, fetchCycleLogs, saveMedicalLog, fetchExerciseLibrary, getLatestMaxes, saveAthleteMax, fetchNutritionLogs } from '../api';
+import { fetchAthletes, fetchLogbookByAthlete, fetchWellnessLogs, fetchMedicalLogs, fetchCycleLogs, saveMedicalLog, fetchExerciseLibrary, getLatestMaxes, saveAthleteMax } from '../api';
 import { getCycleContext, PHASE_STATUS, compositeLevel, buildCycleChartData, getForwardWindow, getTrainingGuidance, getPhase, ymd } from '../utils/cycleMath';
 import { ArrowLeft, Search, AlertCircle, Heart, Moon, Utensils, HandMetal, Smile, BarChart2, LayoutGrid, Dumbbell, Activity, ShieldAlert, X, Plus, Droplet, TrendingDown, TrendingUp, MoveHorizontal } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, ReferenceArea, ComposedChart, Area } from 'recharts';
@@ -270,21 +270,10 @@ export default function CoachResults() {
     setWellnessLoading(true);
     try {
       const athRes = athletes.length > 0 ? { athletes } : await fetchAthletes();
-      const [wellnessData, medicalData, cycleData, nutritionData] = await Promise.all([ fetchWellnessLogs(), fetchMedicalLogs(), fetchCycleLogs(), fetchNutritionLogs() ]);
+      const [wellnessData, medicalData, cycleData] = await Promise.all([ fetchWellnessLogs(), fetchMedicalLogs(), fetchCycleLogs() ]);
       const rawAthletes = athRes.athletes || [];
       const logs = wellnessData.data || [];
       const medLogs = medicalData.data || [];
-
-      // Nutrition pod (v1.8.0): group logs by athlete name. Items are
-      // denormalized (per-100g values + grams), so totals are computed
-      // client-side — no server rollups needed (plan §3).
-      const nutritionByAthlete = {};
-      (nutritionData.logs || []).forEach(n => {
-        const athName = String(n.athleteName || '').trim();
-        if (!athName) return;
-        if (!nutritionByAthlete[athName]) nutritionByAthlete[athName] = [];
-        nutritionByAthlete[athName].push(n);
-      });
 
       // Group cycle entries per athlete (opt-in menstrual cycle tracking)
       const cyclesByAthlete = {};
@@ -396,8 +385,6 @@ export default function CoachResults() {
             activeInjury, 
             medicalHistory: athMed, 
             history: athLogs,
-            // v1.8.0: nutrition pod logs (denormalized items, totals client-side)
-            nutritionLogs: nutritionByAthlete[name] || [],
             // v1.6.0: opt-in cycle context (null when the athlete isn't tracking)
             cycle: getCycleContext(cyclesByAthlete[name] || [])
           });

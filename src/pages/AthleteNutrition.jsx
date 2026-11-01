@@ -343,7 +343,10 @@ export default function AthleteNutrition() {
   // Recents are derived client-side from existing logs — no extra table.
   const loadNutritionData = async () => {
     const [logRes, favRes, mealFavRes, bodyRes, trainRes, plannedRes] = await Promise.all([
-      fetchNutritionLogs(30),
+      // v1.9.27: selfOnly — the athlete pod is strictly the athlete's own
+      // data (by athlete_id UUID). RLS alone would hand a coach/admin
+      // account the whole club's rows here.
+      fetchNutritionLogs(30, { selfOnly: true }),
       fetchFoodFavorites().catch(() => ({ foods: [] })),
       fetchMealFavorites().catch(() => ({ ids: [] })),
       fetchAthleteBodyData(athleteName).catch(() => null),
@@ -1139,7 +1142,7 @@ export default function AthleteNutrition() {
           <h1 className="an-title">Nutrition Log</h1>
           <p className="an-subtitle">Three taps: meal or food → portion → add</p>
         </div>
-        <div style={{ marginLeft: 'auto' }}><HelpButton page="athlete-nutrition" /></div>
+        <div style={{ marginLeft: 'auto' }}><HelpButton pageName="Athlete Nutrition" position="bottom-right" /></div>
       </div>
 
       {pageError && (
