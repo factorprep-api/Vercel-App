@@ -2157,8 +2157,20 @@ export const adminListEntitlements = async () => {
 
 // Admin-granted entitlement (comp pods, manual Team/Club fulfilment).
 // Always 'lifetime' — admin grants are permanent until revoked.
+// MIRRORS the Paddle webhook purchase path (supabase/functions/
+// paddle-webhook/index.ts): a product with grants_coach_role elevates the
+// athlete's role to 'coach', so a manual Coaching Kit grant behaves
+// identically to buying the Coaching Kit in the shop — all pods AND the
+// Coach Hub.
 export const adminGrantEntitlement = async (athleteId, productId) => {
   try {
+    const { data: product, error: prodErr } = await supabase
+      .from('shop_products')
+      .select('id, name, grants_coach_role')
+      .eq('id', productId)
+      .single();
+    if (prodErr) return { entitlement: null, error: prodErr.message };
+
     const { data, error } = await supabase
       .from('user_entitlements')
       .upsert(
@@ -2168,14 +2180,60 @@ export const adminGrantEntitlement = async (athleteId, productId) => {
       .select()
       .single();
     if (error) return { entitlement: null, error: error.message };
-    return { entitlement: data, error: null };
+
+    let roleChanged = false;
+    if (product?.grants_coach_role) {
+      const { error: roleErr } = await supabase
+        .from('athletes')
+        .update({ role: 'coach' })
+        .eq('id', athleteId);
+      if (roleErr) {
+        return { entitlement: data, error: `Entitlement granted but coach role update failed: ${roleErr.message}` };
+      }
+      roleChanged = true;
+    }
+    return { entitlement: data, error: null, roleChanged };
   } catch (err) { return { entitlement: null, error: err.message }; }
 };
 
+// MIRRORS the Paddle webhook cancel path: revoking a coach-role product
+// downgrades the athlete back to 'athlete' UNLESS they still hold another
+// coach-role entitlement (active/lifetime) — identical to buying and
+// cancelling a Coaching Kit.
 export const adminRevokeEntitlement = async (entitlementId) => {
   try {
+    // Fetch the entitlement + its product's coach flag BEFORE deleting,
+    // so we know whether the role needs handling after the delete.
+    const { data: ent, error: fetchErr } = await supabase
+      .from('user_entitlements')
+      .select('id, athlete_id, shop_products(grants_coach_role)')
+      .eq('id', entitlementId)
+      .single();
+    if (fetchErr) return { error: fetchErr.message };
+
     const { error } = await supabase.from('user_entitlements').delete().eq('id', entitlementId);
-    return { error: error ? error.message : null };
+    if (error) return { error: error.message };
+
+    let roleChanged = false;
+    if (ent?.shop_products?.grants_coach_role) {
+      const { data: others } = await supabase
+        .from('user_entitlements')
+        .select('id, shop_products(grants_coach_role)')
+        .eq('athlete_id', ent.athlete_id)
+        .in('status', ['active', 'lifetime']);
+      const stillCoach = (others || []).some(o => o.shop_products?.grants_coach_role);
+      if (!stillCoach) {
+        const { error: roleErr } = await supabase
+          .from('athletes')
+          .update({ role: 'athlete' })
+          .eq('id', ent.athlete_id);
+        if (roleErr) {
+          return { error: `Entitlement revoked but coach role update failed: ${roleErr.message}` };
+        }
+        roleChanged = true;
+      }
+    }
+    return { error: null, roleChanged };
   } catch (err) { return { error: err.message }; }
 };
 
