@@ -2179,6 +2179,89 @@ export const adminRevokeEntitlement = async (entitlementId) => {
   } catch (err) { return { error: err.message }; }
 };
 
+// ---------- ADMIN: TEAMS (v1.9.18) — Manage Shop → Teams tab ----------
+// RLS: atm_write / teams_update already allow club admins to manage teams
+// and athlete_team_memberships (see policies.sql) — no policy changes
+// needed for these. Team creation needed a new teams_insert policy
+// (teams_insert_policy_v1.9.18.sql) since clubs admin'd by the caller.
+
+// Teams in the caller's admin club(s).
+export const adminListTeams = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('teams')
+      .select('id, name, club_id, clubs(name)')
+      .order('name', { ascending: true });
+    if (error) return { teams: [], error: error.message };
+    return { teams: data || [], error: null };
+  } catch (err) { return { teams: [], error: err.message }; }
+};
+
+// Create a team under the caller's admin club. Anchored on the caller's
+// athlete row primary_club_id (same pattern as the treatment pod code).
+export const adminCreateTeam = async (name) => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { team: null, error: 'Not signed in' };
+    const { data: mine, error: mineErr } = await supabase
+      .from('athletes').select('primary_club_id').eq('user_id', user.id).maybeSingle();
+    if (mineErr) return { team: null, error: mineErr.message };
+    if (!mine?.primary_club_id) return { team: null, error: 'No club found for your account — create the team via SQL instead.' };
+    const { data, error } = await supabase
+      .from('teams')
+      .insert({ name: name.trim(), club_id: mine.primary_club_id })
+      .select('id, name, club_id')
+      .single();
+    if (error) return { team: null, error: error.message };
+    return { team: data, error: null };
+  } catch (err) { return { team: null, error: err.message }; }
+};
+
+// All athlete_team_memberships with athlete + team names (roster table).
+export const adminListTeamMemberships = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('athlete_team_memberships')
+      .select('id, athlete_id, team_id, active_pods, is_active, joined_at, athletes(name, email), teams(name, club_id)')
+      .order('joined_at', { ascending: true });
+    if (error) return { memberships: [], error: error.message };
+    return { memberships: data || [], error: null };
+  } catch (err) { return { memberships: [], error: err.message }; }
+};
+
+// Add an athlete to a team. active_pods starts EMPTY on purpose: pods are
+// shop-managed now (grants_pods + user_entitlements) — granting pods via
+// membership is the legacy path and only leads to two sources of truth.
+export const adminAddTeamMembership = async (athleteId, teamId) => {
+  try {
+    const { data, error } = await supabase
+      .from('athlete_team_memberships')
+      .insert({ athlete_id: athleteId, team_id: teamId, active_pods: [], is_active: true })
+      .select('id, athlete_id, team_id')
+      .single();
+    if (error) return { membership: null, error: error.message };
+    return { membership: data, error: null };
+  } catch (err) { return { membership: null, error: err.message }; }
+};
+
+export const adminRemoveTeamMembership = async (membershipId) => {
+  try {
+    const { error } = await supabase
+      .from('athlete_team_memberships')
+      .delete().eq('id', membershipId);
+    return { error: error ? error.message : null };
+  } catch (err) { return { error: err.message }; }
+};
+
+export const adminSetMembershipActive = async (membershipId, isActive) => {
+  try {
+    const { error } = await supabase
+      .from('athlete_team_memberships')
+      .update({ is_active: isActive }).eq('id', membershipId);
+    return { error: error ? error.message : null };
+  } catch (err) { return { error: err.message }; }
+};
+
 // ==========================================
 // TREATMENT POD (v1.7.0) — club therapists,
 // availability slots and bookings.
