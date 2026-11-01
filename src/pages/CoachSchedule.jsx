@@ -475,13 +475,19 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
     const sevenDaysAgo = new Date(today); sevenDaysAgo.setDate(today.getDate() - 7);
     const twentyEightDaysAgo = new Date(today); twentyEightDaysAgo.setDate(today.getDate() - 28);
 
-    // Wellness windows keyed by calendar day so time-of-day never shifts a log's day
-    const DAY_MS = 24 * 60 * 60 * 1000;
+    // Wellness windows keyed by LOCAL CALENDAR DAY. Day keys must be built with
+    // Date calendar arithmetic — never `startOfToday - N * DAY_MS`. Millisecond
+    // subtraction lands an hour off local midnight whenever a DST transition
+    // falls inside the window (Europe/Madrid on Oct 25 2026: every key older
+    // than the boundary was 01:00 CEST instead of 00:00), so wellDayComp
+    // silently missed every log older than the transition — the 7d chart worked
+    // while 30d/90d were blank (v1.9.20 regression, and the original complaint).
     const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
-    const wellMin7 = startOfToday - 6 * DAY_MS;    // last 7 days incl. today
-    const wellMin3 = startOfToday - 2 * DAY_MS;    // last 3 days incl. today
-    const wellMin90 = startOfToday - 89 * DAY_MS;  // last 90 days incl. today (full wellness chart series)
-    const wellMin28 = startOfToday - 27 * DAY_MS;  // last 28 days incl. today
+    const localMidnight = (daysAgo) => new Date(today.getFullYear(), today.getMonth(), today.getDate() - daysAgo).getTime();
+    const wellMin7 = localMidnight(6);    // last 7 days incl. today
+    const wellMin3 = localMidnight(2);    // last 3 days incl. today
+    const wellMin90 = localMidnight(89);  // last 90 days incl. today (full wellness chart series)
+    const wellMin28 = localMidnight(27);  // last 28 days incl. today
 
     return roster.map(ath => {
       const athLogs = logsByAthlete[ath.name] || [];
@@ -699,7 +705,11 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
 
       for (let i = 89; i >= 0; i--) {
 
-        const c = wellDayComp[startOfToday - i * DAY_MS];
+        // Calendar arithmetic — always lands on a true local midnight, so it
+        // aligns with the entry day-keys across DST boundaries.
+        const dayKey = new Date(today.getFullYear(), today.getMonth(), today.getDate() - i).getTime();
+
+        const c = wellDayComp[dayKey];
 
         const d = new Date(today); d.setDate(today.getDate() - i);
 
