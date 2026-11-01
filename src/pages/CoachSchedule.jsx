@@ -480,7 +480,7 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
     const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
     const wellMin7 = startOfToday - 6 * DAY_MS;    // last 7 days incl. today
     const wellMin3 = startOfToday - 2 * DAY_MS;    // last 3 days incl. today
-    const wellMin14 = startOfToday - 13 * DAY_MS;  // last 14 days incl. today
+    const wellMin90 = startOfToday - 89 * DAY_MS;  // last 90 days incl. today (full wellness chart series)
     const wellMin28 = startOfToday - 27 * DAY_MS;  // last 28 days incl. today
 
     return roster.map(ath => {
@@ -495,14 +495,14 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
       });
 
       const dailyLoads = [];
-      for (let i = 27; i >= 0; i--) {
+      for (let i = 89; i >= 0; i--) {
         const dd = new Date(today); dd.setDate(today.getDate() - i);
         const dayKey = new Date(dd.getFullYear(), dd.getMonth(), dd.getDate()).getTime();
         dailyLoads.push(dailyMap[dayKey] || 0);
       }
 
       const acuteLoad = dailyLoads.slice(-7).reduce((a, b) => a + b, 0);
-      const chronicLoad = dailyLoads.reduce((a, b) => a + b, 0) / 4;
+      const chronicLoad = dailyLoads.slice(-28).reduce((a, b) => a + b, 0) / 4;  // 28d chronic window preserved for the headline ACWR
 
       let acwr = 0;
       if (chronicLoad > 0) acwr = acuteLoad / chronicLoad;
@@ -626,13 +626,29 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
 
       const sessions7d = athLogs.filter(l => l.rawDate >= sevenDaysAgo).length;
 
-      const acwrHistory = [];
-      for (let i = 13; i >= 0; i--) {
+      const acwrHistory90d = [];
+
+      for (let i = 89; i >= 0; i--) {
+
         const endIdx = dailyLoads.length - 1 - i;
+
+        const dd = new Date(today); dd.setDate(today.getDate() - i);
+
+        const dateStr = dd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
         const acuteWin = dailyLoads.slice(Math.max(0, endIdx - 6), endIdx + 1).reduce((a, b) => a + b, 0);
+
         const chronicWin = dailyLoads.slice(Math.max(0, endIdx - 27), endIdx + 1).reduce((a, b) => a + b, 0) / 4;
-        acwrHistory.push({ day: 13 - i, acwr: chronicWin > 0 ? Math.round((acuteWin / chronicWin) * 100) / 100 : null });
+
+        acwrHistory90d.push({ day: dateStr, acwr: chronicWin > 0 ? Math.round((acuteWin / chronicWin) * 100) / 100 : null });
+
       }
+
+      const acwrHistory = acwrHistory90d.slice(-14);       // backward compatible default (drilled view)
+
+      const acwrHistory7d = acwrHistory90d.slice(-7);
+
+      const acwrHistory30d = acwrHistory90d.slice(-30);
 
       // --- WELLNESS SUMMARY CALCULATIONS ---
       let well7Sum = 0, well7Count = 0;
@@ -650,7 +666,7 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
         if (w.sleep != null) { daySum += w.sleep; dayCount++; }
         if (w.nutrition != null) { daySum += w.nutrition; dayCount++; }
 
-        if (dk >= wellMin14) {
+        if (dk >= wellMin90) {
           if (!wellDayComp[dk]) wellDayComp[dk] = { sum: 0, count: 0 };
           wellDayComp[dk].sum += daySum;
           wellDayComp[dk].count += dayCount;
@@ -679,11 +695,25 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
         gripPct = Math.round((latestGrip / gripMax) * 1000) / 10;
       }
 
-      const wellnessHistory = [];
-      for (let i = 13; i >= 0; i--) {
+      const wellnessHistory90d = [];
+
+      for (let i = 89; i >= 0; i--) {
+
         const c = wellDayComp[startOfToday - i * DAY_MS];
-        wellnessHistory.push({ day: 13 - i, wellness: c && c.count > 0 ? Math.round((c.sum / c.count) * 10) / 10 : null });
+
+        const d = new Date(today); d.setDate(today.getDate() - i);
+
+        const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+        wellnessHistory90d.push({ day: dateStr, wellness: c && c.count > 0 ? Math.round((c.sum / c.count) * 10) / 10 : null });
+
       }
+
+      const wellnessHistory = wellnessHistory90d.slice(-14);  // backward compatible default
+
+      const wellnessHistory7d = wellnessHistory90d.slice(-7);
+
+      const wellnessHistory30d = wellnessHistory90d.slice(-30);
       const hasWellness = wellnessHistory.some(h => h.wellness != null);
 
       let wellnessTip = null;
@@ -713,11 +743,17 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
         strain, 
         sessions7d, 
         acwrHistory, 
+        acwrHistory7d, 
+        acwrHistory30d, 
+        acwrHistory90d, 
         flags, 
         wellnessComposite, 
         wellnessTip, 
         gripPct, 
         wellnessHistory, 
+        wellnessHistory7d, 
+        wellnessHistory30d, 
+        wellnessHistory90d, 
         hasWellness 
       };
     });
@@ -1391,10 +1427,10 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
                                   );
                                 })()}
 
-                                 <h4 style={{ margin: '16px 0 8px 0', color: '#0f172a', fontSize: '14px' }}>ACWR Trend (Last 14 Days)</h4>
+                                 <h4 style={{ margin: '16px 0 8px 0', color: '#0f172a', fontSize: '14px' }}>ACWR Trend ({loadChartTimeframe === 'week' ? '7d' : loadChartTimeframe === 'month' ? '30d' : '90d'})</h4>
                                 <div style={{ height: '80px', width: '100%' }}>
                                   <ResponsiveContainer width="100%" height="100%">
-                                    <LineChart data={ath.acwrHistory}>
+                                    <LineChart data={loadChartTimeframe === 'week' ? ath.acwrHistory7d : loadChartTimeframe === 'month' ? ath.acwrHistory30d : ath.acwrHistory90d}>
                                       <XAxis dataKey="day" hide />
                                       <YAxis domain={[0, 2]} hide />
                                       <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
@@ -1404,10 +1440,10 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
                                 </div>
                                 {ath.hasWellness && (
                                   <>
-                                    <h4 style={{ margin: '16px 0 8px 0', color: '#0f172a', fontSize: '14px' }}>Daily Wellness (14 Day)</h4>
+                                    <h4 style={{ margin: '16px 0 8px 0', color: '#0f172a', fontSize: '14px' }}>Daily Wellness ({loadChartTimeframe === 'week' ? '7d' : loadChartTimeframe === 'month' ? '30d' : '90d'})</h4>
                                     <div style={{ height: '80px', width: '100%' }}>
                                       <ResponsiveContainer width="100%" height="100%">
-                                        <LineChart data={ath.wellnessHistory}>
+                                        <LineChart data={loadChartTimeframe === 'week' ? ath.wellnessHistory7d : loadChartTimeframe === 'month' ? ath.wellnessHistory30d : ath.wellnessHistory90d}>
                                           <XAxis dataKey="day" hide />
                                           <YAxis domain={[1, 10]} hide />
                                           <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
