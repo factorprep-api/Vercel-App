@@ -394,15 +394,11 @@ function Whiteboard() {
   };
 
   const handleDragEnd = (id, node) => {
-    const newX = node.x();
-    const newY = node.y();
     // Konva moves the node itself during drag; committing the node position
     // is enough for every shape type (points are stored relative to it).
     shapesRef.current = shapesRef.current.map((s) => (
       s.id === id ? { ...s, x: node.x(), y: node.y() } : s
     ));
-    
-    shapesRef.current = updatedShapes;
     addToHistory();
   };
 
