@@ -85,7 +85,7 @@ function resolveCachedMedStatus(email) {
 
 export default function AthleteHub() {
   const navigate = useNavigate();
-  const { userEmail, athleteName: authAthleteName, isLoading: authLoading, role } = useAuth();
+  const { userEmail, athleteName: authAthleteName, isLoading: authLoading } = useAuth();
   
   // Instantaneous state initialization from memory or localStorage (0ms!)
   const [activePods, setActivePods] = useState(() => {

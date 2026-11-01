@@ -3,8 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
 import { fetchAthletes, fetchSchedule, fetchWellnessLogs, saveScheduleSession, deleteScheduleSession, fetchAttachablePrograms, updateSessionLog, updateScheduleProposal } from '../api';
-import { ArrowLeft, Calendar, BarChart2, Plus, AlertCircle, CheckCircle, Clock, X, AlertTriangle, Users, Layers, CalendarDays, List, Trash2, ChevronLeft, ChevronRight, Paperclip } from 'lucide-react';
-import { BarChart, Bar, Cell, LineChart, Line, ComposedChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer } from 'recharts';
+import { ArrowLeft, BarChart2, Plus, AlertCircle, CheckCircle, X, AlertTriangle, Users, Layers, CalendarDays, List, Trash2, ChevronLeft, ChevronRight, Paperclip } from 'lucide-react';
+import { BarChart, Bar, Cell, LineChart, Line, ComposedChart, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer } from 'recharts';
 
 const SQUAD_COLORS = ['#008ed3', '#0ea5e9', '#6366f1', '#8b5cf6', '#ec4899', '#ef4444', '#f97316', '#f59e0b', '#84cc16', '#10b981', '#14b8a6', '#64748b', '#a8a29e'];
 // ===== SESSION TYPE COLORS (aligned with AthleteSchedule) =====
@@ -94,19 +94,13 @@ function getWeekMonday(d) {
   return date;
 }
 
-function getWeekColor(monday) {
-  const WEEK_COLORS = ['#008ed3', '#8b5cf6', '#f59e0b', '#10b981'];
-  const weekIndex = Math.floor(getWeekMonday(monday).getTime() / (7 * 86400000));
-  return WEEK_COLORS[((weekIndex % 4) + 4) % 4];
-}
-
 function toYMD(date) {
   const d = new Date(date);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 export default function CoachSchedule() {
-  const { userEmail, role, isLoading: authLoading } = useAuth();
+  const { userEmail, isLoading: authLoading } = useAuth();
   const navigate = useNavigate();
 
   const [loading, setLoading] = useState(true);
@@ -189,7 +183,7 @@ export default function CoachSchedule() {
         showToast(`Proposed session deleted successfully.`);
         await loadData();
       }
-    } catch (err) {
+    } catch {
       showToast("Network error deleting session.", true);
     }
     setDeleting(false);
@@ -298,7 +292,7 @@ export default function CoachSchedule() {
         showToast('Session updated.');
         await loadData();
       }
-    } catch (e) {
+    } catch {
       setEditError('Network error. Please try again.');
     }
     setEditSaving(false);
@@ -482,7 +476,6 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
     // than the boundary was 01:00 CEST instead of 00:00), so wellDayComp
     // silently missed every log older than the transition — the 7d chart worked
     // while 30d/90d were blank (v1.9.20 regression, and the original complaint).
-    const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
     const localMidnight = (daysAgo) => new Date(today.getFullYear(), today.getMonth(), today.getDate() - daysAgo).getTime();
     const wellMin7 = localMidnight(6);    // last 7 days incl. today
     const wellMin3 = localMidnight(2);    // last 3 days incl. today
@@ -820,38 +813,6 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
       });
   }, [groupedAuditSessions, squadSelection, auditFilter]);
 
-  const handleAuditNavigate = (direction) => {
-    const next = new Date(auditMonth);
-    if (auditScope === 'week') {
-      next.setDate(next.getDate() + (direction === 'prev' ? -7 : 7));
-    } else if (auditScope === 'season') {
-      next.setDate(next.getDate() + (direction === 'prev' ? -84 : 84));
-    } else {
-      next.setDate(next.getDate() + (direction === 'prev' ? -28 : 28));
-    }
-    setAuditMonth(next);
-  };
-
-  const getAuditHeaderDateLabel = () => {
-    if (auditScope === 'week') {
-      const mon = getWeekMonday(auditMonth);
-      return `Week of ${mon.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
-    }
-    if (auditScope === 'season') {
-      const start = getWeekMonday(auditMonth);
-      const end = new Date(start);
-      end.setDate(end.getDate() + 83);
-      return `Season Block (${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })})`;
-    }
-    // "Month" = rolling 4-week window: current week + past 3 weeks
-    const mon = getWeekMonday(auditMonth);
-    const start = new Date(mon);
-    start.setDate(start.getDate() - 21);
-    const end = new Date(mon);
-    end.setDate(end.getDate() + 6);
-    return `${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
-  };
-
   const auditScopeMetrics = useMemo(() => {
     let start, end;
     if (auditScope === 'week') {
@@ -966,29 +927,6 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
     return days;
   }, [auditMonth, auditScope, filteredAuditSessions]);
 
-  const coachAgendaWeekGroups = useMemo(() => {
-    const groups = [];
-    let lastMondayTime = null;
-    const sorted = [...filteredAuditSessions].sort((a, b) => b.rawDate - a.rawDate);
-    sorted.forEach(session => {
-      const monday = getWeekMonday(session.rawDate);
-      const mondayTime = monday.getTime();
-      if (mondayTime !== lastMondayTime) {
-        groups.push({ monday, sessions: [] });
-        lastMondayTime = mondayTime;
-      }
-      groups[groups.length - 1].sessions.push(session);
-    });
-    groups.forEach(g => {
-      const allLogs = g.sessions.flatMap(s => s.athletes || []);
-      const actualLogs = allLogs.filter(l => l.status !== 'Proposed');
-      const proposedLogs = allLogs;
-      g.actualM = calcCoachMetrics(actualLogs, true);
-      g.proposedM = calcCoachMetrics(proposedLogs, false);
-      g.color = getWeekColor(g.monday);
-    });
-    return groups;
-  }, [filteredAuditSessions]);
 
   const squadComparison = useMemo(() => {
     if (squadSelection.length === 0) return null;
@@ -1175,7 +1113,7 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
         showToast(`Session proposed for ${count} athlete${count > 1 ? 's' : ''}!`);
         loadData();
       }
-    } catch(e) { showToast("Failed to save session.", true); }
+    } catch { showToast("Failed to save session.", true); }
     setSaving(false);
   }
 
@@ -2376,7 +2314,7 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
   );
 }
 
-const SquadZoneHeatmap = memo(function SquadZoneHeatmap({ data, squadMembers, setSelectedCell, selectedCell }) {
+const SquadZoneHeatmap = memo(function SquadZoneHeatmap({ data, setSelectedCell, selectedCell }) {
   const [typeFilter, setTypeFilter] = useState('All');
   const [mode, setMode] = useState('share');
 

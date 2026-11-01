@@ -1715,7 +1715,7 @@ const fetchAllExercises = async () => {
   const PAGE_SIZE = 1000;
   const all = [];
   let from = 0;
-  let page = null;
+  let page;
   do {
     const { data, error } = await supabase
       .from('exercises')

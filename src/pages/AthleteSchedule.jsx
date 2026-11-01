@@ -419,7 +419,7 @@ export default function AthleteSchedule() {
       } else {
         setEditError(res.message || 'Failed to save changes.');
       }
-    } catch (e) {
+    } catch {
       setEditError('Network error. Please try again.');
     }
     setEditSaving(false);
