@@ -151,7 +151,7 @@ const FOOD_TIERS_FALLBACK = [
 // one. Falls back to the per-100 g score when a row (older log items) has
 // no per-kJ measure.
 //
-// Calibration (v1.9.8, recalibrated 2026-10-27): percentile-based, four
+// Calibration (v1.9.8, recalibrated 2026-10-27; tints re-staggered 2026-11-02): percentile-based, four
 // equal bands. The score distribution is fixed at ETL time — percentile
 // ranks over the whole active population — so the quartile cutoffs are
 // stable until the dataset changes. Measured from the shipped FNDDS+AUSNUT
@@ -163,14 +163,20 @@ const FOOD_TIERS_FALLBACK = [
 // amber ≥ 42. Band shares at these cutoffs:
 //   per-kJ:   green 25.3%  yellow 23.7%  amber 26.8%  red 24.1%
 //   per-100g: green 31.6%  yellow 23.0%  amber 20.3%  red 25.1%
+// Badge tints: 2026-11-02 the 100-level pastels (yellow/amber/red) were
+// indistinguishable at badge size — amber read as red — so all four bands
+// moved up one tint step (200-level). scoreBadge() bands the ROUNDED
+// headline, not the raw value: the number shown on the badge is always
+// the number its colour was chosen from (a displayed 53 can no longer be
+// amber because the raw score was 52.6).
 // Re-derive via scripts/simulate_scores.mjs if the scoring population
 // changes (import, activation, axis set).
 const qualityBand = (headline) => {
   if (headline == null) return { bg: '#e2e8f0', fg: '#64748b' };
-  if (headline >= 61) return { bg: '#dcfce7', fg: '#15803d' }; // top quartile
-  if (headline >= 53) return { bg: '#fef9c3', fg: '#854d0e' }; // 2nd quartile
-  if (headline >= 42) return { bg: '#ffedd5', fg: '#c2410c' }; // 3rd quartile
-  return { bg: '#fee2e2', fg: '#b91c1c' };                     // bottom quartile
+  if (headline >= 61) return { bg: '#bbf7d0', fg: '#15803d' }; // top quartile
+  if (headline >= 53) return { bg: '#fef08a', fg: '#854d0e' }; // 2nd quartile
+  if (headline >= 42) return { bg: '#fed7aa', fg: '#c2410c' }; // 3rd quartile
+  return { bg: '#fecaca', fg: '#b91c1c' };                     // bottom quartile
 };
 
 const scoreBadge = (score, axes, kjScore, componentsText) => {
@@ -181,7 +187,11 @@ const scoreBadge = (score, axes, kjScore, componentsText) => {
   const title = parts.length ? parts.join(' · ') : 'Not scored';
   const headline = kjScore != null ? kjScore : score;
   if (headline == null) return { bg: '#e2e8f0', fg: '#64748b', label: '—', title };
-  return { ...qualityBand(headline), label: `${Math.round(headline)}`, title };
+  // Band the rounded headline, not the raw value — the badge shows
+  // Math.round(headline), so its colour must come from the same rounded
+  // number or a displayed 53 (raw 52.6) would render in the amber band.
+  const rounded = Math.round(headline);
+  return { ...qualityBand(rounded), label: `${rounded}`, title };
 };
 
 // ---- Energy balance (v1.9.7): BMR + training vs logged intake ----
@@ -973,7 +983,9 @@ export default function AthleteNutrition() {
     });
     return wsum > 0 ? ssum / wsum : null;
   }, [items]);
-  const dayBand = qualityBand(dayQuality);
+  // Same rounding rule as scoreBadge: the ring's colour must match the
+  // rounded number quoted in its tooltip.
+  const dayBand = qualityBand(dayQuality == null ? null : Math.round(dayQuality));
 
   const fmt = (v) => v > 0 ? (v < 10 ? v.toFixed(1) : Math.round(v)) : '—';
 
