@@ -169,13 +169,18 @@ const FOOD_TIERS_FALLBACK = [
 // headline, not the raw value: the number shown on the badge is always
 // the number its colour was chosen from (a displayed 53 can no longer be
 // amber because the raw score was 52.6).
+// Tint follow-up (v1.9.29, 2026-11-02): amber #fed7aa vs red #fecaca were
+// still too close at badge size (both pale, near-identical lightness) — the
+// amber band deepened to saturated orange-300 #fdba74 (fg #9a3412 for text
+// contrast) while red stays pale. The two now separate by lightness AND
+// saturation, not just hue. Green/yellow untouched (read fine).
 // Re-derive via scripts/simulate_scores.mjs if the scoring population
 // changes (import, activation, axis set).
 const qualityBand = (headline) => {
   if (headline == null) return { bg: '#e2e8f0', fg: '#64748b' };
   if (headline >= 61) return { bg: '#bbf7d0', fg: '#15803d' }; // top quartile
   if (headline >= 53) return { bg: '#fef08a', fg: '#854d0e' }; // 2nd quartile
-  if (headline >= 42) return { bg: '#fed7aa', fg: '#c2410c' }; // 3rd quartile
+  if (headline >= 42) return { bg: '#fdba74', fg: '#9a3412' }; // 3rd quartile
   return { bg: '#fecaca', fg: '#b91c1c' };                     // bottom quartile
 };
 
