@@ -171,9 +171,12 @@ const FOOD_TIERS_FALLBACK = [
 // amber because the raw score was 52.6).
 // Tint follow-up (v1.9.29, 2026-11-02): amber #fed7aa vs red #fecaca were
 // still too close at badge size (both pale, near-identical lightness) — the
-// amber band deepened to saturated orange-300 #fdba74 (fg #9a3412 for text
-// contrast) while red stays pale. The two now separate by lightness AND
-// saturation, not just hue. Green/yellow untouched (read fine).
+// amber band deepened to saturated orange-300 #fdba74 while red stayed pale.
+// Tint follow-up 2 (v1.9.30, 2026-11-02): field feedback — orange vs pale red
+// still too close once orange deepened. Red now deepens to rich red-400
+// #f87171 (fg #7f1d1d for text contrast). The scale now steps cleanly:
+// pale green -> pale yellow -> saturated orange -> rich red, each visually
+// distinct at badge size. Cutoffs untouched.
 // Re-derive via scripts/simulate_scores.mjs if the scoring population
 // changes (import, activation, axis set).
 const qualityBand = (headline) => {
@@ -181,7 +184,7 @@ const qualityBand = (headline) => {
   if (headline >= 61) return { bg: '#bbf7d0', fg: '#15803d' }; // top quartile
   if (headline >= 53) return { bg: '#fef08a', fg: '#854d0e' }; // 2nd quartile
   if (headline >= 42) return { bg: '#fdba74', fg: '#9a3412' }; // 3rd quartile
-  return { bg: '#fecaca', fg: '#b91c1c' };                     // bottom quartile
+  return { bg: '#f87171', fg: '#7f1d1d' };                     // bottom quartile
 };
 
 const scoreBadge = (score, axes, kjScore, componentsText) => {
