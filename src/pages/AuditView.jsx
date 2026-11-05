@@ -194,8 +194,8 @@ export default function AuditView() {
                     fontWeight: '800',
                     padding: '3px 10px',
                     borderRadius: '999px',
-                    background: entry.whoRole === 'coach' ? '#eef2ff' : '#f0fdf4',
-                    color: entry.whoRole === 'coach' ? '#4f46e5' : '#16a34a',
+                    background: entry.whoRole === 'coach' ? '#eef2ff' : entry.whoRole === 'therapist' ? '#fff7ed' : '#f0fdf4',
+                    color: entry.whoRole === 'coach' ? '#4f46e5' : entry.whoRole === 'therapist' ? '#ea580c' : '#16a34a',
                     textTransform: 'capitalize'
                   }}>
                     {entry.whoRole || 'unknown role'}
@@ -203,9 +203,9 @@ export default function AuditView() {
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '13px', color: '#64748b' }}>
-                  <div><b style={{ color: '#334155' }}>Edited:</b> {formatTimestamp(entry.date)} by {entry.whoEmail || 'unknown'}</div>
+                  <div><b style={{ color: '#334155' }}>Edited:</b> {formatTimestamp(entry.date)} by {entry.whoName || entry.whoEmail || 'unknown'}</div>
                   <div><b style={{ color: '#334155' }}>Session:</b> {entry.sessionDate} · {entry.program}</div>
-                  <div><b style={{ color: '#334155' }}>Change:</b> Set {entry.setNumber}, {entry.fieldChanged} — <span style={{ color: '#dc2626', textDecoration: 'line-through' }}>{String(entry.oldValue ?? '(blank)')}</span> <span style={{ color: '#94a3b8' }}>→</span> <span style={{ color: '#059669', fontWeight: '800' }}>{String(entry.newValue ?? '(blank)')}</span></div>
+                  <div><b style={{ color: '#334155' }}>Change:</b> {entry.setNumber != null ? `Set ${entry.setNumber}, ` : ''}{entry.fieldChanged} — <span style={{ color: '#dc2626', textDecoration: 'line-through' }}>{String(entry.oldValue ?? '(blank)')}</span> <span style={{ color: '#94a3b8' }}>→</span> <span style={{ color: '#059669', fontWeight: '800' }}>{String(entry.newValue ?? '(blank)')}</span></div>
                 </div>
 
               </div>

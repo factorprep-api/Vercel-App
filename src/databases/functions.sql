@@ -1,6 +1,7 @@
 -- =====================================================================
 -- Helper Functions — Exercise/Team Management App
--- Version: v1.4.6 (verified 2026-09-20 against live Supabase deployment)
+-- Version: v1.10.0 (medical staff gatekeepers (15)/(16) added —
+-- medical_staff_logging_v1.10.0.sql mirrors them for existing DBs)
 -- Source: pg_proc dump from production
 -- =====================================================================
 
@@ -248,4 +249,105 @@ as $function$
   where a.user_id = auth.uid()
     and sp.grants_pods is not null
     and e.status in ('active', 'lifetime')
+$function$;
+-- =====================================================================
+-- MEDICAL STAFF GATEKEEPERS (v1.10.0)
+-- Referenced by policies.sql (ml_select / ml_update / ml_insert /
+-- al_select). SECURITY DEFINER + stable so RLS policies can call them
+-- without recursive RLS checks. Both resolve the CALLER's role for one
+-- target athlete: team coach = team_memberships; admin = club anchored
+-- to the athlete's primary club or a team they sit on; therapist =
+-- club_therapists + treated bookings from treatment_pod_v1.7.0.sql.
+-- (Mirrored in medical_staff_logging_v1.10.0.sql for existing DBs.)
+-- =====================================================================
+
+-- (15) viewer_is_medical_staff(p_athlete_id uuid)
+-- Full staff access: read + update (self, coach, admin, treating therapist).
+create or replace function public.viewer_is_medical_staff(p_athlete_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path to ''
+as $function$
+  select (
+    p_athlete_id = public.current_athlete_id()
+    or exists (
+      select 1 from public.athlete_team_memberships m
+      join public.team_memberships tm on tm.team_id = m.team_id
+      where m.athlete_id = p_athlete_id
+        and m.is_active
+        and tm.user_id = (select auth.uid())
+    )
+    or exists (
+      select 1 from public.athletes a
+      where a.id = p_athlete_id
+        and (
+          a.primary_club_id in (select public.get_user_admin_club_ids())
+          or exists (
+            select 1 from public.athlete_team_memberships am
+            join public.teams t on t.id = am.team_id
+            where am.athlete_id = p_athlete_id
+              and am.is_active
+              and t.club_id in (select public.get_user_admin_club_ids())
+          )
+        )
+    )
+    -- treating therapist: active club therapist, same club as the
+    -- athlete, with at least one treatment booking with them.
+    or exists (
+      select 1 from public.club_therapists ct
+      join public.athletes tp on tp.id = ct.athlete_id
+      join public.athletes ap on ap.id = p_athlete_id
+      where ct.athlete_id = public.current_athlete_id()
+        and ct.is_active
+        and ap.primary_club_id = tp.primary_club_id
+        and exists (
+          select 1 from public.treatment_bookings tb
+          where tb.athlete_id = p_athlete_id
+            and exists (
+              select 1 from public.therapist_slots ts
+              where ts.id = tb.slot_id
+                and ts.therapist_id = ct.id
+            )
+        )
+    )
+  )
+$function$;
+
+-- (16) viewer_can_log_medical(p_athlete_id uuid)
+-- Injury LOGGING rights: athlete themself, team coach, or club admin.
+-- Deliberately EXCLUDES the treating therapist (physios add treatment
+-- detail + status to existing injuries, they do not open new ones).
+create or replace function public.viewer_can_log_medical(p_athlete_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path to ''
+as $function$
+  select (
+    p_athlete_id = public.current_athlete_id()
+    or exists (
+      select 1 from public.athlete_team_memberships m
+      join public.team_memberships tm on tm.team_id = m.team_id
+      where m.athlete_id = p_athlete_id
+        and m.is_active
+        and tm.user_id = (select auth.uid())
+    )
+    or exists (
+      select 1 from public.athletes a
+      where a.id = p_athlete_id
+        and (
+          a.primary_club_id in (select public.get_user_admin_club_ids())
+          or exists (
+            select 1 from public.athlete_team_memberships am
+            join public.teams t on t.id = am.team_id
+            where am.athlete_id = p_athlete_id
+              and am.is_active
+              and t.club_id in (select public.get_user_admin_club_ids())
+          )
+        )
+    )
+  )
 $function$;
