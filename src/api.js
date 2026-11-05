@@ -1562,7 +1562,27 @@ export const getLastLoggedWeight = async (athleteName, exerciseName) => {
 };
 
 // Fixed to accept both object syntax and standard arguments to prevent crashes
-export const createAthlete = async () => ({ status: 'Success' });
+// v1.10.1: REAL signup row creation — this was a stub returning Success
+// (Google-Sheets era leftover), so new signups got an auth user but NO
+// athletes row: invisible to every admin screen and unmatchable by the
+// Paddle webhook. RLS permits self-inserts (athletes_insert: user_id =
+// auth.uid(), no club, athlete role) — this call now actually writes it.
+export const createAthlete = async ({ email, name, requestedClubId = null }) => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { status: 'Error', message: 'Not signed in' };
+    const row = {
+      user_id: user.id,
+      name: name || email.split('@')[0],
+      email: email.toLowerCase().trim(),
+      role: 'athlete',
+      requested_club_id: requestedClubId || null
+    };
+    const { error } = await supabase.from('athletes').upsert(row, { onConflict: 'user_id' });
+    if (error) return { status: 'Error', message: error.message };
+    return { status: 'Success' };
+  } catch (err) { return { status: 'Error', message: err.message }; }
+};
 
 export const getAthleteByEmail = async (email) => {
   try {
@@ -2273,6 +2293,29 @@ export const adminDeleteShopProduct = async (productId) => {
   try {
     const { error } = await supabase.from('shop_products').delete().eq('id', productId);
     return { error: error ? error.message : null };
+  } catch (err) { return { error: err.message }; }
+};
+
+// v1.10.1: pending club signups — signups with no club yet (and any
+// legacy stray), surfaced to the shop admin for one-click approval.
+export const adminListPendingSignups = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('athletes')
+      .select('id, name, email, role, requested_club_id, created_at, clubs!athletes_requested_club_id_fkey(name)')
+      .is('primary_club_id', null)
+      .order('created_at', { ascending: true });
+    if (error) return { pending: [], error: error.message };
+    return { pending: (data || []).map(p => ({ ...p, requested_club_name: p.clubs ? p.clubs.name : null })), error: null };
+  } catch (err) { return { pending: [], error: err.message }; }
+};
+
+// One-click approve: anchors the signup into their requested club (or an
+// explicit club — the RPC validates admin-of-target-club or shop admin).
+export const adminApproveClubRequest = async (athleteId, clubId = null) => {
+  try {
+    const { data, error } = await supabase.rpc('approve_club_request', { p_athlete_id: athleteId, p_club_id: clubId });
+    return { result: data, error: error ? error.message : null };
   } catch (err) { return { error: err.message }; }
 };
 

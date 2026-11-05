@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '../supabase';
 import { createAthlete } from '../api';
 import { Eye, EyeOff } from 'lucide-react';
@@ -25,6 +25,18 @@ export default function Login() {
   const [showForgot, setShowForgot] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [waiverAccepted, setWaiverAccepted] = useState(false);
+  // v1.10.1: club picker at signup — pending signups surface to that
+  // club's admins in Manage Shop for one-click approval.
+  const [clubs, setClubs] = useState([]);
+  const [requestedClub, setRequestedClub] = useState('');
+
+  useEffect(() => {
+    if (!isSignUp) return;
+    let dead = false;
+    supabase.from('clubs').select('id, name').order('name')
+      .then(({ data }) => { if (!dead && data) setClubs(data); });
+    return () => { dead = true; };
+  }, [isSignUp]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -53,7 +65,7 @@ export default function Login() {
 
         if (signUpError) throw signUpError;
 
-        createAthlete({ email, name })
+        createAthlete({ email, name, requestedClubId: requestedClub || null })
           .then(result => console.log('Sheets sync result:', result))
           .catch(err => console.error('Background Sheets sync failed:', err));
 
@@ -139,6 +151,17 @@ export default function Login() {
                 <div style={{ marginBottom: '20px' }}>
                   <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold', color: '#555', fontSize: '14px' }}>Name</label>
                   <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Your full name" required style={{ width: '100%', padding: '12px', border: '2px solid #ddd', borderRadius: '6px', fontSize: '16px', boxSizing: 'border-box' }} />
+                </div>
+              )}
+
+              {isSignUp && (
+                <div style={{ marginBottom: '20px' }}>
+                  <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold', color: '#555', fontSize: '14px' }}>Club</label>
+                  <select value={requestedClub} onChange={(e) => setRequestedClub(e.target.value)} style={{ width: '100%', padding: '12px', border: '2px solid #ddd', borderRadius: '6px', fontSize: '16px', boxSizing: 'border-box', background: 'white' }}>
+                    <option value="">— no club (individual) —</option>
+                    {clubs.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                  <p style={{ margin: '6px 0 0', fontSize: 12, color: '#888' }}>Your club admin approves new members — no email needed.</p>
                 </div>
               )}
 

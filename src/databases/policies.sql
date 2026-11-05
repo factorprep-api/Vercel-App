@@ -1,7 +1,9 @@
 -- =====================================================================
 -- RLS Policies — Exercise/Team Management App
--- Version: v1.10.0 (medical staff logging — ml_* + al_select reference
--- the gatekeeper functions in functions.sql sections (15)/(16))
+-- Version: v1.10.1 (pending-signup visibility: athletes_select admits
+-- admins of the requested club + the shop admin for unanchored signups;
+-- clubs_signup_select lets the signup form offer the club picker.
+-- signup_club_requests_v1.10.1.sql mirrors these for existing DBs)
 -- Source: pg_policies dump from production
 -- =====================================================================
 
@@ -127,6 +129,11 @@ create policy athletes_select on public.athletes for select
                    or exists (select 1 from teams t
                               where t.id = m.team_id
                                 and t.club_id in (select get_user_admin_club_ids()))))
+    -- v1.10.1: pending club requests — admins of the requested club
+    or (primary_club_id is null
+        and requested_club_id in (select get_user_admin_club_ids()))
+    -- v1.10.1: safety net — the shop admin sees any unanchored signup
+    or (primary_club_id is null and is_shop_admin())
   );
 
 create policy athletes_write on public.athletes for update
@@ -240,6 +247,13 @@ create policy clubs_select on public.clubs for select
 create policy clubs_update on public.clubs for update
   using (id in (select get_user_admin_club_ids()))
   with check (id in (select get_user_admin_club_ids()));
+
+-- v1.10.1: club names are public-facing (the shop sells club plans) and
+-- the signup form needs id + name for the club picker before login.
+drop policy if exists clubs_signup_select on public.clubs;
+create policy clubs_signup_select on public.clubs for select
+  to anon, authenticated
+  using (true);
 
 -- exercises
 create policy ex_delete on public.exercises for delete

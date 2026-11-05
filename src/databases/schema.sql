@@ -20,6 +20,9 @@
 -- v1.10.0 changes: medical_entries.logged_by (staff audit trail);
 -- audit_logs widened for medical_entries + audit trigger. Treatment-pod
 -- tables (v1.7.0) live in treatment_pod_v1.7.0.sql, not here.
+-- v1.10.1 changes: athletes.email / coach_user_id / requested_club_id
+-- (self-serve signups + automatic purchases — see
+-- signup_club_requests_v1.10.1.sql for the live-deployment migration).
 -- =====================================================================
 
 -- ---------- CLUB / TEAM STRUCTURE ----------
@@ -59,13 +62,22 @@ create table public.club_memberships (
 -- ---------- ATHLETES ----------
 -- The PERSON. user_id = their own login (immutable, trigger-enforced).
 -- role: NULL or 'athlete' at signup; admins promote to 'coach'
--- (trigger-enforced). primary_club_id: admin-set anchor (trigger-enforced).
+-- (trigger-enforced). primary_club_id: admin-set anchor
+-- (trigger-enforced; the shop admin may also set it via
+-- approve_club_request, v1.10.1). email: duplicate of the auth email —
+-- live queries and the Paddle webhook match buyers by it.
+-- coach_user_id: which coach account manages this athlete (Sheets-era).
+-- requested_club_id: club the user asked to join at signup (v1.10.1);
+-- pending signups surface to that club's admins, cleared on approval.
 create table public.athletes (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null unique references auth.users(id) on delete cascade,
   name text not null,
   primary_club_id uuid references public.clubs(id),
   role text check (role in ('athlete', 'coach')),
+  email text,
+  coach_user_id uuid references auth.users(id),
+  requested_club_id uuid references public.clubs(id) on delete set null,
   created_at timestamptz not null default now()
 );
 
@@ -296,6 +308,7 @@ create index idx_atm_athlete         on public.athlete_team_memberships(athlete_
 create index idx_atm_team            on public.athlete_team_memberships(team_id);
 create index idx_atm_lookup          on public.athlete_team_memberships(athlete_id, team_id, is_active);
 create index idx_athletes_user_id    on public.athletes(user_id);
+create index idx_athletes_requested_club on public.athletes(requested_club_id);
 create index idx_athletes_role       on public.athletes(role);
 
 -- Session tier
@@ -342,7 +355,8 @@ for each row execute function public.prevent_athlete_user_id_change();
 
 -- (2) athletes.role and athletes.primary_club_id are admin-controlled.
 --     Athletes updating their own name pass through untouched
---     (columns unchanged -> early return).
+--     (columns unchanged -> early return). v1.10.1: the shop admin may
+--     also set them (stray-signup anchoring via approve_club_request).
 create or replace function public.protect_athlete_admin_fields()
 returns trigger language plpgsql security definer set search_path = '' as $$
 begin
