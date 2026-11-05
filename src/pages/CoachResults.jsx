@@ -295,7 +295,8 @@ export default function CoachResults() {
           if (isNaN(d.getTime())) d = new Date();
           medByAthlete[athName].push({
             dateStr: d.toLocaleDateString(), rawDate: d,
-            bodyPart: m[3], pain: m[4], mechanism: m[5], status: m[6], notes: m[7], isResolved: m[8] === 'Yes'
+            bodyPart: m[3], pain: m[4], mechanism: m[5], status: m[6], notes: m[7], isResolved: m[8] === 'Yes',
+            loggedBy: m[11] || ''  // v1.10.0: staff clinical-update trail
           });
         });
       }
@@ -1022,6 +1023,7 @@ export default function CoachResults() {
                       <span style={{ background: '#e0f2fe', color: '#0284c7', padding: '2px 6px', borderRadius: '4px' }}>{m.status}</span>
                     </div>
                     {m.notes && <p style={{ fontSize: '13px', color: '#475569', margin: 0 }}>"{m.notes}"</p>}
+                    {m.loggedBy && <p style={{ fontSize: '12px', color: '#64748b', margin: '6px 0 0 0' }}>Logged by: {m.loggedBy}</p>}
                   </div>
                 ))
               }

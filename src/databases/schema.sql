@@ -17,6 +17,12 @@
 -- (date → timestamptz, 21.09.2026).
 -- v1.6.0 changes: cycle_logs (opt-in menstrual cycle tracking; see
 -- cycle_tracking_v1.6.0.sql for the live-deployment migration).
+-- v1.10.0 changes: medical_entries.logged_by (staff audit trail);
+-- audit_logs widened for medical_entries + audit trigger. Treatment-pod
+-- tables (v1.7.0) live in treatment_pod_v1.7.0.sql, not here.
+-- v1.10.1 changes: athletes.email / coach_user_id / requested_club_id
+-- (self-serve signups + automatic purchases — see
+-- signup_club_requests_v1.10.1.sql for the live-deployment migration).
 -- =====================================================================
 
 -- ---------- CLUB / TEAM STRUCTURE ----------
@@ -56,13 +62,22 @@ create table public.club_memberships (
 -- ---------- ATHLETES ----------
 -- The PERSON. user_id = their own login (immutable, trigger-enforced).
 -- role: NULL or 'athlete' at signup; admins promote to 'coach'
--- (trigger-enforced). primary_club_id: admin-set anchor (trigger-enforced).
+-- (trigger-enforced). primary_club_id: admin-set anchor
+-- (trigger-enforced; the shop admin may also set it via
+-- approve_club_request, v1.10.1). email: duplicate of the auth email —
+-- live queries and the Paddle webhook match buyers by it.
+-- coach_user_id: which coach account manages this athlete (Sheets-era).
+-- requested_club_id: club the user asked to join at signup (v1.10.1);
+-- pending signups surface to that club's admins, cleared on approval.
 create table public.athletes (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null unique references auth.users(id) on delete cascade,
   name text not null,
   primary_club_id uuid references public.clubs(id),
   role text check (role in ('athlete', 'coach')),
+  email text,
+  coach_user_id uuid references auth.users(id),
+  requested_club_id uuid references public.clubs(id) on delete set null,
   created_at timestamptz not null default now()
 );
 
@@ -140,6 +155,9 @@ create table public.medical_entries (
   is_resolved boolean not null default false,
   date_resolved date,
   injury_grade text,
+  -- v1.10.0: WHO logged this entry (athletes.id of the logger).
+  -- Trigger-set from auth.uid() on insert; immutable after.
+  logged_by uuid references public.athletes(id) on delete set null,
   deleted_at timestamptz,
   created_at timestamptz not null default now()
 );
@@ -269,7 +287,9 @@ create table public.help_videos (
 -- Clients can only SELECT (see policies.sql).
 create table public.audit_logs (
   id uuid primary key default gen_random_uuid(),
-  table_name text not null check (table_name in ('session_logs','schedule_sessions')),
+  -- v1.10.0: 'medical_entries' added — staff/therapist clinical updates
+  -- are audited exactly like session edits.
+  table_name text not null check (table_name in ('session_logs','schedule_sessions','medical_entries')),
   record_id uuid not null,
   changed_by uuid not null,
   old_data jsonb not null default '{}'::jsonb,
@@ -288,6 +308,7 @@ create index idx_atm_athlete         on public.athlete_team_memberships(athlete_
 create index idx_atm_team            on public.athlete_team_memberships(team_id);
 create index idx_atm_lookup          on public.athlete_team_memberships(athlete_id, team_id, is_active);
 create index idx_athletes_user_id    on public.athletes(user_id);
+create index idx_athletes_requested_club on public.athletes(requested_club_id);
 create index idx_athletes_role       on public.athletes(role);
 
 -- Session tier
@@ -299,6 +320,7 @@ create index idx_sl_athlete_team     on public.session_logs(athlete_id, team_id)
 -- Athlete-data tier
 create unique index uq_wl_athlete_date on public.wellness_logs(athlete_id, date) where deleted_at is null;
 create index idx_me_athlete_date     on public.medical_entries(athlete_id, date_logged);
+create index idx_me_logged_by        on public.medical_entries(logged_by);
 create index idx_cl_athlete_date     on public.cycle_logs(athlete_id, entry_date);
 create index idx_lb_athlete_date     on public.logbook_entries(athlete_id, date);
 create index idx_att_athlete_ts      on public.attendance(athlete_id, attended_at);
@@ -333,7 +355,8 @@ for each row execute function public.prevent_athlete_user_id_change();
 
 -- (2) athletes.role and athletes.primary_club_id are admin-controlled.
 --     Athletes updating their own name pass through untouched
---     (columns unchanged -> early return).
+--     (columns unchanged -> early return). v1.10.1: the shop admin may
+--     also set them (stray-signup anchoring via approve_club_request).
 create or replace function public.protect_athlete_admin_fields()
 returns trigger language plpgsql security definer set search_path = '' as $$
 begin
@@ -456,6 +479,47 @@ for each row execute function public.write_audit_row();
 create trigger trg_audit_schedule_sessions
 after update on public.schedule_sessions
 for each row execute function public.write_audit_row();
+
+-- v1.10.0: clinical updates to medical_entries (coach / physio / athlete
+-- status changes) are audited the same way.
+create trigger trg_audit_medical_entries
+after update on public.medical_entries
+for each row execute function public.write_audit_row();
+
+-- v1.10.0: logged_by is fingerprint — set once from auth.uid() on
+-- insert, never re-attributed afterwards.
+create or replace function public.set_medical_logged_by()
+returns trigger
+language plpgsql security definer set search_path = '' as $$
+begin
+  if new.logged_by is null then
+    select a.id into new.logged_by
+      from public.athletes a
+      where a.user_id = (select auth.uid());
+  end if;
+  return new;
+end;
+$$;
+
+create trigger trg_medical_logged_by
+before insert on public.medical_entries
+for each row execute function public.set_medical_logged_by();
+
+create or replace function public.protect_medical_logged_by()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.logged_by is distinct from old.logged_by then
+    raise exception 'medical_entries.logged_by is immutable.';
+  end if;
+  return new;
+end;
+$$;
+
+create trigger trg_medical_logged_by_guard
+before update on public.medical_entries
+for each row execute function public.protect_medical_logged_by();
 
 -- ---------- ENABLE RLS ON EVERY TABLE (LOCKDOWN) ----------
 alter table public.clubs                    enable row level security;

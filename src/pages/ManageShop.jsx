@@ -6,6 +6,7 @@ import { supabase } from '../supabase';
 import {
   isShopAdmin, adminListShopProducts, adminUpsertShopProduct,
   adminDeleteShopProduct, adminListAthletes, adminListEntitlements,
+  adminListPendingSignups, adminApproveClubRequest,
   adminGrantEntitlement, adminRevokeEntitlement,
   adminListTeams, adminCreateTeam, adminListTeamMemberships,
   adminAddTeamMembership, adminRemoveTeamMembership, adminSetMembershipActive
@@ -46,6 +47,8 @@ export default function ManageShop() {
   const [newTeamName, setNewTeamName] = useState('');
   const [rosterTeam, setRosterTeam] = useState('');
   const [rosterAthlete, setRosterAthlete] = useState('');
+  // v1.10.1: pending club signups (self-serve onboarding)
+  const [pending, setPending] = useState([]);
 
   const togglePod = (key) => setForm(f => ({
     ...f,
@@ -148,6 +151,16 @@ export default function ManageShop() {
     if (!res.error) reload();
   };
 
+  // v1.10.1: one-click approve a pending signup into their requested club.
+  const approvePending = async (p) => {
+    const name = p.name || p.email || p.id;
+    const club = p.requested_club_name ? ` into ${p.requested_club_name}` : '';
+    if (!window.confirm(`Approve ${name}${club}? They get anchored to the club and become grantable.`)) return;
+    const res = await adminApproveClubRequest(p.id, p.requested_club_id);
+    setMsg(res.error ? `Error: ${res.error}` : `${name} approved. Grant their pods via the Grants tab.`);
+    if (!res.error) reload();
+  };
+
   const removeProduct = async (p) => {
     if (!window.confirm(`Delete "${p.name}"?`)) return;
     const res = await adminDeleteShopProduct(p.id);
@@ -213,7 +226,7 @@ export default function ManageShop() {
       <div className="ms-tabs">
         <button className={`ms-tab ${tab === 'products' ? 'active' : ''}`} onClick={() => setTab('products')}>Products & Plans</button>
         <button className={`ms-tab ${tab === 'grants' ? 'active' : ''}`} onClick={() => setTab('grants')}>Grants</button>
-        <button className={`ms-tab ${tab === 'teams' ? 'active' : ''}`} onClick={() => setTab('teams')}>Teams</button>
+        <button className={`ms-tab ${tab === 'teams' ? 'active' : ''}`} onClick={() => setTab('teams')}>Teams & Signups</button>
       </div>
 
       {msg && <div className="ms-msg">{msg}</div>}
@@ -340,6 +353,46 @@ export default function ManageShop() {
       )}
       {tab === 'teams' && (
         <>
+          {/* v1.10.1: pending club signups — no email chasing, one click */}
+          <div className="ms-section-title">Pending club signups ({pending.length})</div>
+          <table className="ms-table">
+            <thead>
+              <tr><th>Name</th><th>Email</th><th>Requested club</th><th>Signed up</th><th></th></tr>
+            </thead>
+            <tbody>
+              {pending.length === 0 && (
+                <tr><td colSpan={5}>No pending signups — everyone is anchored.</td></tr>
+              )}
+              {pending.map(p => (
+                <tr key={p.id}>
+                  <td>{p.name || '—'}</td>
+                  <td>{p.email || '—'}</td>
+                  <td>{p.requested_club_name || '— (skipped the picker)'}</td>
+                  <td>{p.created_at ? new Date(p.created_at).toLocaleDateString() : '—'}</td>
+                  <td>
+                    <button className="ms-btn primary" onClick={() => approvePending(p)}>
+                      {p.requested_club_name ? 'Approve' : 'Approve to…'}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {pending.some(p => !p.requested_club_id) && (
+            <p style={{ fontSize: 13, color: '#64748b', margin: '8px 0 0' }}>
+              Stray signups (no requested club) need a target club — pick one:
+            </p>
+          )}
+          {pending.filter(p => !p.requested_club_id).map(p => (
+            <div key={p.id} className="ms-form" style={{ margin: '8px 0', gridTemplateColumns: 'minmax(220px, 1fr) auto', alignItems: 'end' }}>
+              <div><label>{p.name || p.email}</label>
+                <select value={''} onChange={e => approvePending({ ...p, requested_club_id: e.target.value })}>
+                  <option value="">— approve into —</option>
+                  {teams.map(t => <option key={t.club_id || t.id} value={t.club_id || t.id}>{t.club_name || t.name}</option>)}
+                </select>
+              </div>
+            </div>
+          ))}
           <div className="ms-section-title">Create a team</div>
           <div className="ms-form" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', alignItems: 'end' }}>
             <div><label>Team name</label>

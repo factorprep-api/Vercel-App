@@ -1243,29 +1243,41 @@ export const fetchAttachablePrograms = async () => {
 
 // Maps medical_entries rows back into the legacy sheet row shape
 // (positional arrays, header first) so existing pages keep working.
-const MED_SHEET_HEADER = ['Date Logged','Email','Athlete','Body Part','Pain Level','Mechanism','Training Status','Notes','Is Resolved','Date Resolved','Injury Grade'];
+// Column 11 ('Logged By', v1.10.0) carries the logger's name ONLY when
+// someone other than the athlete themself logged the entry — the
+// clinical-update trail. The athletes embed must be disambiguated with
+// the FK constraint names because medical_entries now holds TWO athlete
+// FKs (athlete_id + logged_by).
+const MED_SHEET_HEADER = ['Date Logged','Email','Athlete','Body Part','Pain Level','Mechanism','Training Status','Notes','Is Resolved','Date Resolved','Injury Grade','Logged By'];
 
 export const fetchMedicalLogs = async () => {
   try {
     const { data, error } = await supabase
       .from('medical_entries')
-      .select('date_logged, body_part, pain_level, mechanism, training_status, notes, is_resolved, date_resolved, injury_grade, athletes(name)')
+      .select('date_logged, body_part, pain_level, mechanism, training_status, notes, is_resolved, date_resolved, injury_grade, logged_by, athletes!medical_entries_athlete_id_fkey(name), logger:athletes!medical_entries_logged_by_fkey(name)')
       .is('deleted_at', null)
       .order('date_logged', { ascending: true });
     if (error) return { data: [] };
-    const rows = (data || []).map(m => [
-      m.date_logged,
-      '',                                     // email column — see note below
-      m.athletes ? m.athletes.name : '',
-      m.body_part || '',
-      m.pain_level ?? '',
-      m.mechanism || '',
-      m.training_status || '',
-      m.notes || '',
-      m.is_resolved ? 'Yes' : 'No',
-      m.date_resolved || '',
-      m.injury_grade ?? ''
-    ]);
+    const rows = (data || []).map(m => {
+      const athleteName = m.athletes ? m.athletes.name : '';
+      const loggedByName = m.logger ? m.logger.name : '';
+      return [
+        m.date_logged,
+        '',                                     // email column — see note below
+        athleteName,
+        m.body_part || '',
+        m.pain_level ?? '',
+        m.mechanism || '',
+        m.training_status || '',
+        m.notes || '',
+        m.is_resolved ? 'Yes' : 'No',
+        m.date_resolved || '',
+        m.injury_grade ?? '',
+        // v1.10.0: staff audit trail — surface WHO logged it when it
+        // wasn't the athlete (coach/therapist/club-admin clinical updates).
+        loggedByName && loggedByName !== athleteName ? loggedByName : ''
+      ];
+    });
     return { data: [MED_SHEET_HEADER, ...rows] };
   } catch { return { data: [] }; }
 };
@@ -1550,7 +1562,27 @@ export const getLastLoggedWeight = async (athleteName, exerciseName) => {
 };
 
 // Fixed to accept both object syntax and standard arguments to prevent crashes
-export const createAthlete = async () => ({ status: 'Success' });
+// v1.10.1: REAL signup row creation — this was a stub returning Success
+// (Google-Sheets era leftover), so new signups got an auth user but NO
+// athletes row: invisible to every admin screen and unmatchable by the
+// Paddle webhook. RLS permits self-inserts (athletes_insert: user_id =
+// auth.uid(), no club, athlete role) — this call now actually writes it.
+export const createAthlete = async ({ email, name, requestedClubId = null }) => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { status: 'Error', message: 'Not signed in' };
+    const row = {
+      user_id: user.id,
+      name: name || email.split('@')[0],
+      email: email.toLowerCase().trim(),
+      role: 'athlete',
+      requested_club_id: requestedClubId || null
+    };
+    const { error } = await supabase.from('athletes').upsert(row, { onConflict: 'user_id' });
+    if (error) return { status: 'Error', message: error.message };
+    return { status: 'Success' };
+  } catch (err) { return { status: 'Error', message: err.message }; }
+};
 
 export const getAthleteByEmail = async (email) => {
   try {
@@ -2034,22 +2066,101 @@ export const updateLogbookEntry = async ({ athlete, sessionDate, exercise, setNu
   } catch (err) { return { status: 'Error', message: err.message }; }
 };
 
-export const fetchAuditLog = async () => {
+// Audit rows are raw old/new JSON images written by the append-only
+// write_audit_row() trigger (session_logs, schedule_sessions and — since
+// v1.10.0 — medical_entries). The UUIDs they carry are resolved here,
+// client-side: editor auth-uid -> athletes row (email/role), athlete_id
+// -> athlete name, session_id -> schedule session (date + program).
+export const fetchAuditLog = async (filters = {}) => {
   try {
     let query = supabase.from('audit_logs').select('*').order('created_at', { ascending: false });
+    if (filters.dateStart) query = query.gte('created_at', filters.dateStart);
+    if (filters.dateEnd) query = query.lte('created_at', filters.dateEnd + 'T23:59:59.999');
     const { data, error } = await query;
     if (error) return { status: 'Error', message: error.message };
-    
-    const rows = (data || []).map(r => [
-      r.created_at,
-      r.table_name + ' updated',
-      JSON.stringify(r.new_data),
-      r.changed_by, // Return UUID since we can't join auth.users from frontend easily without a view
-      'admin',
-      '',
-      ''
+    const rows = data || [];
+    if (rows.length === 0) return { status: 'Success', data: [] };
+
+    // One batched lookup maps every UUID the audit rows carry.
+    const [athletesRes, sessionsRes] = await Promise.all([
+      supabase.from('athletes').select('id, name, email, role, user_id'),
+      supabase.from('schedule_sessions').select('id, date, session_type, attached_program_id, programs(name)')
     ]);
-    return { status: 'Success', data: rows };
+    const athById = {}, athByUser = {};
+    (athletesRes.data || []).forEach(a => {
+      athById[a.id] = a;
+      if (a.user_id) athByUser[a.user_id] = a;
+    });
+    const sessById = {};
+    if (sessionsRes.data) sessionsRes.data.forEach(ss => { sessById[ss.id] = ss; });
+
+    // Humanise one audit field value ('' / null / booleans -> display text)
+    const fmt = (v) => {
+      if (v === null || v === undefined || v === '') return null;
+      if (typeof v === 'boolean') return v ? 'Yes' : 'No';
+      return String(v);
+    };
+
+    // The client-meaningful columns write_audit_row() captures, in display order
+    const AUDIT_FIELDS = [
+      ['date', 'Date'], ['session_type', 'Session Type'], ['actual_mins', 'Actual Minutes'],
+      ['actual_rpe', 'RPE'], ['notes', 'Notes'], ['audit_mode', 'Audit Mode'], ['audit_notes', 'Audit Notes'],
+      ['body_part', 'Body Part'], ['pain_level', 'Pain Level'], ['mechanism', 'Mechanism'],
+      ['training_status', 'Training Status'], ['is_resolved', 'Resolved'],
+      ['date_resolved', 'Date Resolved'], ['injury_grade', 'Injury Grade']
+    ];
+
+    const entries = rows.map(r => {
+      const oldD = r.old_data || {}, newD = r.new_data || {};
+      // First human-readable field that actually changed
+      let fieldChanged = 'row updated', oldValue = null, newValue = null;
+      for (const [key, label] of AUDIT_FIELDS) {
+        if (key in newD && newD[key] !== oldD[key]) {
+          fieldChanged = label;
+          oldValue = fmt(oldD[key]);
+          newValue = fmt(newD[key]);
+          break;
+        }
+      }
+      const athleteRow = athById[newD.athlete_id || oldD.athlete_id] || null;
+      const editor = athByUser[r.changed_by] || null;
+      // session_logs audit rows: record_id IS the log id; the proposal it
+      // completed (if any) is new_data.session_id. schedule_sessions rows:
+      // record_id IS the proposal.
+      const sessRef = r.table_name === 'schedule_sessions'
+        ? sessById[r.record_id]
+        : sessById[newD.session_id || oldD.session_id] || null;
+      return {
+        id: r.id,
+        table: r.table_name,
+        date: r.created_at,
+        athlete: athleteRow ? athleteRow.name : 'Unknown athlete',
+        // AuditView headline renders "{athlete} — {exercise}"
+        exercise: r.table_name === 'medical_entries'
+          ? (fmt(newD.body_part || oldD.body_part) || 'Medical entry')
+          : r.table_name === 'schedule_sessions' ? 'Proposed session' : 'Training session',
+        sessionDate: r.table_name === 'medical_entries'
+          ? fmt(newD.date_logged || oldD.date_logged)
+          : fmt(newD.date || (sessRef && sessRef.date)),
+        program: sessRef && sessRef.programs ? sessRef.programs.name : '',
+        setNumber: null,
+        fieldChanged, oldValue, newValue,
+        whoEmail: editor && editor.email ? editor.email : '',
+        whoName: editor ? editor.name : '',
+        whoRole: editor && editor.role ? editor.role : 'unknown'
+      };
+    });
+
+    let out = entries;
+    if (filters.athlete) {
+      const f = filters.athlete.toLowerCase();
+      out = out.filter(e => String(e.athlete || '').toLowerCase().includes(f));
+    }
+    if (filters.program) {
+      const f = filters.program.toLowerCase();
+      out = out.filter(e => String(e.program || '').toLowerCase().includes(f));
+    }
+    return { status: out.length === 0 ? 'Empty' : 'Success', data: out };
   } catch (err) { return { status: 'Error', message: err.message }; }
 };
 
@@ -2182,6 +2293,29 @@ export const adminDeleteShopProduct = async (productId) => {
   try {
     const { error } = await supabase.from('shop_products').delete().eq('id', productId);
     return { error: error ? error.message : null };
+  } catch (err) { return { error: err.message }; }
+};
+
+// v1.10.1: pending club signups — signups with no club yet (and any
+// legacy stray), surfaced to the shop admin for one-click approval.
+export const adminListPendingSignups = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('athletes')
+      .select('id, name, email, role, requested_club_id, created_at, clubs!athletes_requested_club_id_fkey(name)')
+      .is('primary_club_id', null)
+      .order('created_at', { ascending: true });
+    if (error) return { pending: [], error: error.message };
+    return { pending: (data || []).map(p => ({ ...p, requested_club_name: p.clubs ? p.clubs.name : null })), error: null };
+  } catch (err) { return { pending: [], error: err.message }; }
+};
+
+// One-click approve: anchors the signup into their requested club (or an
+// explicit club — the RPC validates admin-of-target-club or shop admin).
+export const adminApproveClubRequest = async (athleteId, clubId = null) => {
+  try {
+    const { data, error } = await supabase.rpc('approve_club_request', { p_athlete_id: athleteId, p_club_id: clubId });
+    return { result: data, error: error ? error.message : null };
   } catch (err) { return { error: err.message }; }
 };
 

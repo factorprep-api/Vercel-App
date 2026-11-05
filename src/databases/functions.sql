@@ -1,6 +1,7 @@
 -- =====================================================================
 -- Helper Functions — Exercise/Team Management App
--- Version: v1.4.6 (verified 2026-09-20 against live Supabase deployment)
+-- Version: v1.10.1 (approve_club_request (17) + shop-admin bypass in
+-- (5) — signup_club_requests_v1.10.1.sql mirrors them for existing DBs)
 -- Source: pg_proc dump from production
 -- =====================================================================
 
@@ -62,6 +63,10 @@ begin
     -- user JWT, auth.uid() is NULL). It must be able to elevate an athlete
     -- to 'coach' on Coaching Kit subscribe and demote on cancel.
     if coalesce(auth.role(), '') = 'service_role' then
+      return new;
+    end if;
+    -- v1.10.1: the shop admin anchors stray signups (Manage Shop).
+    if public.is_shop_admin() then
       return new;
     end if;
     if not exists (
@@ -248,4 +253,148 @@ as $function$
   where a.user_id = auth.uid()
     and sp.grants_pods is not null
     and e.status in ('active', 'lifetime')
+$function$;
+-- =====================================================================
+-- MEDICAL STAFF GATEKEEPERS (v1.10.0)
+-- Referenced by policies.sql (ml_select / ml_update / ml_insert /
+-- al_select). SECURITY DEFINER + stable so RLS policies can call them
+-- without recursive RLS checks. Both resolve the CALLER's role for one
+-- target athlete: team coach = team_memberships; admin = club anchored
+-- to the athlete's primary club or a team they sit on; therapist =
+-- club_therapists + treated bookings from treatment_pod_v1.7.0.sql.
+-- (Mirrored in medical_staff_logging_v1.10.0.sql for existing DBs.)
+-- =====================================================================
+
+-- (15) viewer_is_medical_staff(p_athlete_id uuid)
+-- Full staff access: read + update (self, coach, admin, treating therapist).
+create or replace function public.viewer_is_medical_staff(p_athlete_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path to ''
+as $function$
+  select (
+    p_athlete_id = public.current_athlete_id()
+    or exists (
+      select 1 from public.athlete_team_memberships m
+      join public.team_memberships tm on tm.team_id = m.team_id
+      where m.athlete_id = p_athlete_id
+        and m.is_active
+        and tm.user_id = (select auth.uid())
+    )
+    or exists (
+      select 1 from public.athletes a
+      where a.id = p_athlete_id
+        and (
+          a.primary_club_id in (select public.get_user_admin_club_ids())
+          or exists (
+            select 1 from public.athlete_team_memberships am
+            join public.teams t on t.id = am.team_id
+            where am.athlete_id = p_athlete_id
+              and am.is_active
+              and t.club_id in (select public.get_user_admin_club_ids())
+          )
+        )
+    )
+    -- treating therapist: active club therapist, same club as the
+    -- athlete, with at least one treatment booking with them.
+    or exists (
+      select 1 from public.club_therapists ct
+      join public.athletes tp on tp.id = ct.athlete_id
+      join public.athletes ap on ap.id = p_athlete_id
+      where ct.athlete_id = public.current_athlete_id()
+        and ct.is_active
+        and ap.primary_club_id = tp.primary_club_id
+        and exists (
+          select 1 from public.treatment_bookings tb
+          where tb.athlete_id = p_athlete_id
+            and exists (
+              select 1 from public.therapist_slots ts
+              where ts.id = tb.slot_id
+                and ts.therapist_id = ct.id
+            )
+        )
+    )
+  )
+$function$;
+
+-- (16) viewer_can_log_medical(p_athlete_id uuid)
+-- Injury LOGGING rights: athlete themself, team coach, or club admin.
+-- Deliberately EXCLUDES the treating therapist (physios add treatment
+-- detail + status to existing injuries, they do not open new ones).
+create or replace function public.viewer_can_log_medical(p_athlete_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path to ''
+as $function$
+  select (
+    p_athlete_id = public.current_athlete_id()
+    or exists (
+      select 1 from public.athlete_team_memberships m
+      join public.team_memberships tm on tm.team_id = m.team_id
+      where m.athlete_id = p_athlete_id
+        and m.is_active
+        and tm.user_id = (select auth.uid())
+    )
+    or exists (
+      select 1 from public.athletes a
+      where a.id = p_athlete_id
+        and (
+          a.primary_club_id in (select public.get_user_admin_club_ids())
+          or exists (
+            select 1 from public.athlete_team_memberships am
+            join public.teams t on t.id = am.team_id
+            where am.athlete_id = p_athlete_id
+              and am.is_active
+              and t.club_id in (select public.get_user_admin_club_ids())
+          )
+
+-- (17) approve_club_request(p_athlete_id uuid, p_club_id uuid)
+-- v1.10.1 — self-serve signups. One click anchors a pending signup
+-- (primary_club_id IS NULL) into a club: the athlete's own request
+-- (requested_club_id) or an explicitly chosen club for legacy strays
+-- who signed up before the picker existed. Permission: club admin of
+-- the target club, or the shop admin. SECURITY DEFINER + stable so the
+-- Manage Shop UI can call it directly.
+create or replace function public.approve_club_request(p_athlete_id uuid, p_club_id uuid default null)
+returns text
+language plpgsql
+security definer
+set search_path = ''
+as $function$
+declare
+  v_row public.athletes%rowtype;
+  v_club uuid;
+begin
+  select * into v_row from public.athletes where id = p_athlete_id;
+  if not found then
+    raise exception 'Athlete not found.';
+  end if;
+  if v_row.primary_club_id is not null then
+    raise exception 'Athlete already belongs to a club.';
+  end if;
+  -- Target club: explicit (shop admin anchoring a stray signup) or the
+  -- athlete's own request.
+  v_club := coalesce(p_club_id, v_row.requested_club_id);
+  if v_club is null then
+    raise exception 'No club was requested — pass the target club.';
+  end if;
+  -- Permission: club admin of the target club, or the shop admin.
+  if not public.is_shop_admin()
+     and v_club not in (select public.get_user_admin_club_ids()) then
+    raise exception 'Only an admin of that club can approve this request.';
+  end if;
+  update public.athletes
+    set primary_club_id = v_club,
+        requested_club_id = null
+    where id = p_athlete_id;
+  return 'OK';
+end;
+$function$;
+        )
+    )
+  )
 $function$;

@@ -1,6 +1,9 @@
 -- =====================================================================
 -- RLS Policies — Exercise/Team Management App
--- Version: v1.4.6 (verified 2026-09-20 against live Supabase deployment)
+-- Version: v1.10.1 (pending-signup visibility: athletes_select admits
+-- admins of the requested club + the shop admin for unanchored signups;
+-- clubs_signup_select lets the signup form offer the club picker.
+-- signup_club_requests_v1.10.1.sql mirrors these for existing DBs)
 -- Source: pg_policies dump from production
 -- =====================================================================
 
@@ -126,6 +129,11 @@ create policy athletes_select on public.athletes for select
                    or exists (select 1 from teams t
                               where t.id = m.team_id
                                 and t.club_id in (select get_user_admin_club_ids()))))
+    -- v1.10.1: pending club requests — admins of the requested club
+    or (primary_club_id is null
+        and requested_club_id in (select get_user_admin_club_ids()))
+    -- v1.10.1: safety net — the shop admin sees any unanchored signup
+    or (primary_club_id is null and is_shop_admin())
   );
 
 create policy athletes_write on public.athletes for update
@@ -187,6 +195,8 @@ create policy att_update on public.attendance for update
   );
 
 -- audit_logs
+-- v1.10.0: medical_entries audit rows are visible to the athlete and the
+-- medical staff who can already see the entry itself.
 create policy al_select on public.audit_logs for select
   using (
     (table_name = 'session_logs'
@@ -208,6 +218,10 @@ create policy al_select on public.audit_logs for select
                                  join club_memberships cm on cm.club_id = t.club_id and cm.role = 'admin'
                                  where t.id = ss.team_id
                                    and cm.user_id = auth.uid()))))
+    or (table_name = 'medical_entries'
+      and exists (select 1 from medical_entries me
+                  where me.id = audit_logs.record_id
+                    and viewer_is_medical_staff(me.athlete_id)))
   );
 
 -- club_memberships
@@ -233,6 +247,13 @@ create policy clubs_select on public.clubs for select
 create policy clubs_update on public.clubs for update
   using (id in (select get_user_admin_club_ids()))
   with check (id in (select get_user_admin_club_ids()));
+
+-- v1.10.1: club names are public-facing (the shop sells club plans) and
+-- the signup form needs id + name for the club picker before login.
+drop policy if exists clubs_signup_select on public.clubs;
+create policy clubs_signup_select on public.clubs for select
+  to anon, authenticated
+  using (true);
 
 -- exercises
 create policy ex_delete on public.exercises for delete
@@ -340,6 +361,11 @@ create policy lb_update on public.logbook_entries for update
   );
 
 -- medical_entries
+-- v1.10.0: staff logging. Gatekeepers live in functions.sql
+-- (viewer_can_log_medical = self + team coach + club admin;
+--  viewer_is_medical_staff = those + treating therapists). Therapists
+-- can read/update injuries of athletes they have treated but can never
+-- OPEN a new injury — that split is enforced here, not in the UI.
 create policy ml_delete on public.medical_entries for delete
   using (
     (athlete_id = current_athlete_id())
@@ -348,23 +374,14 @@ create policy ml_delete on public.medical_entries for delete
   );
 
 create policy ml_insert on public.medical_entries for insert
-  with check (athlete_id = current_athlete_id());
+  with check (viewer_can_log_medical(medical_entries.athlete_id));
 
 create policy ml_select on public.medical_entries for select
-  using (
-    (athlete_id = current_athlete_id())
-    or exists (select 1 from athlete_team_memberships m
-               where m.athlete_id = medical_entries.athlete_id
-                 and m.is_active and user_is_team_coach(m.team_id))
-    or exists (select 1 from athlete_team_memberships m
-               join teams t on t.id = m.team_id
-               where m.athlete_id = medical_entries.athlete_id
-                 and t.club_id in (select get_user_admin_club_ids()))
-  );
+  using (viewer_is_medical_staff(medical_entries.athlete_id));
 
 create policy ml_update on public.medical_entries for update
-  using (athlete_id = current_athlete_id())
-  with check (athlete_id = current_athlete_id());
+  using (viewer_is_medical_staff(medical_entries.athlete_id))
+  with check (viewer_is_medical_staff(medical_entries.athlete_id));
 
 -- program_exercises
 create policy pe_select on public.program_exercises for select

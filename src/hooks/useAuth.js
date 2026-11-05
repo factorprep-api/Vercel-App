@@ -11,6 +11,16 @@ export function useAuth() {
 
   async function fetchRoleFromSheets(email) {
     try {
+      // v1.10.1 self-heal: signups before createAthlete() worked have an
+      // auth user but no athletes row (invisible to admins, unmatchable
+      // by the purchase webhook). If the signed-in user is missing their
+      // row, create it now — requested_club_id stays null so the shop
+      // admin's safety net surfaces them in Manage Shop.
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: mine } = await supabase.from('athletes').select('id').eq('user_id', user.id).maybeSingle();
+        if (!mine) await createAthlete({ email, name: user.user_metadata?.name || email.split('@')[0] });
+      }
       const result = await getAthleteByEmail(email);
       
       if (result && result.status === 'Success') {
