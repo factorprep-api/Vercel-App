@@ -3,10 +3,13 @@ import { HelpCircle, Loader2 } from 'lucide-react';
 import { fetchHelpVideos } from '../api';
 import './help-button.css';
 
-export default function HelpButton({ pageName = 'Default', position = 'bottom-right' }) {
+export default function HelpButton({ pageName = 'Default', position = 'bottom-right', variant = 'floating' }) {
   const [loading, setLoading] = useState(false);
 
-  const handleClick = async () => {
+  const handleClick = async (e) => {
+    // v1.10.2: card variant sits inside clickable hub cards — never let the
+    // click bubble up and navigate the user away from the help video.
+    if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
     setLoading(true);
     try {
       const videos = await fetchHelpVideos();
@@ -36,17 +39,20 @@ export default function HelpButton({ pageName = 'Default', position = 'bottom-ri
     setLoading(false);
   };
 
+  const isCard = variant === 'card';
+  const btnClass = isCard ? 'help-btn card' : `help-btn ${position}`;
+
   if (loading) {
     return (
-      <button className={`help-btn ${position}`} disabled style={{ cursor: 'wait', opacity: 0.4 }}>
-        <Loader2 size={18} className="spin" />
+      <button className={btnClass} disabled style={{ cursor: 'wait', opacity: 0.4 }}>
+        <Loader2 size={isCard ? 15 : 18} className="spin" />
       </button>
     );
   }
 
   return (
-    <button className={`help-btn ${position}`} onClick={handleClick} title="Watch help video">
-      <HelpCircle size={18} />
+    <button className={btnClass} onClick={handleClick} title="Watch help video">
+      <HelpCircle size={isCard ? 15 : 18} />
     </button>
   );
 }

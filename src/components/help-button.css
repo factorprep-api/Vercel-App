@@ -27,6 +27,21 @@
 .help-btn.top-left { top: 16px; left: 16px; bottom: auto; right: auto; }
 .help-btn.top-right { top: 16px; right: 16px; bottom: auto; left: auto; }
 
+/* v1.10.2: card variant for AthleteHub/CoachHub — anchored to the hub card
+   (the card is position:relative) instead of the viewport. Subtle until hover. */
+.help-btn.card {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  left: auto;
+  bottom: auto;
+  width: 30px;
+  height: 30px;
+  background: rgba(0, 0, 0, 0.35);
+  opacity: 0.8;
+  z-index: 3;
+}
+
 @keyframes spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }

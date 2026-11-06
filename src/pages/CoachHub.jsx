@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import ShopPill from '../components/ShopPill';
+import HelpButton from '../components/HelpButton';
 import { Wrench, BookOpen, Dumbbell, Pencil, BarChart2, User, Activity } from 'lucide-react';
 
 export default function CoachHub() {
@@ -16,9 +17,9 @@ export default function CoachHub() {
     { title: 'Program Builder', desc: 'Create and edit training programs', icon: Wrench, path: '/program-builder', color: '#008ed3', bgImage: '/program-builder-card.png' },
     { title: 'Program Library', desc: 'View and manage all saved programs', icon: BookOpen, path: '/program-library', color: '#2e7d32', bgImage: '/program-library-card.png' },
     { title: 'Coach Results', desc: 'View athlete progress', icon: BarChart2, path: '/coach-results', color: '#005d8a', bgImage: '/coach-results-card.png' },
-    { title: 'Team Schedule', desc: 'Manage loads & ACWR', icon: Activity, path: '/coach-schedule', color: '#f59e0b', bgImage: '/team-schedule-card.png' },
+    { title: 'Team Schedule', desc: 'Manage loads & ACWR', icon: Activity, path: '/coach-schedule', color: '#f59e0b', bgImage: '/team-schedule-card.png', helpName: 'Team Schedule' },
     { title: 'Exercise Library', desc: 'Search all exercise videos', icon: Dumbbell, path: '/exercise-library?viewMode=coach', color: '#d3ca17', bgImage: '/exercise-library-card-v2.png' },
-    { title: 'Drill Designer', desc: 'Draw and save training drills', icon: Pencil, path: '/whiteboard', color: '#6d28d9', bgImage: '/whiteboard-card.png' },
+    { title: 'Drill Designer', desc: 'Draw and save training drills', icon: Pencil, path: '/whiteboard', color: '#6d28d9', bgImage: '/whiteboard-card.png', helpName: 'Drill Designer' },
     { title: 'Athlete Hub', desc: 'Use the app as an athlete', icon: User, path: '/athlete-hub', color: '#e65100', bgImage: '/athlete-hub-card.png', external: true }
   ];
 
@@ -82,6 +83,8 @@ export default function CoachHub() {
                 <p style={{ fontSize: '13px', color: '#888' }}>{card.desc}</p>
               </>
             )}
+            {/* v1.10.2: per-card help video — button stops its own click from bubbling into navigation */}
+            {card.helpName && <HelpButton pageName={card.helpName} variant="card" />}
           </div>
         ))}
       </div>
