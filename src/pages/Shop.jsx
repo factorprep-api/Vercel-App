@@ -45,7 +45,7 @@ export default function Shop() {
   const [ownedIds, setOwnedIds] = useState(new Set());
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
-  const [modal, setModal] = useState(null); // {title, body, tone}
+  const [modal, setModal] = useState(null); // {title, body, tone, link?: {href, label}} — link renders as a plain text line, email styled as an inline link
   const [busyId, setBusyId] = useState(null);
 
   const refresh = useCallback(async () => {
@@ -82,6 +82,7 @@ export default function Shop() {
       setModal({
         title: product.name,
         body: 'This plan is set up personally by our team. Get in touch and we will onboard you within one business day.',
+        link: { href: 'mailto:info@factorprep.com', label: 'info@factorprep.com' },
         tone: 'info'
       });
       return;
@@ -261,6 +262,16 @@ export default function Shop() {
                 : <CheckCircle2 size={48} color="#10b981" style={{ margin: '0 auto 16px auto' }} />}
             <h2 style={{ margin: '0 0 8px 0', color: '#0f172a' }}>{modal.title}</h2>
             <p style={{ color: '#64748b', fontSize: 14, marginBottom: 20 }}>{modal.body}</p>
+            {modal.link && (
+              <p style={{ color: '#64748b', fontSize: 14, marginBottom: 20 }}>
+                <a
+                  href={modal.link.href}
+                  style={{ color: '#008ed3', fontSize: 14, textDecoration: 'underline', cursor: 'pointer' }}
+                >
+                  {modal.link.label}
+                </a>
+              </p>
+            )}
             <button className="checkout-btn secondary" onClick={() => setModal(null)}>Close</button>
           </div>
         </div>
