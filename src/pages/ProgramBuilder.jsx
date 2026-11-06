@@ -158,10 +158,19 @@ export default function ProgramBuilder() {
   }
 
   function handleAdvancedMetricToggle(metric) {
-    setAdvanced(prev => ({
-      ...prev,
-      metrics: { ...prev.metrics, [metric]: !prev.metrics[metric] }
-    }));
+    setAdvanced(prev => {
+      const isNowEnabled = !prev.metrics[metric];
+      // When a metric is unchecked, also clear its stale target value so it
+      // doesn't leak into the next exercise (or the saved program).
+      const nextTargets = isNowEnabled
+        ? prev.targets
+        : { ...prev.targets, [metric]: '' };
+      return {
+        ...prev,
+        metrics: { ...prev.metrics, [metric]: !prev.metrics[metric] },
+        targets: nextTargets
+      };
+    });
   }
 
   function addDraftExercise() {
@@ -171,10 +180,24 @@ export default function ProgramBuilder() {
       showToast('Enter Reps or select Time/Distance in Advanced Options.', true); return; 
     }
     
+    // Strip target values for metrics that are not enabled, so stale values
+    // (e.g. a Time target left over from the previous exercise) never get
+    // cloned into this draft item or saved into the program.
+    const advMetrics = advanced.metrics || {};
+    const advTargets = advanced.targets || {};
+    const sanitizedAdvanced = {
+      ...advanced,
+      targets: {
+        weight: advMetrics.weight ? advTargets.weight : '',
+        time: advMetrics.time ? advTargets.time : '',
+        distance: advMetrics.distance ? advTargets.distance : ''
+      }
+    };
+
     setDraft([...draft, {
       phase: form.phase, exercise: form.exercise, sets: form.sets,
       reps: form.reps, intensity: form.intensity, tempo: form.tempo, rest: form.rest,
-      advanced: JSON.parse(JSON.stringify(advanced))
+      advanced: JSON.parse(JSON.stringify(sanitizedAdvanced))
     }]);
     
     showToast('Added! Settings kept for next exercise.');
@@ -563,14 +586,14 @@ export default function ProgramBuilder() {
                     {item.rest ? ` | Rest: ${item.rest}` : ''}
                   </p>
                   
-                  {(item.advanced?.targets?.weight || item.advanced?.targets?.time || item.advanced?.targets?.distance) && (
+                  {(item.advanced?.metrics?.weight && item.advanced?.targets?.weight) || (item.advanced?.metrics?.time && item.advanced?.targets?.time) || (item.advanced?.metrics?.distance && item.advanced?.targets?.distance) ? (
                     <p style={{ fontSize: '12px', color: '#0ea5e9', fontWeight: '600', margin: '4px 0 0 0' }}>
-                      Targets: 
-                      {item.advanced.targets.weight && ` 🏋️ ${item.advanced.targets.weight}`}
-                      {item.advanced.targets.time && ` ⏱️ ${item.advanced.targets.time}`} 
-                      {item.advanced.targets.distance && ` 📏 ${item.advanced.targets.distance}`}
+                      Targets:
+                      {item.advanced.metrics.weight && item.advanced.targets.weight && ` 🏋️ ${item.advanced.targets.weight}`}
+                      {item.advanced.metrics.time && item.advanced.targets.time && ` ⏱️ ${item.advanced.targets.time}`}
+                      {item.advanced.metrics.distance && item.advanced.targets.distance && ` 📏 ${item.advanced.targets.distance}`}
                     </p>
-                  )}
+                  ) : null}
 
                 </div>
                 <div className="pb-draft-controls">

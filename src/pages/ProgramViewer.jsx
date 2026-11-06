@@ -854,9 +854,9 @@ export default function ProgramViewer() {
                       const input = inputValues[inputKey] || {};
                       const targetData = targetCalcs[inputKey] || { text: '', val: '', source: 'none', metric: '' };
                       let customTargetDisplay = '';
-                      if (targets.weight) customTargetDisplay += `🏋️ ${targets.weight} `;
-                      if (targets.time) customTargetDisplay += `⏱️ ${targets.time} `;
-                      if (targets.distance) customTargetDisplay += `📏 ${targets.distance} `;
+                      if (metrics.weight && targets.weight) customTargetDisplay += `🏋️ ${targets.weight} `;
+                      if (metrics.time && targets.time) customTargetDisplay += `⏱️ ${targets.time} `;
+                      if (metrics.distance && targets.distance) customTargetDisplay += `📏 ${targets.distance} `;
                       let calcDisplay = '';
                       if (targetData.text && !targets[targetData.metric]) {
                         if (targetData.metric === 'weight') calcDisplay = `🏋️ ${targetData.text}`;
