@@ -771,8 +771,8 @@ export default function ProgramViewer() {
           </div>
         </div>
         {(coachNote || programMediaUrl) && (
-          <div className="pv-coach-note" style={{ marginBottom: '20px' }}>
-            <div className="pv-coach-note-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div className="pv-coach-note">
+            <div className="pv-coach-note-header">
               <h4><MessageSquare size={14} /> Coach's Notes</h4>
               {programMediaUrl && (
                 <button className="pv-media-inline-btn" onClick={() => setShowProgramMedia(!showProgramMedia)}>{getMediaType(programMediaUrl) === 'audio' ? '🎙️' : '🎬'} {showProgramMedia ? 'Hide' : 'Play'}</button>
@@ -820,7 +820,7 @@ export default function ProgramViewer() {
                   <div key={group.id} style={{ position: 'relative' }}>
                     {isSuperset && <div className="superset-bracket"></div>}
                     <div className="pv-exercise-header">
-                      <h4 className="pv-exercise-name" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <h4 className="pv-exercise-name">
                         {isSuperset && <span title="Superset">🔗</span>}
                         {group.name}
                         {isDrop && (
