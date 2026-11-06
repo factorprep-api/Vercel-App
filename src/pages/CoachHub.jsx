@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import ShopPill from '../components/ShopPill';
+import HelpButton from '../components/HelpButton';
 import { Wrench, BookOpen, Dumbbell, Pencil, BarChart2, User, Activity } from 'lucide-react';
 
 export default function CoachHub() {
@@ -85,6 +86,8 @@ export default function CoachHub() {
           </div>
         ))}
       </div>
+
+      <HelpButton pageName="Coach Hub" position="bottom-right" />
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { useAuth } from '../hooks/useAuth';
 import { ClipboardList, TrendingUp, Timer, Activity, AlertCircle, Calendar, Utensils } from 'lucide-react';
 import { fetchMedicalLogs, fetchMyPods } from '../api';
 import ShopPill from '../components/ShopPill';
+import HelpButton from '../components/HelpButton';
 
 // Module-level in-memory cache for instantaneous route transitions (0ms navigation)
 const memoryCache = {
@@ -272,6 +273,8 @@ export default function AthleteHub() {
           </div>
         ))}
       </div>
+
+      <HelpButton pageName="Athlete Hub" position="bottom-right" />
     </div>
   );
 }
