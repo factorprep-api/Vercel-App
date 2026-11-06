@@ -1,8 +1,11 @@
 .pv-container { font-family: 'Roboto Flex', 'Roboto', sans-serif; color: #333; width: 100%; min-height: 100vh; padding: 20px 8px; }
 .pv-body { max-width: 800px; margin: 0 auto; width: 100%; }
 
-.pv-page-title { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-.pv-page-title h2 { margin: 0; color: #008ed3; text-transform: uppercase; font-size: 18px; letter-spacing: 1px; }
+/* ===== Page Heading ===== */
+.pv-page-heading { display: flex; align-items: center; margin-bottom: 16px; }
+.pv-page-heading h2 { margin: 0; font-size: 24px; font-weight: 700; color: #0f172a; }
+.pv-back-btn { background: none; border: none; cursor: pointer; color: #008ed3; padding: 0; display: flex; margin-right: 12px; }
+.pv-welcome-msg { color: #666; font-size: 15px; margin-top: -8px; margin-bottom: 20px; }
 .pv-status { padding: 6px 12px; border-radius: 12px; font-size: 11px; font-weight: bold; }
 .pv-status.loading { background: #d3ca17; color: #111; }
 .pv-status.ready { background: #28a745; color: white; }
