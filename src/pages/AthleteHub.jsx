@@ -4,6 +4,7 @@ import { useAuth } from '../hooks/useAuth';
 import { ClipboardList, TrendingUp, Timer, Activity, AlertCircle, Calendar, Utensils } from 'lucide-react';
 import { fetchMedicalLogs, fetchMyPods } from '../api';
 import ShopPill from '../components/ShopPill';
+import HelpButton from '../components/HelpButton';
 
 // Module-level in-memory cache for instantaneous route transitions (0ms navigation)
 const memoryCache = {
@@ -245,7 +246,7 @@ export default function AthleteHub() {
     <div style={{ fontFamily: '"Roboto Flex", sans-serif', padding: '4px', backgroundColor: '#f8fafc', minHeight: 'calc(100vh - 60px)' }}>
       <ShopPill />
       <div className="hub-title-wrapper" style={{ textAlign: 'center', paddingTop: '4px' }}>
-        <h1 className="hub-title-mobile" style={{ fontSize: '22px', color: '#333', marginBottom: '4px', margin: '0', marginTop: '0' }}>Athlete Hub</h1>
+        <h1 className="hub-title-mobile" style={{ fontSize: '28px', color: '#333', margin: '0', marginBottom: '4px' }}>Athlete Hub</h1>
         {authAthleteName && <p className="hub-welcome" style={{ color: '#666', fontSize: '15px' }}>Welcome, {authAthleteName}</p>}
       </div>
 
@@ -272,6 +273,8 @@ export default function AthleteHub() {
           </div>
         ))}
       </div>
+
+      <HelpButton pageName="Athlete Hub" position="bottom-right" />
     </div>
   );
 }

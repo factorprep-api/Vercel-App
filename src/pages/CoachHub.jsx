@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import ShopPill from '../components/ShopPill';
+import HelpButton from '../components/HelpButton';
 import { Wrench, BookOpen, Dumbbell, Pencil, BarChart2, User, Activity } from 'lucide-react';
 
 export default function CoachHub() {
@@ -23,14 +24,14 @@ export default function CoachHub() {
   ];
 
   return (
-    <div style={{ fontFamily: '"Roboto Flex", sans-serif', padding: '4px', backgroundColor: '#f8fafc' }}>
+    <div style={{ fontFamily: '"Roboto Flex", sans-serif', padding: '4px', backgroundColor: '#f8fafc', minHeight: 'calc(100vh - 60px)' }}>
       <ShopPill />
       <div className="hub-title-wrapper" style={{ textAlign: 'center', paddingTop: '4px' }}>
-        <h1 style={{ fontSize: '28px', color: '#333', marginBottom: '4px' }}>Coach Hub</h1>
+        <h1 className="hub-title-mobile" style={{ fontSize: '28px', color: '#333', margin: '0', marginBottom: '4px' }}>Coach Hub</h1>
         <p className="hub-welcome" style={{ color: '#666', fontSize: '15px' }}>Welcome, {athleteName || 'Coach'}</p>
       </div>
 
-      <div className="hub-cards" style={{ display: 'flex', gap: '24px', flexWrap: 'wrap', justifyContent: 'center' }}>
+      <div className="hub-cards" style={{ display: 'flex', gap: '24px', flexWrap: 'wrap', justifyContent: 'center', marginTop: '16px' }}>
         {cards.map((card, i) => (
           <div
             key={i}
@@ -85,6 +86,8 @@ export default function CoachHub() {
           </div>
         ))}
       </div>
+
+      <HelpButton pageName="Coach Hub" position="bottom-right" />
     </div>
   );
 }

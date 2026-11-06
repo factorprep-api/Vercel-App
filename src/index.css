@@ -59,17 +59,12 @@ body {
   box-shadow: 0 2px 8px rgba(0,0,0,0.06);
 }
 
-/* Mobile-only hub spacing adjustments */
-@media (max-width: 768px) {
-  .hub-title-wrapper {
-    padding-top: 8px !important;
-  }
-  .hub-welcome {
-    margin-top: 2px !important;
-    margin-bottom: 0 !important;
-  }
-}
-/* Mobile-only hub spacing adjustments - AGGRESSIVE */
+/* Hub pages (CoachHub + AthleteHub) — mobile spacing + h1 sizing.
+   Both hub h1s carry the hub-title-mobile class: the desktop size (28px)
+   comes from the inline style, and on mobile this class forces the tuned
+   22px with zero margins. (Consolidates the previously duplicated
+   "mobile-only hub spacing adjustments" blocks; the unused
+   .hub-title-desktop rule was removed.) */
 @media (max-width: 768px) {
   .hub-title-wrapper {
     padding-top: 4px !important;
@@ -79,32 +74,19 @@ body {
     margin-top: 2px !important;
     margin-bottom: 0 !important;
   }
+  .hub-title-mobile {
+    font-size: 22px !important;
+    margin: 0 !important;
+  }
+  main > div:first-child {
+    margin-top: 0 !important;
+    padding-top: 0 !important;
+  }
 }
 
 /* Desktop: increase card spacing */
 @media (min-width: 769px) {
   .hub-cards {
     gap: 24px !important;
-  }
-}
-
-/* Mobile h1 sizing - reset browser defaults */
-@media (max-width: 768px) {
-  .hub-title-mobile {
-    font-size: 22px !important;
-    margin: 0 !important;
-    margin-top: 0 !important;
-    margin-bottom: 0 !important;
-  }
-  .hub-title-desktop {
-    font-size: 28px !important;
-  }
-}
-
-/* Ensure no default margins anywhere above title */
-@media (max-width: 768px) {
-  main > div:first-child {
-    margin-top: 0 !important;
-    padding-top: 0 !important;
   }
 }
