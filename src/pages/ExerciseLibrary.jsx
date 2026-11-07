@@ -83,6 +83,9 @@ export default function ExerciseLibrary({ viewMode: propViewMode = 'athlete' }) 
   const [deleting, setDeleting] = useState(null);
   const [adding, setAdding] = useState(false);
   const [assignedCoachEmail, setAssignedCoachEmail] = useState('');
+
+  // Admin right-click context menu: { x, y, exercise } while open
+  const [ctxMenu, setCtxMenu] = useState(null);
   
   // FIX: Destructured athleteName so we can pass it to the Add modal
   const { role, userEmail, athleteName, isLoading: authLoading } = useAuth();
@@ -92,10 +95,33 @@ export default function ExerciseLibrary({ viewMode: propViewMode = 'athlete' }) 
   const urlViewMode = queryParams.get('viewMode');
   const viewMode = urlViewMode || propViewMode;
 
+  // ADMIN "GOD MODE" check (same account as the shop admin / ProgramLibrary).
+  // The admin maintains the shared Public Library: right-click any exercise
+  // card -> Edit / Delete. Every other account manages only its own
+  // exercises (pencil/trash on owned cards, unchanged).
+  const isAdmin = userEmail && userEmail.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+
   useEffect(() => {
     const t = setTimeout(() => setDebouncedQuery(searchQuery), 300);
     return () => clearTimeout(t);
   }, [searchQuery]);
+
+  // Admin context menu: close on any click, scroll, resize or Escape
+  useEffect(() => {
+    if (!ctxMenu) return;
+    const close = () => setCtxMenu(null);
+    const onKey = e => { if (e.key === 'Escape') setCtxMenu(null); };
+    window.addEventListener('click', close);
+    window.addEventListener('resize', close);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('click', close);
+      window.removeEventListener('resize', close);
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [ctxMenu]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -357,7 +383,19 @@ export default function ExerciseLibrary({ viewMode: propViewMode = 'athlete' }) 
                   ex.rawUrl.toLowerCase().includes('.jpg');
 
                 return (
-                  <div key={`${group.cat}-${idx}`} className="exlib-video-card" onClick={() => openModal(ex.rawUrl)} title={ex.name}>
+                  <div
+                    key={`${group.cat}-${idx}`}
+                    className="exlib-video-card"
+                    onClick={() => openModal(ex.rawUrl)}
+                    title={isAdmin ? `${ex.name} — right-click to edit or delete` : ex.name}
+                    onContextMenu={e => {
+                      // Schedule methodology: right-click opens admin actions.
+                      // Everyone else keeps the normal browser menu.
+                      if (!isAdmin) return;
+                      e.preventDefault();
+                      setCtxMenu({ x: e.clientX, y: e.clientY, exercise: ex });
+                    }}
+                  >
                     <div className="exlib-thumbnail" style={{ backgroundColor: isImg ? '#fff' : '' }}>
                       {ytId ? (
                         <img className="exlib-vid-thumb" src={`https://img.youtube.com/vi/${ytId}/hqdefault.jpg`} loading="lazy" alt={ex.name} />
@@ -407,7 +445,7 @@ export default function ExerciseLibrary({ viewMode: propViewMode = 'athlete' }) 
           athleteName={athleteName}
           existingCategories={existingCategories}
           publicCategories={publicCategories}
-          isAdmin={userEmail && userEmail.toLowerCase() === ADMIN_EMAIL.toLowerCase()}
+          isAdmin={isAdmin}
           onClose={() => setAdding(false)}
           onSuccess={async (isPublic) => {
             setAdding(false);
@@ -463,6 +501,30 @@ export default function ExerciseLibrary({ viewMode: propViewMode = 'athlete' }) 
                 </div>
               )}
             </div>
+          </div>
+        );
+      })()}
+
+      {ctxMenu && (() => {
+        // Keep the menu inside the viewport
+        const menuX = Math.min(ctxMenu.x, window.innerWidth - 200);
+        const menuY = Math.min(ctxMenu.y, window.innerHeight - 110);
+        return (
+          <div className="exlib-ctx-menu" style={{ top: menuY, left: menuX }} onClick={e => e.stopPropagation()}>
+            <div className="exlib-ctx-header" title={ctxMenu.exercise.name}>{ctxMenu.exercise.name}</div>
+            <button
+              className="exlib-ctx-item"
+              onClick={() => { const ex = ctxMenu.exercise; setCtxMenu(null); openEditModal(ex); }}
+            >
+              <Pencil size={14} /> Edit Exercise
+            </button>
+            <button
+              className="exlib-ctx-item danger"
+              disabled={deleting === ctxMenu.exercise.name}
+              onClick={() => { const ex = ctxMenu.exercise; setCtxMenu(null); handleDelete(ex); }}
+            >
+              <Trash2 size={14} /> Delete Exercise
+            </button>
           </div>
         );
       })()}
