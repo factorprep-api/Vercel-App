@@ -802,7 +802,10 @@ export const saveNutritionLog = async ({ items, athlete, sessionLogId, date }) =
         .update({ items: merged })
         .eq('id', existing.id);
       if (error) return { status: 'Error', message: error.message };
-      return { status: 'Success', items: merged };
+      // v1.9.x fix: return the row id so the athlete UI can set logId for
+      // items added before today's row existed at page load — otherwise the
+      // per-item delete (updateNutritionItems) silently no-ops on a null id.
+      return { status: 'Success', id: existing.id, items: merged };
     }
 
     const { data: inserted, error } = await supabase
@@ -816,7 +819,8 @@ export const saveNutritionLog = async ({ items, athlete, sessionLogId, date }) =
       .select('id, items')
       .single();
     if (error) return { status: 'Error', message: error.message };
-    return { status: 'Success', items: inserted ? inserted.items : items };
+    // Same fix as the update path: surface the new row's id to the caller.
+    return { status: 'Success', id: inserted ? inserted.id : null, items: inserted ? inserted.items : items };
   } catch (err) { return { status: 'Error', message: err.message }; }
 };
 
