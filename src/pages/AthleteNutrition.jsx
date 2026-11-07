@@ -770,6 +770,7 @@ export default function AthleteNutrition() {
     const res = await saveNutritionLog({ items: [item], athlete: athleteName, email: userEmail });
     setSaving(false);
     if (res.status === 'Success') {
+      if (res.id) setLogId(prev => prev || res.id);
       setItems(Array.isArray(res.items) ? res.items : [...items, item]);
       setSelected(null);
       setGrams('');
@@ -782,7 +783,12 @@ export default function AthleteNutrition() {
   };
 
   const removeItem = async (idx) => {
-    if (!logId) return;
+    if (!logId) {
+      // Fail loudly instead of silently no-oping when today's log row id
+      // was never captured (e.g. a failed load or an unexpected state gap).
+      setPageError('Log not found — please refresh the page and try again.');
+      return;
+    }
     setRemoving(true);
     const next = items.filter((_, i) => i !== idx);
     const res = await updateNutritionItems(logId, next);
@@ -951,6 +957,7 @@ export default function AthleteNutrition() {
     const res = await saveNutritionLog({ items: [item], athlete: athleteName, email: userEmail });
     setSaving(false);
     if (res.status === 'Success') {
+      if (res.id) setLogId(prev => prev || res.id);
       setItems(Array.isArray(res.items) ? res.items : [...items, item]);
       setMeal(null);
       setJustLogged(true);
