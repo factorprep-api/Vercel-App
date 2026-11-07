@@ -81,6 +81,10 @@ export const fetchPrograms = async () => {
           )
         `) // CHANGED: exercises (name) -> exercises (exercise_name)
         .order('created_at', { ascending: false })
+        // Preserve the saved exercise order: without this, the embedded
+        // program_exercises come back in arbitrary PK (uuid) order, which
+        // scrambled the Live Draft View in Program Builder on load.
+        .order('sort_order', { ascending: true, foreignTable: 'program_exercises' })
         .range(from, from + PAGE_SIZE - 1);
 
       if (error) return { programs: [], error: error.message };
