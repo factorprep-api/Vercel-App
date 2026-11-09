@@ -58,12 +58,22 @@ export default function ProgramBuilder() {
   
   const draftRef = useRef(null);
   const setsInputRef = useRef(null);
+  const prevDraftLengthRef = useRef(0);
+  const lastMovedIndexRef = useRef(null);
 
   useEffect(() => { loadData(); }, []);
-  useEffect(() => { 
-    if (draftRef.current) {
+  useEffect(() => {
+    if (!draftRef.current) { prevDraftLengthRef.current = draft.length; return; }
+    if (lastMovedIndexRef.current !== null) {
+      // A move just happened: keep the moved exercise in view instead of jumping.
+      const card = draftRef.current.querySelector(`[data-draft-index="${lastMovedIndexRef.current}"]`);
+      lastMovedIndexRef.current = null;
+      if (card) card.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    } else if (draft.length > prevDraftLengthRef.current) {
+      // Only auto-scroll to the bottom when an exercise was added.
       draftRef.current.scrollTo({ top: draftRef.current.scrollHeight, behavior: 'smooth' });
-    } 
+    }
+    prevDraftLengthRef.current = draft.length;
   }, [draft]);
 
   async function loadData() {
@@ -208,6 +218,7 @@ export default function ProgramBuilder() {
     const j = i + dir;
     if (j < 0 || j >= newDraft.length) return;
     [newDraft[i], newDraft[j]] = [newDraft[j], newDraft[i]];
+    lastMovedIndexRef.current = j;
     setDraft(newDraft);
   }
 
@@ -558,7 +569,7 @@ export default function ProgramBuilder() {
             {draft.length === 0 ? (
               <p className="pb-draft-empty">Draft is empty.</p>
             ) : draft.map((item, i) => (
-              <div key={i} className="pb-draft-card" style={{ position: 'relative' }}>
+              <div key={i} data-draft-index={i} className="pb-draft-card" style={{ position: 'relative' }}>
                 
                 {item.advanced?.setType === 'superset' && <div className="superset-bracket"></div>}
 
