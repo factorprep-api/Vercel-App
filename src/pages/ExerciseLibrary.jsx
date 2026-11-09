@@ -532,7 +532,7 @@ export default function ExerciseLibrary({ viewMode: propViewMode = 'athlete' }) 
       {editing && (
         <div className="exlib-modal-overlay" onClick={() => setEditing(null)}>
           <div className="exlib-edit-modal" onClick={e => e.stopPropagation()}>
-            <button className="exlib-close-btn" onClick={() => setEditing(null)}><X size={24} /></button>
+            <button className="exlib-edit-close" onClick={() => setEditing(null)}><X size={24} /></button>
             <h3 className="exlib-edit-title">Edit Exercise</h3>
 
             <div className="exlib-edit-field">
