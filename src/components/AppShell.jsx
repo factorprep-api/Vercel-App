@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabase';
+import MessagingHub from './MessagingHub';
 
 export default function AppShell({ children }) {
   const navigate = useNavigate();
@@ -34,20 +35,23 @@ export default function AppShell({ children }) {
           />
           <h1 style={{ margin: 0, fontSize: '16px', fontWeight: '700', letterSpacing: '0.5px' }}>FactorPrep</h1>
         </div>
-        <button onClick={handleLogout} style={{
-          background: 'transparent',
-          border: '2px solid white',
-          color: 'white',
-          padding: '6px 12px',
-          borderRadius: '4px',
-          cursor: 'pointer',
-          fontSize: '12px',
-          fontWeight: 'bold',
-          letterSpacing: '0.5px',
-          transition: 'background 0.2s'
-        }}>
-          Logout
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center' }}>
+          <MessagingHub />
+          <button onClick={handleLogout} style={{
+            background: 'transparent',
+            border: '2px solid white',
+            color: 'white',
+            padding: '6px 12px',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            fontSize: '12px',
+            fontWeight: 'bold',
+            letterSpacing: '0.5px',
+            transition: 'background 0.2s'
+          }}>
+            Logout
+          </button>
+        </div>
       </header>
 
       <main style={{ flex: 1, padding: 0, background: '#f5f5f5' }}>

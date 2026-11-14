@@ -23,6 +23,10 @@
 -- v1.10.1 changes: athletes.email / coach_user_id / requested_club_id
 -- (self-serve signups + automatic purchases — see
 -- signup_club_requests_v1.10.1.sql for the live-deployment migration).
+-- v1.11.x (Nov 2026): exercise_name conventions documented at the
+-- exercises table — ".v" suffix means voice narration (do not strip);
+-- names normalized (Triceps/Biceps/Hamstrings/Quadriceps, whitespace,
+-- Pess/Ezsy/Stertch/Giblet typos, Hipflexor → Hip Flexor).
 -- =====================================================================
 
 -- ---------- CLUB / TEAM STRUCTURE ----------
@@ -178,6 +182,10 @@ create table public.cycle_logs (
 );
 
 -- ---------- PROGRAMS & EXERCISES ----------
+-- CONVENTION (exercise_name): names ending in ".v" indicate the video has
+-- voice/audio narration. This suffix is SEMANTIC — do NOT strip it in any
+-- rename, cleanup, import, or video-upload pipeline. bunny.net filenames
+-- mirror exercise_name, so removing ".v" breaks the name↔file mapping.
 create table public.exercises (
   id uuid primary key default gen_random_uuid(),
   exercise_name text not null,
