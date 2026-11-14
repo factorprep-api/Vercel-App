@@ -2799,8 +2799,150 @@ export const fetchMyOpenInjuries = async () => {
 };
 
 // ==========================================
-// FAILSAFE DEFAULT EXPORT
+// MESSAGING (v1.11.0) — see messaging_v1.11.0.sql
+// Threads are strictly 1 athlete ↔ 1 staff member. Staff = the athlete's
+// coach_user_id OR an active team coach of one of their active teams.
+// All writes go through the security-definer RPCs; RLS gates reads.
 // ==========================================
+
+// Threads for the signed-in user (staff OR athlete view — RLS scopes it).
+// Reads own receipts so the caller can compute unread badges client-side.
+export const fetchMessagingThreads = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('message_threads')
+      .select(`
+        id, staff_id, athlete_id, broadcast_group, staff_name, athlete_name,
+        message_count, last_message_at, last_message_sender_id, created_at,
+        message_reads(last_read_at)
+      `)
+      .order('last_message_at', { ascending: false });
+    if (error) return { threads: [], error: error.message };
+    const threads = (data || []).map(t => ({
+      id: t.id,
+      staffId: t.staff_id,
+      athleteId: t.athlete_id,
+      broadcastGroup: t.broadcast_group,
+      staffName: t.staff_name,
+      athleteName: t.athlete_name,
+      messageCount: t.message_count,
+      lastMessageAt: t.last_message_at,
+      lastMessageSenderId: t.last_message_sender_id,
+      createdAt: t.created_at,
+      // RLS restricts message_reads to the signed-in user's own row.
+      myLastReadAt: (t.message_reads && t.message_reads[0] && t.message_reads[0].last_read_at) || null
+    }));
+    return { threads, error: null };
+  } catch (err) { return { threads: [], error: err.message }; }
+};
+
+// All messages in one thread (RLS: participant only).
+export const fetchThreadMessages = async (threadId) => {
+  try {
+    const { data, error } = await supabase
+      .from('thread_messages')
+      .select('id, thread_id, sender_id, body, created_at')
+      .eq('thread_id', threadId)
+      .order('created_at', { ascending: true });
+    if (error) return { messages: [], error: error.message };
+    return { messages: data || [], error: null };
+  } catch (err) { return { messages: [], error: err.message }; }
+};
+
+// Reply to an existing thread (RLS: participant insert). Returns error msg.
+export const replyToThread = async (threadId, body) => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { error: 'Not signed in.' };
+    const trimmed = (body || '').trim();
+    if (!trimmed) return { error: 'Message cannot be empty.' };
+    if (trimmed.length > 4000) return { error: 'Message must be under 4000 characters.' };
+    const { error } = await supabase.from('thread_messages').insert({
+      thread_id: threadId,
+      sender_id: user.id,
+      body: trimmed
+    });
+    return error ? { error: error.message } : { error: null };
+  } catch (err) { return { error: err.message }; }
+};
+
+// Staff: message one athlete (RPC creates thread + first message).
+export const staffMessageAthlete = async (athleteId, body) => {
+  try {
+    const { data, error } = await supabase.rpc('staff_send_message', {
+      p_athlete_id: athleteId, p_body: body
+    });
+    return error ? { error: error.message } : { threadId: data, error: null };
+  } catch (err) { return { error: err.message }; }
+};
+
+// Staff: same body to a specific subset (multi-select).
+export const staffMessageMany = async (athleteIds, body) => {
+  try {
+    const { data, error } = await supabase.rpc('staff_send_messages', {
+      p_athlete_ids: athleteIds, p_body: body
+    });
+    return error ? { error: error.message } : { sent: data, error: null };
+  } catch (err) { return { error: err.message }; }
+};
+
+// Staff: broadcast to every connected athlete.
+export const staffBroadcast = async (body) => {
+  try {
+    const { data, error } = await supabase.rpc('staff_broadcast', { p_body: body });
+    return error ? { error: error.message } : { sent: data, error: null };
+  } catch (err) { return { error: err.message }; }
+};
+
+// Athlete: message a connected staff member (continues their thread).
+export const athleteMessageStaff = async (staffId, body) => {
+  try {
+    const { data, error } = await supabase.rpc('athlete_send_message', {
+      p_staff_id: staffId, p_body: body
+    });
+    return error ? { error: error.message } : { threadId: data, error: null };
+  } catch (err) { return { error: err.message }; }
+};
+
+// Either side: mark a thread read (RPC upserts message_reads).
+export const markThreadRead = async (threadId) => {
+  try {
+    const { error } = await supabase.rpc('mark_thread_read', { p_thread_id: threadId });
+    return error ? { error: error.message } : { error: null };
+  } catch (err) { return { error: err.message }; }
+};
+
+// Staff compose picker: connected athletes (RPC, RLS-free roster).
+export const fetchMessagingRoster = async () => {
+  try {
+    const { data, error } = await supabase.rpc('messaging_roster');
+    if (error) return { roster: [], error: error.message };
+    return { roster: data || [], error: null };
+  } catch (err) { return { roster: [], error: err.message }; }
+};
+
+// Athlete compose picker: connected staff members.
+export const fetchMessagingStaff = async () => {
+  try {
+    const { data, error } = await supabase.rpc('athlete_visible_staff');
+    if (error) return { staff: [], error: error.message };
+    return { staff: data || [], error: null };
+  } catch (err) { return { staff: [], error: err.message }; }
+};
+
+// Unread thread count for the signed-in user: a thread is unread when its
+// last message is newer than my receipt AND was not sent by me.
+export const countUnreadThreads = (threads, myUserId) => {
+  if (!threads || !myUserId) return 0;
+  return threads.filter(t => {
+    if (!t.lastMessageAt) return false;
+    if (t.lastMessageSenderId === myUserId) return false;
+    const lastRead = t.myLastReadAt ? new Date(t.myLastReadAt).getTime() : 0;
+    return new Date(t.lastMessageAt).getTime() > lastRead;
+  }).length;
+};
+
+
 const api = {
   fetchAthletes, fetchPrograms, fetchLibrary, saveWellnessLog, 
   fetchWellnessLogs, saveScheduleSession, deleteScheduleSession, fetchSchedule, saveMedicalLog, 
@@ -2820,6 +2962,9 @@ const api = {
   fetchTherapistSlots, saveTherapistSlot, deleteTherapistSlot,
   bookTreatmentSlot, cancelTreatmentBooking, completeTreatmentBooking,
   fetchMyTreatmentBookings, fetchTherapistBookings, fetchClubTreatmentBookings,
-  fetchMyOpenInjuries
+  fetchMyOpenInjuries,
+  fetchMessagingThreads, fetchThreadMessages, replyToThread,
+  staffMessageAthlete, staffMessageMany, staffBroadcast, athleteMessageStaff,
+  markThreadRead, fetchMessagingRoster, fetchMessagingStaff, countUnreadThreads
 };
 export default api;
