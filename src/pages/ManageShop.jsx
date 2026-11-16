@@ -190,7 +190,7 @@ export default function ManageShop() {
   const setF = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   if (isAdmin === null) return <div style={{ padding: 40, fontFamily: 'system-ui' }}><p>Loading…</p></div>;
-  // Shop management exists for exactly one account (crusty@hotmail.com).
+  // Shop management exists for exactly one account (the shop admin).
   // Anyone else — including other club admins — is silently sent home:
   // no message, no trace. The page simply doesn't exist for them.
   if (!isAdmin) return <Navigate to="/" replace />;

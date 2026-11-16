@@ -2272,7 +2272,7 @@ export const fetchMyPods = async () => {
 };
 
 // ---------- ADMIN PIPES (/manage-shop) — RLS: single shop admin ----------
-// Shop governance is locked to ONE account (crusty@hotmail.com) via the
+// Shop governance is locked to ONE account via the
 // is_shop_admin() DB function — see shop_admin_v1.5.1.sql. Club admins
 // (coach promotions) no longer imply shop powers.
 export const isShopAdmin = async () => {

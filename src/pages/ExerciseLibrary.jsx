@@ -3,18 +3,15 @@ import { Play, Search, X, Pencil, Trash2, Plus, ArrowLeft, CheckCircle, AlertCir
 import { useNavigate } from 'react-router-dom';
 import { getYouTubeId, normalizeVideoUrl } from '../utils/helpers';
 import { useAuth } from '../hooks/useAuth';
-import { fetchExerciseLibrary, deleteExerciseFromLibrary, updateExerciseInLibrary, addExerciseToLibrary, getAthleteByEmail } from '../api.js';
+import { fetchExerciseLibrary, deleteExerciseFromLibrary, updateExerciseInLibrary, addExerciseToLibrary, getAthleteByEmail, isShopAdmin } from '../api.js';
 import './exercise-library.css';
 import HelpButton from '../components/HelpButton';
 
 const ITEMS_PER_PAGE = 50;
 
-// ADMIN "GOD MODE" EMAIL - same account as the shop admin (ProgramLibrary).
-// Only this account can publish exercises to the shared Public Library.
-// v1.11.3: moved to an env var so the address is not baked into the public
-// JS bundle (the database's is_shop_admin() is the real authority). Set
-// VITE_ADMIN_EMAIL in Vercel + local .env.
-const ADMIN_EMAIL = (import.meta.env.VITE_ADMIN_EMAIL || '').trim().toLowerCase();
+// ADMIN check — v1.11.3: server-side via the is_shop_admin() RPC (the same
+// authority Manage Shop uses). The admin's email no longer exists in the
+// client bundle.
 
 function buildGrouped(data) {
   const map = {};
@@ -102,7 +99,13 @@ export default function ExerciseLibrary({ viewMode: propViewMode = 'athlete' }) 
   // The admin maintains the shared Public Library: right-click any exercise
   // card -> Edit / Delete. Every other account manages only its own
   // exercises (pencil/trash on owned cards, unchanged).
-  const isAdmin = userEmail && userEmail.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+  // v1.11.3: authority comes from the database (is_shop_admin RPC) — no
+  // email in the client bundle. Buttons appear once the RPC resolves.
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    isShopAdmin().then(res => setIsAdmin(res.isAdmin === true)).catch(() => setIsAdmin(false));
+  }, []);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedQuery(searchQuery), 300);

@@ -3,16 +3,14 @@ import { Search, Trash2, UserPlus, CheckCircle, X, Layers, Dumbbell, Activity, L
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
-import { fetchPrograms, fetchAthletes, deleteProgram, assignProgramBulk, fetchVisibleAssignments, archiveAssignments } from '../api';
+import { fetchPrograms, fetchAthletes, deleteProgram, assignProgramBulk, fetchVisibleAssignments, archiveAssignments, isShopAdmin } from '../api';
 import './program-library.css';
 
 // ==========================================
-// ADMIN "GOD MODE" EMAIL
+// ADMIN check — v1.11.3: server-side via the is_shop_admin() RPC (the same
+// authority Manage Shop uses). The admin's email no longer exists in the
+// client bundle.
 // ==========================================
-// v1.11.3: moved to an env var so the shop-admin's address is not baked
-// into the public JS bundle (the database's is_shop_admin() remains the
-// real authority). Set VITE_ADMIN_EMAIL in Vercel + local .env.
-const ADMIN_EMAIL = (import.meta.env.VITE_ADMIN_EMAIL || '').trim().toLowerCase();
 
 export default function ProgramLibrary() {
   const [loading, setLoading] = useState(true);
@@ -38,6 +36,12 @@ export default function ProgramLibrary() {
   const [removeSelected, setRemoveSelected] = useState(new Set());  // keys: `${athleteId}|${programId}`
   const [removeLoading, setRemoveLoading] = useState(false);
   const [removing, setRemoving] = useState(false);
+
+  // v1.11.3: admin authority from the database (is_shop_admin RPC).
+  const [adminCheck, setAdminCheck] = useState(false);
+  useEffect(() => {
+    isShopAdmin().then(res => setAdminCheck(res.isAdmin === true)).catch(() => setAdminCheck(false));
+  }, []);
 
   const { userEmail, isLoading: authLoading } = useAuth();
   const navigate = useNavigate();
@@ -474,7 +478,10 @@ export default function ProgramLibrary() {
               // ==========================================
               // SECURITY: CAN THIS USER DELETE THIS PROGRAM?
               // ==========================================
-              const isAdmin = userEmail && userEmail.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+              // v1.11.3: isAdmin comes from the database (is_shop_admin RPC),
+              // not an email comparison — the admin's address is not in the
+              // client bundle. The RLS policies remain the real enforcement.
+              const isAdmin = adminCheck === true;
               const isOwner = program.ownerEmail === userEmail;
               const isPublic = program.privacyLevel === 'PUBLIC';
               
