@@ -776,7 +776,7 @@ useEffect(() => {
     Feeling: {
       label: 'Feeling',
       unit: '/10',
-      color: '#16a34a',
+      color: '#ca8a04',
       icon: Smile,
       description: 'Subjective systemic readiness and energy level'
     },
