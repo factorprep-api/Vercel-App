@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Search, Trash2, UserPlus, CheckCircle, X, Layers, Dumbbell, Activity, Lock, Globe, ArrowLeft } from 'lucide-react';
+import { Search, Trash2, UserPlus, UserMinus, CheckCircle, X, Layers, Dumbbell, Activity, Lock, Globe, ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
-import { fetchPrograms, fetchAthletes, deleteProgram, assignProgramBulk } from '../api';
+import { fetchPrograms, fetchAthletes, deleteProgram, assignProgramBulk, fetchVisibleAssignments, archiveAssignments } from '../api';
 import './program-library.css';
 
 // ==========================================
@@ -26,6 +26,16 @@ export default function ProgramLibrary() {
   const [deleting, setDeleting] = useState(null);
   const [privacyFilter, setPrivacyFilter] = useState('all');
   const [bulkAssigning, setBulkAssigning] = useState(false);
+
+  // "Remove from Athletes" — the reverse of the assign modal: archive
+  // active assignment rows. The program itself is never touched.
+  const [removeModalOpen, setRemoveModalOpen] = useState(false);
+  const [removeAthletes, setRemoveAthletes] = useState(new Set());
+  const [removeSearch, setRemoveSearch] = useState('');
+  const [removeAssignments, setRemoveAssignments] = useState([]);   // active assignments of selected athletes
+  const [removeSelected, setRemoveSelected] = useState(new Set());  // keys: `${athleteId}|${programId}`
+  const [removeLoading, setRemoveLoading] = useState(false);
+  const [removing, setRemoving] = useState(false);
 
   const { userEmail, isLoading: authLoading } = useAuth();
   const navigate = useNavigate();
@@ -260,6 +270,82 @@ export default function ProgramLibrary() {
     setBulkAssigning(false);
   }
 
+  // ---- "Remove from Athletes" handlers (reverse of assign) ----
+  function toggleRemoveAthlete(rowNum) {
+    setRemoveAthletes(prev => {
+      const next = new Set(prev);
+      if (next.has(rowNum)) next.delete(rowNum); else next.add(rowNum);
+      return next;
+    });
+  }
+
+  const selectedRemoveNames = useMemo(() => {
+    return [...removeAthletes]
+      .map(r => athleteOptions.find(a => a.row === r))
+      .filter(Boolean)
+      .map(a => a.name);
+  }, [removeAthletes, athleteOptions]);
+
+  useEffect(() => {
+    if (!removeModalOpen) return;
+    if (selectedRemoveNames.length === 0) { setRemoveAssignments([]); return; }
+    let cancelled = false;
+    (async () => {
+      setRemoveLoading(true);
+      const { assignments: list, error } = await fetchVisibleAssignments();
+      if (cancelled) return;
+      setRemoveLoading(false);
+      if (error) { showToast('Could not load assignments', true); return; }
+      const names = selectedRemoveNames.map(n => n.toLowerCase());
+      const relevant = list.filter(a => names.includes(a.athleteName.toLowerCase()));
+      setRemoveAssignments(relevant);
+      // Keep only selections that still exist.
+      setRemoveSelected(prev => {
+        const next = new Set();
+        relevant.forEach(a => {
+          const key = a.athleteId + '|' + a.programId;
+          if (prev.has(key)) next.add(key);
+        });
+        return next;
+      });
+    })();
+    return () => { cancelled = true; };
+  }, [removeModalOpen, selectedRemoveNames]);
+
+  function toggleRemoveSelection(a) {
+    const key = a.athleteId + '|' + a.programId;
+    setRemoveSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
+
+  async function handleRemoveAssignments() {
+    if (removeSelected.size === 0) { showToast('Select at least one program to remove.', true); return; }
+    const pairs = removeAssignments
+      .filter(a => removeSelected.has(a.athleteId + '|' + a.programId))
+      .map(a => ({ athleteId: a.athleteId, programId: a.programId }));
+    if (pairs.length === 0) { showToast('Nothing to remove.', true); return; }
+    if (!confirm(`Remove ${pairs.length} program assignment(s)? The programs themselves stay in your library — this only removes them from the selected athletes.`)) return;
+    setRemoving(true);
+    try {
+      const res = await archiveAssignments(pairs);
+      if (res.status === 'Success') {
+        showToast(`Removed ${res.rowsUpdated} program assignment(s) — programs untouched in your library`);
+        setRemoveModalOpen(false);
+        setRemoveAthletes(new Set());
+        setRemoveSelected(new Set());
+        await loadData();
+      } else {
+        showToast('Remove failed: ' + (res.message || 'unknown error'), true);
+      }
+    } catch {
+      showToast('Network error', true);
+    }
+    setRemoving(false);
+  }
+
   function renderPrivacyBadge(program) {
     const level = program.privacyLevel || 'PRIVATE';
     if (level === 'PUBLIC') {
@@ -349,9 +435,14 @@ export default function ProgramLibrary() {
               Program Library
             </h2>
           </div>
-          <button className="pl-bulk-assign-btn" onClick={() => setAssignModalOpen(true)}>
-            <UserPlus size={16} /> Assign
-          </button>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button className="pl-bulk-assign-btn" style={{ background: '#dc2626' }} onClick={() => { setRemoveAthletes(new Set()); setRemoveSelected(new Set()); setRemoveSearch(''); setRemoveModalOpen(true); }}>
+              <UserMinus size={16} /> Remove from Athletes
+            </button>
+            <button className="pl-bulk-assign-btn" onClick={() => setAssignModalOpen(true)}>
+              <UserPlus size={16} /> Assign
+            </button>
+          </div>
         </div>
 
         <div className="pl-privacy-tabs">
@@ -432,6 +523,102 @@ export default function ProgramLibrary() {
           </div>
         )}
       </div>
+
+      {removeModalOpen && (
+        <div className="pl-assign-modal" onClick={() => setRemoveModalOpen(false)}>
+          <div className="pl-assign-content" onClick={e => e.stopPropagation()}>
+            <div className="pl-assign-header">
+              <h3 className="pl-assign-title">Remove Programs From Athletes</h3>
+              <button className="pl-assign-close" onClick={() => setRemoveModalOpen(false)}><X size={24} /></button>
+            </div>
+
+            <div className="pl-assign-step">
+              <h4>Step 1: Select Athlete(s)</h4>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+                <div style={{ position: 'relative', flex: 1 }}>
+                  <Search size={16} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#999' }} />
+                  <input
+                    type="text"
+                    className="pl-input"
+                    style={{ paddingLeft: 32 }}
+                    value={removeSearch}
+                    onChange={e => setRemoveSearch(e.target.value)}
+                    placeholder="Search athletes..."
+                  />
+                </div>
+              </div>
+              <div className="pl-athlete-list-container">
+                {filteredAthletes.length === 0 ? (
+                  <p style={{ padding: 16, color: '#888', textAlign: 'center' }}>No athletes found.</p>
+                ) : filteredAthletes.filter(a => a.name.toLowerCase().includes(removeSearch.toLowerCase())).map(a => (
+                  <label key={a.row} className={`pl-athlete-item ${removeAthletes.has(a.row) ? 'selected' : ''}`}>
+                    <input type="checkbox" checked={removeAthletes.has(a.row)} onChange={() => toggleRemoveAthlete(a.row)} className="pl-athlete-checkbox" />
+                    <span className="pl-athlete-name">{a.name}</span>
+                  </label>
+                ))}
+              </div>
+              <p className="pl-selection-count">{removeAthletes.size} athlete(s) selected</p>
+            </div>
+
+            {removeAthletes.size > 0 && (
+              <div className="pl-assign-step">
+                <h4>Step 2: Select Program Assignment(s) To Remove</h4>
+                {removeLoading ? (
+                  <p style={{ padding: 12, color: '#888', textAlign: 'center' }}>Loading assignments…</p>
+                ) : (
+                  <div className="pl-athlete-list-container" style={{ maxHeight: 260 }}>
+                    {(() => {
+                      const groups = selectedRemoveNames
+                        .map(name => ({
+                          name,
+                          items: removeAssignments.filter(a => a.athleteName.toLowerCase() === name.toLowerCase())
+                        }));
+                      const anyItems = groups.some(g => g.items.length > 0);
+                      if (!anyItems) {
+                        return <p style={{ padding: 16, color: '#888', textAlign: 'center' }}>
+                          {removeAssignments.length === 0
+                            ? 'No assigned programs found for the selected athlete(s).'
+                            : 'The selected athlete(s) have no assigned programs.'}
+                        </p>;
+                      }
+                      return groups.map(g => (
+                        <div key={g.name} style={{ marginBottom: 12 }}>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', padding: '6px 10px' }}>{g.name}</div>
+                          {g.items.length === 0 ? (
+                            <div style={{ fontSize: 12, color: '#94a3b8', padding: '0 10px 4px' }}>No assigned programs.</div>
+                          ) : g.items.map(a => {
+                            const key = a.athleteId + '|' + a.programId;
+                            return (
+                              <label key={a.assignmentId} className={`pl-athlete-item ${removeSelected.has(key) ? 'selected' : ''}`}>
+                                <input type="checkbox" checked={removeSelected.has(key)} onChange={() => toggleRemoveSelection(a)} className="pl-athlete-checkbox" />
+                                <span className="pl-athlete-name" style={{ fontWeight: 400 }}>
+                                  {a.programName}
+                                  <span style={{ fontSize: 11, color: '#94a3b8', marginLeft: 8 }}>
+                                    assigned {a.assignedAt ? new Date(a.assignedAt).toLocaleDateString() : ''}
+                                  </span>
+                                </span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      ));
+                    })()}
+                  </div>
+                )}
+                <p className="pl-multi-select-help">
+                  Removing an assignment only takes the program out of that athlete's private library — the program stays in your library, and the athlete's logged history is untouched.
+                </p>
+              </div>
+            )}
+
+            {removeAthletes.size > 0 && (
+              <button className="pl-assign-confirm-btn" style={{ background: '#dc2626' }} onClick={handleRemoveAssignments} disabled={removing || removeSelected.size === 0}>
+                {removing ? 'Removing...' : `Remove ${removeSelected.size} Assignment(s)`}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {assignModalOpen && (
         <div className="pl-assign-modal" onClick={() => setAssignModalOpen(false)}>
