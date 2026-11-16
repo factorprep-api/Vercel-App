@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Search, Trash2, UserPlus, UserMinus, CheckCircle, X, Layers, Dumbbell, Activity, Lock, Globe, ArrowLeft } from 'lucide-react';
+import { Search, Trash2, UserPlus, CheckCircle, X, Layers, Dumbbell, Activity, Lock, Globe, ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
@@ -27,11 +27,9 @@ export default function ProgramLibrary() {
   const [privacyFilter, setPrivacyFilter] = useState('all');
   const [bulkAssigning, setBulkAssigning] = useState(false);
 
-  // "Remove from Athletes" — the reverse of the assign modal: archive
+  // "Remove from Athletes" — a second mode inside the assign modal: archive
   // active assignment rows. The program itself is never touched.
-  const [removeModalOpen, setRemoveModalOpen] = useState(false);
-  const [removeAthletes, setRemoveAthletes] = useState(new Set());
-  const [removeSearch, setRemoveSearch] = useState('');
+  const [assignMode, setAssignMode] = useState('assign');   // 'assign' | 'remove'
   const [removeAssignments, setRemoveAssignments] = useState([]);   // active assignments of selected athletes
   const [removeSelected, setRemoveSelected] = useState(new Set());  // keys: `${athleteId}|${programId}`
   const [removeLoading, setRemoveLoading] = useState(false);
@@ -287,30 +285,30 @@ export default function ProgramLibrary() {
   }, [removeAthletes, athleteOptions]);
 
   useEffect(() => {
-    if (!removeModalOpen) return;
-    if (selectedRemoveNames.length === 0) { setRemoveAssignments([]); return; }
-    let cancelled = false;
-    (async () => {
-      setRemoveLoading(true);
-      const { assignments: list, error } = await fetchVisibleAssignments();
-      if (cancelled) return;
-      setRemoveLoading(false);
-      if (error) { showToast('Could not load assignments', true); return; }
-      const names = selectedRemoveNames.map(n => n.toLowerCase());
-      const relevant = list.filter(a => names.includes(a.athleteName.toLowerCase()));
-      setRemoveAssignments(relevant);
-      // Keep only selections that still exist.
-      setRemoveSelected(prev => {
-        const next = new Set();
-        relevant.forEach(a => {
-          const key = a.athleteId + '|' + a.programId;
-          if (prev.has(key)) next.add(key);
+    if (assignModalOpen && assignMode === 'remove' && selectedRemoveNames.length > 0) {
+      let cancelled = false;
+      (async () => {
+        setRemoveLoading(true);
+        const { assignments: list, error } = await fetchVisibleAssignments();
+        if (cancelled) return;
+        setRemoveLoading(false);
+        if (error) { showToast('Could not load assignments', true); return; }
+        const names = selectedRemoveNames.map(n => n.toLowerCase());
+        const relevant = list.filter(a => names.includes(a.athleteName.toLowerCase()));
+        setRemoveAssignments(relevant);
+        // Keep only selections that still exist.
+        setRemoveSelected(prev => {
+          const next = new Set();
+          relevant.forEach(a => {
+            const key = a.athleteId + '|' + a.programId;
+            if (prev.has(key)) next.add(key);
+          });
+          return next;
         });
-        return next;
-      });
-    })();
-    return () => { cancelled = true; };
-  }, [removeModalOpen, selectedRemoveNames]);
+      })();
+      return () => { cancelled = true; };
+    }
+  }, [assignModalOpen, assignMode, selectedRemoveNames]);
 
   function toggleRemoveSelection(a) {
     const key = a.athleteId + '|' + a.programId;
@@ -435,14 +433,9 @@ export default function ProgramLibrary() {
               Program Library
             </h2>
           </div>
-          <div style={{ display: 'flex', gap: '10px' }}>
-            <button className="pl-bulk-assign-btn" style={{ background: '#dc2626' }} onClick={() => { setRemoveAthletes(new Set()); setRemoveSelected(new Set()); setRemoveSearch(''); setRemoveModalOpen(true); }}>
-              <UserMinus size={16} /> Remove from Athletes
-            </button>
-            <button className="pl-bulk-assign-btn" onClick={() => setAssignModalOpen(true)}>
-              <UserPlus size={16} /> Assign
-            </button>
-          </div>
+          <button className="pl-bulk-assign-btn" onClick={() => { setAssignMode('assign'); setAssignModalOpen(true); }}>
+            <UserPlus size={16} /> Assign
+          </button>
         </div>
 
         <div className="pl-privacy-tabs">
@@ -524,12 +517,29 @@ export default function ProgramLibrary() {
         )}
       </div>
 
-      {removeModalOpen && (
-        <div className="pl-assign-modal" onClick={() => setRemoveModalOpen(false)}>
+
+      {assignModalOpen && (
+        <div className="pl-assign-modal" onClick={() => setAssignModalOpen(false)}>
           <div className="pl-assign-content" onClick={e => e.stopPropagation()}>
             <div className="pl-assign-header">
-              <h3 className="pl-assign-title">Remove Programs From Athletes</h3>
-              <button className="pl-assign-close" onClick={() => setRemoveModalOpen(false)}><X size={24} /></button>
+              <h3 className="pl-assign-title">{assignMode === 'remove' ? 'Remove Programs From Athletes' : 'Assign Programs To Athletes'}</h3>
+              <button className="pl-assign-close" onClick={() => setAssignModalOpen(false)}><X size={24} /></button>
+            </div>
+
+            {/* Mode tabs: the same popup handles assigning and removing */}
+            <div className="pl-privacy-tabs" style={{ marginBottom: 14 }}>
+              <button
+                className={`pl-privacy-tab ${assignMode === 'assign' ? 'active' : ''}`}
+                onClick={() => setAssignMode('assign')}
+              >
+                Assign
+              </button>
+              <button
+                className={`pl-privacy-tab ${assignMode === 'remove' ? 'active' : ''}`}
+                onClick={() => setAssignMode('remove')}
+              >
+                Remove
+              </button>
             </div>
 
             <div className="pl-assign-step">
@@ -541,29 +551,33 @@ export default function ProgramLibrary() {
                     type="text"
                     className="pl-input"
                     style={{ paddingLeft: 32 }}
-                    value={removeSearch}
-                    onChange={e => setRemoveSearch(e.target.value)}
+                    value={athleteSearch}
+                    onChange={e => setAthleteSearch(e.target.value)}
                     placeholder="Search athletes..."
                   />
                 </div>
               </div>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 15 }}>
+                <button onClick={selectAllFiltered} className="pl-athlete-action-btn pl-athlete-select-all">Select All Visible</button>
+                <button onClick={clearAthleteSelection} className="pl-athlete-action-btn pl-athlete-clear-all">Clear All</button>
+              </div>
               <div className="pl-athlete-list-container">
                 {filteredAthletes.length === 0 ? (
                   <p style={{ padding: 16, color: '#888', textAlign: 'center' }}>No athletes found.</p>
-                ) : filteredAthletes.filter(a => a.name.toLowerCase().includes(removeSearch.toLowerCase())).map(a => (
-                  <label key={a.row} className={`pl-athlete-item ${removeAthletes.has(a.row) ? 'selected' : ''}`}>
-                    <input type="checkbox" checked={removeAthletes.has(a.row)} onChange={() => toggleRemoveAthlete(a.row)} className="pl-athlete-checkbox" />
+                ) : filteredAthletes.map(a => (
+                  <label key={a.row} className={`pl-athlete-item ${assignAthletes.has(a.row) ? 'selected' : ''}`}>
+                    <input type="checkbox" checked={assignAthletes.has(a.row)} onChange={() => toggleAthlete(a.row)} className="pl-athlete-checkbox" />
                     <span className="pl-athlete-name">{a.name}</span>
                   </label>
                 ))}
               </div>
-              <p className="pl-selection-count">{removeAthletes.size} athlete(s) selected</p>
+              <p className="pl-selection-count">{assignAthletes.size} athlete(s) selected</p>
             </div>
 
-            {removeAthletes.size > 0 && (
-              <div className="pl-assign-step">
-                <h4>Step 2: Select Program Assignment(s) To Remove</h4>
-                {removeLoading ? (
+            <div className="pl-assign-step">
+              <h4>{assignMode === 'remove' ? 'Step 2: Select Program Assignment(s) To Remove' : 'Step 2: Select Program(s)'}</h4>
+              {assignMode === 'remove' ? (
+                removeLoading ? (
                   <p style={{ padding: 12, color: '#888', textAlign: 'center' }}>Loading assignments…</p>
                 ) : (
                   <div className="pl-athlete-list-container" style={{ maxHeight: 260 }}>
@@ -604,79 +618,37 @@ export default function ProgramLibrary() {
                       ));
                     })()}
                   </div>
-                )}
+                )
+              ) : (
+                <>
+                  <label className="pl-program-label">Available Programs:</label>
+                  <select
+                    className="pl-multi-select"
+                    multiple
+                    value={assignPrograms}
+                    onChange={e => setAssignPrograms(Array.from(e.target.selectedOptions).map(o => o.value))}
+                  >
+                    {ownedProgramNames.map(p => <option key={p} value={p}>{p}</option>)}
+                  </select>
+                  <p className="pl-multi-select-help">Hold Ctrl/Cmd to select multiple programs.</p>
+                </>
+              )}
+              {assignMode === 'remove' && (
                 <p className="pl-multi-select-help">
                   Removing an assignment only takes the program out of that athlete's private library — the program stays in your library, and the athlete's logged history is untouched.
                 </p>
-              </div>
-            )}
+              )}
+            </div>
 
-            {removeAthletes.size > 0 && (
+            {assignMode === 'assign' ? (
+              <button className="pl-assign-confirm-btn" onClick={handleBulkAssign} disabled={bulkAssigning}>
+                {bulkAssigning ? 'Assigning...' : `Assign to ${assignAthletes.size} Athlete(s)`}
+              </button>
+            ) : (
               <button className="pl-assign-confirm-btn" style={{ background: '#dc2626' }} onClick={handleRemoveAssignments} disabled={removing || removeSelected.size === 0}>
                 {removing ? 'Removing...' : `Remove ${removeSelected.size} Assignment(s)`}
               </button>
             )}
-          </div>
-        </div>
-      )}
-
-      {assignModalOpen && (
-        <div className="pl-assign-modal" onClick={() => setAssignModalOpen(false)}>
-          <div className="pl-assign-content" onClick={e => e.stopPropagation()}>
-            <div className="pl-assign-header">
-              <h3 className="pl-assign-title">Assign Programs To Athletes</h3>
-              <button className="pl-assign-close" onClick={() => setAssignModalOpen(false)}><X size={24} /></button>
-            </div>
-            
-            <div className="pl-assign-step">
-              <h4>Step 1: Select Athlete(s)</h4>
-              <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-                <div style={{ position: 'relative', flex: 1 }}>
-                  <Search size={16} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#999' }} />
-                  <input
-                    type="text"
-                    className="pl-input"
-                    style={{ paddingLeft: 32 }}
-                    value={athleteSearch}
-                    onChange={e => setAthleteSearch(e.target.value)}
-                    placeholder="Search athletes..."
-                  />
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: 8, marginBottom: 15 }}>
-                <button onClick={selectAllFiltered} className="pl-athlete-action-btn pl-athlete-select-all">Select All Visible</button>
-                <button onClick={clearAthleteSelection} className="pl-athlete-action-btn pl-athlete-clear-all">Clear All</button>
-              </div>
-              <div className="pl-athlete-list-container">
-                {filteredAthletes.length === 0 ? (
-                  <p style={{ padding: 16, color: '#888', textAlign: 'center' }}>No athletes found.</p>
-                ) : filteredAthletes.map(a => (
-                  <label key={a.row} className={`pl-athlete-item ${assignAthletes.has(a.row) ? 'selected' : ''}`}>
-                    <input type="checkbox" checked={assignAthletes.has(a.row)} onChange={() => toggleAthlete(a.row)} className="pl-athlete-checkbox" />
-                    <span className="pl-athlete-name">{a.name}</span>
-                  </label>
-                ))}
-              </div>
-              <p className="pl-selection-count">{assignAthletes.size} athlete(s) selected</p>
-            </div>
-
-            <div className="pl-assign-step">
-              <h4>Step 2: Select Program(s)</h4>
-              <label className="pl-program-label">Available Programs:</label>
-              <select
-                className="pl-multi-select"
-                multiple
-                value={assignPrograms}
-                onChange={e => setAssignPrograms(Array.from(e.target.selectedOptions).map(o => o.value))}
-              >
-                {ownedProgramNames.map(p => <option key={p} value={p}>{p}</option>)}
-              </select>
-              <p className="pl-multi-select-help">Hold Ctrl/Cmd to select multiple programs.</p>
-            </div>
-
-            <button className="pl-assign-confirm-btn" onClick={handleBulkAssign} disabled={bulkAssigning}>
-              {bulkAssigning ? 'Assigning...' : `Assign to ${assignAthletes.size} Athlete(s)`}
-            </button>
           </div>
         </div>
       )}
