@@ -9,12 +9,16 @@
 -- one/many/all club athletes, see club-scoped threads, and athletes can
 -- message or reply to their club admins. Labels stay role-derived
 -- ('Coach'/'Therapist') — admins are coach-promotions, so no new label.
--- Updates the two scoping functions from v1.11.0/v1.11.1. Idempotent.
+-- Updates the two scoping functions from v1.11.0/v1.11.1.
+--
+-- ORDER MATTERS: the RLS policy msg_thread_select_athlete depends on
+-- athlete_visible_staff(), so the policy is dropped first, the function
+-- replaced, and the policy recreated at the end. This makes the file
+-- runnable on ANY earlier state (signature change or not). Idempotent.
 -- Run in the Supabase SQL editor.
 -- =====================================================================
 
--- Safe guard: drop the function first (keeps the file runnable on any
--- earlier state of athlete_visible_staff).
+drop policy if exists msg_thread_select_athlete on public.message_threads;
 drop function if exists public.athlete_visible_staff();
 
 -- staff_can_see_athlete(): coach_user_id OR active team coach OR club admin
@@ -80,3 +84,13 @@ as $function$
     and a.primary_club_id is not null
     and cm.user_id <> (select auth.uid())
 $function$;
+
+-- Recreate the athlete-side threads read policy (it was dropped above
+-- because it references athlete_visible_staff()).
+create policy msg_thread_select_athlete on public.message_threads for select
+  using (
+    athlete_id = (select public.current_athlete_id())
+    and exists (select 1 from public.athlete_visible_staff() vs
+                where vs.staff_id = message_threads.staff_id)
+  );
+

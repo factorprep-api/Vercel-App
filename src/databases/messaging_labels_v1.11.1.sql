@@ -9,10 +9,12 @@
 -- messaging_v1.11.0.sql with one that also returns staff_role.
 -- Run in the Supabase SQL editor.
 -- =====================================================================
-
--- The signature changes (adds staff_role), so Postgres requires a drop
--- before replace. RLS policies referencing it are re-satisfied the moment
--- the function is recreated below (same statement batch).
+--
+-- ORDER MATTERS: the RLS policy msg_thread_select_athlete depends on
+-- athlete_visible_staff(), so the policy is dropped first, the function
+-- replaced, and the policy recreated at the end (the signature changes —
+-- adds staff_role — so Postgres requires a drop before replace).
+drop policy if exists msg_thread_select_athlete on public.message_threads;
 drop function if exists public.athlete_visible_staff();
 
 create or replace function public.athlete_visible_staff()
@@ -35,3 +37,12 @@ as $function$
   where a.user_id = (select auth.uid())
     and tm.user_id <> (select auth.uid())
 $function$;
+
+-- Recreate the athlete-side threads read policy (it was dropped above
+-- because it references athlete_visible_staff()).
+create policy msg_thread_select_athlete on public.message_threads for select
+  using (
+    athlete_id = (select public.current_athlete_id())
+    and exists (select 1 from public.athlete_visible_staff() vs
+                where vs.staff_id = message_threads.staff_id)
+  );
