@@ -11,7 +11,10 @@ const ITEMS_PER_PAGE = 50;
 
 // ADMIN "GOD MODE" EMAIL - same account as the shop admin (ProgramLibrary).
 // Only this account can publish exercises to the shared Public Library.
-const ADMIN_EMAIL = 'crusty@hotmail.com';
+// v1.11.3: moved to an env var so the address is not baked into the public
+// JS bundle (the database's is_shop_admin() is the real authority). Set
+// VITE_ADMIN_EMAIL in Vercel + local .env.
+const ADMIN_EMAIL = (import.meta.env.VITE_ADMIN_EMAIL || '').trim().toLowerCase();
 
 function buildGrouped(data) {
   const map = {};

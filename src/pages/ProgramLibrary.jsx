@@ -9,7 +9,10 @@ import './program-library.css';
 // ==========================================
 // ADMIN "GOD MODE" EMAIL
 // ==========================================
-const ADMIN_EMAIL = 'crusty@hotmail.com';
+// v1.11.3: moved to an env var so the shop-admin's address is not baked
+// into the public JS bundle (the database's is_shop_admin() remains the
+// real authority). Set VITE_ADMIN_EMAIL in Vercel + local .env.
+const ADMIN_EMAIL = (import.meta.env.VITE_ADMIN_EMAIL || '').trim().toLowerCase();
 
 export default function ProgramLibrary() {
   const [loading, setLoading] = useState(true);
