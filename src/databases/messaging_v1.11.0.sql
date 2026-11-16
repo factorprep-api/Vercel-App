@@ -13,7 +13,7 @@
 
 -- ---------- TABLES ----------
 
-create table public.message_threads (
+create table if not exists public.message_threads (
   id uuid primary key default gen_random_uuid(),
   staff_id uuid not null references auth.users(id) on delete cascade,
   athlete_id uuid not null references public.athletes(id) on delete cascade,
@@ -26,7 +26,7 @@ create table public.message_threads (
   created_at timestamptz not null default now()
 );
 
-create table public.thread_messages (
+create table if not exists public.thread_messages (
   id uuid primary key default gen_random_uuid(),
   thread_id uuid not null references public.message_threads(id) on delete cascade,
   sender_id uuid not null references auth.users(id),
@@ -34,17 +34,17 @@ create table public.thread_messages (
   created_at timestamptz not null default now()
 );
 
-create table public.message_reads (
+create table if not exists public.message_reads (
   thread_id uuid not null references public.message_threads(id) on delete cascade,
   user_id uuid not null references auth.users(id) on delete cascade,
   last_read_at timestamptz not null default now(),
   primary key (thread_id, user_id)
 );
 
-create index idx_threads_staff     on public.message_threads(staff_id, last_message_at desc);
-create index idx_threads_athlete   on public.message_threads(athlete_id, last_message_at desc);
-create index idx_threads_group     on public.message_threads(broadcast_group);
-create index idx_thread_msg_thread on public.thread_messages(thread_id, created_at);
+create index if not exists idx_threads_staff     on public.message_threads(staff_id, last_message_at desc);
+create index if not exists idx_threads_athlete   on public.message_threads(athlete_id, last_message_at desc);
+create index if not exists idx_threads_group     on public.message_threads(broadcast_group);
+create index if not exists idx_thread_msg_thread on public.thread_messages(thread_id, created_at);
 
 -- ---------- HELPER FUNCTIONS ----------
 -- All security definer + empty search_path, mirroring functions.sql style.
@@ -302,6 +302,7 @@ begin
 end;
 $function$;
 
+drop trigger if exists thread_messages_touch on public.thread_messages;
 create trigger thread_messages_touch
 after insert on public.thread_messages
 for each row execute function public.touch_message_thread();
@@ -313,12 +314,14 @@ alter table public.thread_messages  enable row level security;
 alter table public.message_reads   enable row level security;
 
 -- message_threads: reads are participant-scoped.
+drop policy if exists msg_thread_select_staff on public.message_threads;
 create policy msg_thread_select_staff on public.message_threads for select
   using (
     staff_id = (select auth.uid())
     and public.staff_can_see_athlete((select auth.uid()), athlete_id)
   );
 
+drop policy if exists msg_thread_select_athlete on public.message_threads;
 create policy msg_thread_select_athlete on public.message_threads for select
   using (
     athlete_id = (select public.current_athlete_id())
@@ -328,19 +331,23 @@ create policy msg_thread_select_athlete on public.message_threads for select
 
 -- Direct staff insert is allowed (the UI uses staff_send_message, but the
 -- policy keeps the table honest without the RPC).
+drop policy if exists msg_thread_insert_staff on public.message_threads;
 create policy msg_thread_insert_staff on public.message_threads for insert
   with check (
     staff_id = (select auth.uid())
     and public.staff_can_see_athlete((select auth.uid()), athlete_id)
   );
 
+drop policy if exists msg_thread_delete_staff on public.message_threads;
 create policy msg_thread_delete_staff on public.message_threads for delete
   using (staff_id = (select auth.uid()));
 
 -- thread_messages: reads and replies are participant-scoped.
+drop policy if exists tmsg_select on public.thread_messages;
 create policy tmsg_select on public.thread_messages for select
   using (public.is_thread_participant(thread_id));
 
+drop policy if exists tmsg_insert on public.thread_messages;
 create policy tmsg_insert on public.thread_messages for insert
   with check (
     sender_id = (select auth.uid())
@@ -348,6 +355,7 @@ create policy tmsg_insert on public.thread_messages for insert
   );
 
 -- message_reads: a user sees only their own receipts (writes via RPC).
+drop policy if exists reads_select_own on public.message_reads;
 create policy reads_select_own on public.message_reads for select
   using (user_id = (select auth.uid()));
 

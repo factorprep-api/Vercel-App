@@ -3,13 +3,14 @@ import { Search, Trash2, UserPlus, CheckCircle, X, Layers, Dumbbell, Activity, L
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
-import { fetchPrograms, fetchAthletes, deleteProgram, assignProgramBulk } from '../api';
+import { fetchPrograms, fetchAthletes, deleteProgram, assignProgramBulk, fetchVisibleAssignments, archiveAssignments, isShopAdmin } from '../api';
 import './program-library.css';
 
 // ==========================================
-// ADMIN "GOD MODE" EMAIL
+// ADMIN check — v1.11.3: server-side via the is_shop_admin() RPC (the same
+// authority Manage Shop uses). The admin's email no longer exists in the
+// client bundle.
 // ==========================================
-const ADMIN_EMAIL = 'crusty@hotmail.com';
 
 export default function ProgramLibrary() {
   const [loading, setLoading] = useState(true);
@@ -26,6 +27,21 @@ export default function ProgramLibrary() {
   const [deleting, setDeleting] = useState(null);
   const [privacyFilter, setPrivacyFilter] = useState('all');
   const [bulkAssigning, setBulkAssigning] = useState(false);
+
+  // "Remove from Athletes" — a second mode inside the assign modal: archive
+  // active assignment rows. The program itself is never touched. Shares the
+  // SAME athlete selection (assignAthletes) as the assign mode.
+  const [assignMode, setAssignMode] = useState('assign');   // 'assign' | 'remove'
+  const [removeAssignments, setRemoveAssignments] = useState([]);   // active assignments of selected athletes
+  const [removeSelected, setRemoveSelected] = useState(new Set());  // keys: `${athleteId}|${programId}`
+  const [removeLoading, setRemoveLoading] = useState(false);
+  const [removing, setRemoving] = useState(false);
+
+  // v1.11.3: admin authority from the database (is_shop_admin RPC).
+  const [adminCheck, setAdminCheck] = useState(false);
+  useEffect(() => {
+    isShopAdmin().then(res => setAdminCheck(res.isAdmin === true)).catch(() => setAdminCheck(false));
+  }, []);
 
   const { userEmail, isLoading: authLoading } = useAuth();
   const navigate = useNavigate();
@@ -260,6 +276,78 @@ export default function ProgramLibrary() {
     setBulkAssigning(false);
   }
 
+  // ---- "Remove from Athletes" handlers (reverse of assign) ----
+  // Shares the assign selection (assignAthletes) — same Step 1 list.
+  const selectedRemoveNames = useMemo(() => {
+    return [...assignAthletes]
+      .map(r => athleteOptions.find(a => a.row === r))
+      .filter(Boolean)
+      .map(a => a.name);
+  }, [assignAthletes, athleteOptions]);
+
+  useEffect(() => {
+    if (assignModalOpen && assignMode === 'remove' && selectedRemoveNames.length > 0) {
+      let cancelled = false;
+      (async () => {
+        setRemoveLoading(true);
+        const { assignments: list, error } = await fetchVisibleAssignments();
+        if (cancelled) return;
+        setRemoveLoading(false);
+        if (error) { showToast('Could not load assignments', true); return; }
+        const names = selectedRemoveNames.map(n => n.toLowerCase());
+        const relevant = list.filter(a => names.includes(a.athleteName.toLowerCase()));
+        setRemoveAssignments(relevant);
+        // Keep only selections that still exist.
+        setRemoveSelected(prev => {
+          const next = new Set();
+          relevant.forEach(a => {
+            const key = a.athleteId + '|' + a.programId;
+            if (prev.has(key)) next.add(key);
+          });
+          return next;
+        });
+      })();
+      return () => { cancelled = true; };
+    } else if (assignMode === 'assign') {
+      // Switching back to assign mode drops stale remove checkboxes.
+      setRemoveSelected(new Set());
+    }
+  }, [assignModalOpen, assignMode, selectedRemoveNames]);
+
+  function toggleRemoveSelection(a) {
+    const key = a.athleteId + '|' + a.programId;
+    setRemoveSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
+
+  async function handleRemoveAssignments() {
+    if (removeSelected.size === 0) { showToast('Select at least one program to remove.', true); return; }
+    const pairs = removeAssignments
+      .filter(a => removeSelected.has(a.athleteId + '|' + a.programId))
+      .map(a => ({ athleteId: a.athleteId, programId: a.programId }));
+    if (pairs.length === 0) { showToast('Nothing to remove.', true); return; }
+    if (!confirm(`Remove ${pairs.length} program assignment(s)? The programs themselves stay in your library — this only removes them from the selected athletes.`)) return;
+    setRemoving(true);
+    try {
+      const res = await archiveAssignments(pairs);
+      if (res.status === 'Success') {
+        showToast(`Removed ${res.rowsUpdated} program assignment(s) — programs untouched in your library`);
+        setAssignModalOpen(false);
+        setAssignAthletes(new Set());
+        setRemoveSelected(new Set());
+        await loadData();
+      } else {
+        showToast('Remove failed: ' + (res.message || 'unknown error'), true);
+      }
+    } catch {
+      showToast('Network error', true);
+    }
+    setRemoving(false);
+  }
+
   function renderPrivacyBadge(program) {
     const level = program.privacyLevel || 'PRIVATE';
     if (level === 'PUBLIC') {
@@ -349,7 +437,7 @@ export default function ProgramLibrary() {
               Program Library
             </h2>
           </div>
-          <button className="pl-bulk-assign-btn" onClick={() => setAssignModalOpen(true)}>
+          <button className="pl-bulk-assign-btn" onClick={() => { setAssignMode('assign'); setAssignModalOpen(true); }}>
             <UserPlus size={16} /> Assign
           </button>
         </div>
@@ -390,7 +478,10 @@ export default function ProgramLibrary() {
               // ==========================================
               // SECURITY: CAN THIS USER DELETE THIS PROGRAM?
               // ==========================================
-              const isAdmin = userEmail && userEmail.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+              // v1.11.3: isAdmin comes from the database (is_shop_admin RPC),
+              // not an email comparison — the admin's address is not in the
+              // client bundle. The RLS policies remain the real enforcement.
+              const isAdmin = adminCheck === true;
               const isOwner = program.ownerEmail === userEmail;
               const isPublic = program.privacyLevel === 'PUBLIC';
               
@@ -433,14 +524,31 @@ export default function ProgramLibrary() {
         )}
       </div>
 
+
       {assignModalOpen && (
         <div className="pl-assign-modal" onClick={() => setAssignModalOpen(false)}>
           <div className="pl-assign-content" onClick={e => e.stopPropagation()}>
             <div className="pl-assign-header">
-              <h3 className="pl-assign-title">Assign Programs To Athletes</h3>
+              <h3 className="pl-assign-title">{assignMode === 'remove' ? 'Remove Programs From Athletes' : 'Assign Programs To Athletes'}</h3>
               <button className="pl-assign-close" onClick={() => setAssignModalOpen(false)}><X size={24} /></button>
             </div>
-            
+
+            {/* Mode tabs: the same popup handles assigning and removing */}
+            <div className="pl-privacy-tabs" style={{ marginBottom: 14 }}>
+              <button
+                className={`pl-privacy-tab ${assignMode === 'assign' ? 'active' : ''}`}
+                onClick={() => setAssignMode('assign')}
+              >
+                Assign
+              </button>
+              <button
+                className={`pl-privacy-tab ${assignMode === 'remove' ? 'active' : ''}`}
+                onClick={() => setAssignMode('remove')}
+              >
+                Remove
+              </button>
+            </div>
+
             <div className="pl-assign-step">
               <h4>Step 1: Select Athlete(s)</h4>
               <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
@@ -474,22 +582,80 @@ export default function ProgramLibrary() {
             </div>
 
             <div className="pl-assign-step">
-              <h4>Step 2: Select Program(s)</h4>
-              <label className="pl-program-label">Available Programs:</label>
-              <select
-                className="pl-multi-select"
-                multiple
-                value={assignPrograms}
-                onChange={e => setAssignPrograms(Array.from(e.target.selectedOptions).map(o => o.value))}
-              >
-                {ownedProgramNames.map(p => <option key={p} value={p}>{p}</option>)}
-              </select>
-              <p className="pl-multi-select-help">Hold Ctrl/Cmd to select multiple programs.</p>
+              <h4>{assignMode === 'remove' ? 'Step 2: Select Program Assignment(s) To Remove' : 'Step 2: Select Program(s)'}</h4>
+              {assignMode === 'remove' ? (
+                removeLoading ? (
+                  <p style={{ padding: 12, color: '#888', textAlign: 'center' }}>Loading assignments…</p>
+                ) : (
+                  <div className="pl-athlete-list-container" style={{ maxHeight: 260 }}>
+                    {(() => {
+                      const groups = selectedRemoveNames
+                        .map(name => ({
+                          name,
+                          items: removeAssignments.filter(a => a.athleteName.toLowerCase() === name.toLowerCase())
+                        }));
+                      const anyItems = groups.some(g => g.items.length > 0);
+                      if (!anyItems) {
+                        return <p style={{ padding: 16, color: '#888', textAlign: 'center' }}>
+                          {removeAssignments.length === 0
+                            ? 'No assigned programs found for the selected athlete(s).'
+                            : 'The selected athlete(s) have no assigned programs.'}
+                        </p>;
+                      }
+                      return groups.map(g => (
+                        <div key={g.name} style={{ marginBottom: 12 }}>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', padding: '6px 10px' }}>{g.name}</div>
+                          {g.items.length === 0 ? (
+                            <div style={{ fontSize: 12, color: '#94a3b8', padding: '0 10px 4px' }}>No assigned programs.</div>
+                          ) : g.items.map(a => {
+                            const key = a.athleteId + '|' + a.programId;
+                            return (
+                              <label key={a.assignmentId} className={`pl-athlete-item ${removeSelected.has(key) ? 'selected' : ''}`}>
+                                <input type="checkbox" checked={removeSelected.has(key)} onChange={() => toggleRemoveSelection(a)} className="pl-athlete-checkbox" />
+                                <span className="pl-athlete-name" style={{ fontWeight: 400 }}>
+                                  {a.programName}
+                                  <span style={{ fontSize: 11, color: '#94a3b8', marginLeft: 8 }}>
+                                    assigned {a.assignedAt ? new Date(a.assignedAt).toLocaleDateString() : ''}
+                                  </span>
+                                </span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      ));
+                    })()}
+                  </div>
+                )
+              ) : (
+                <>
+                  <label className="pl-program-label">Available Programs:</label>
+                  <select
+                    className="pl-multi-select"
+                    multiple
+                    value={assignPrograms}
+                    onChange={e => setAssignPrograms(Array.from(e.target.selectedOptions).map(o => o.value))}
+                  >
+                    {ownedProgramNames.map(p => <option key={p} value={p}>{p}</option>)}
+                  </select>
+                  <p className="pl-multi-select-help">Hold Ctrl/Cmd to select multiple programs.</p>
+                </>
+              )}
+              {assignMode === 'remove' && (
+                <p className="pl-multi-select-help">
+                  Removing an assignment only takes the program out of that athlete's private library — the program stays in your library, and the athlete's logged history is untouched.
+                </p>
+              )}
             </div>
 
-            <button className="pl-assign-confirm-btn" onClick={handleBulkAssign} disabled={bulkAssigning}>
-              {bulkAssigning ? 'Assigning...' : `Assign to ${assignAthletes.size} Athlete(s)`}
-            </button>
+            {assignMode === 'assign' ? (
+              <button className="pl-assign-confirm-btn" onClick={handleBulkAssign} disabled={bulkAssigning}>
+                {bulkAssigning ? 'Assigning...' : `Assign to ${assignAthletes.size} Athlete(s)`}
+              </button>
+            ) : (
+              <button className="pl-assign-confirm-btn" style={{ background: '#dc2626' }} onClick={handleRemoveAssignments} disabled={removing || removeSelected.size === 0}>
+                {removing ? 'Removing...' : `Remove ${removeSelected.size} Assignment(s)`}
+              </button>
+            )}
           </div>
         </div>
       )}

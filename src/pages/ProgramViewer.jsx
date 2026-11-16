@@ -160,6 +160,8 @@ export default function ProgramViewer() {
   const [athleteRowIndex, setAthleteRowIndex] = useState(null);
   const [athleteName, setAthleteName] = useState('');
   const [selectedProgram, setSelectedProgram] = useState('');
+  const [selectedSource, setSelectedSource] = useState(null); // 'mine' | 'public' — which panel the tap came from
+  const [viewerOpen, setViewerOpen] = useState(false);        // v1.11.2: full-screen workout view
   const [expandedVideos, setExpandedVideos] = useState(new Set());
   const [inputValues, setInputValues] = useState({});
   const [saving, setSaving] = useState(false);
@@ -509,8 +511,16 @@ export default function ProgramViewer() {
     return sections.filter(s => s.items.length > 0);
   }, [workoutGroups]);
 
-  function handleProgramChange(progName) {
+  function handleProgramChange(progName, source) {
+    // Accordion source: which panel the workout expands in. Auto-detect so
+    // the session-linked paperclip auto-open lands in the right panel.
+    if (!source) {
+      if (assignedPrograms.includes(progName)) source = 'mine';
+      else if (publicPrograms.some(p => p.name === progName)) source = 'public';
+    }
+    setSelectedSource(progName ? source : null);
     setSelectedProgram(progName);
+    setViewerOpen(progName ? true : false); // v1.11.2: tap a program name -> full-screen workout
     setInputValues({});
     setSaveSuccess(false);
     setShowProgramMedia(false);
@@ -654,122 +664,10 @@ export default function ProgramViewer() {
     );
   }
 
-  return (
-    <div className="pv-container" style={{ paddingBottom: '100px' }}>
-      <style>{`
-        .pv-input-kg::-webkit-outer-spin-button, .pv-input-kg::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-        .pv-input-kg { -moz-appearance: textfield; width: 65px !important; text-align: center; }
-        .pv-input-text { width: 80px !important; text-align: center; }
-        .pv-input-history::placeholder { color: #1e293b; opacity: 1; font-weight: 700; }
-        .pv-input-calc::placeholder { color: #94a3b8; font-weight: 500; }
-        .uni-dot { display: inline-flex; align-items: center; justify-content: center; background-color: #4f46e5; color: white; font-weight: 800; font-size: 10px; width: 20px; height: 20px; border-radius: 50%; margin-left: 8px; vertical-align: middle; }
-        .superset-bracket { position: absolute; left: -4px; top: -8px; bottom: -8px; width: 8px; border-left: 3px solid #008ed3; border-top: 3px solid #008ed3; border-bottom: 3px solid #008ed3; border-radius: 4px 0 0 4px; }
-        .pv-floating-fab { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: rgba(15, 23, 42, 0.9); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.1); padding: 8px 16px; border-radius: 99px; display: flex; align-items: center; gap: 12px; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25); z-index: 9999; transition: all 0.3s ease; }
-        .pv-floating-fab.is-active { box-shadow: 0 8px 32px rgba(0, 142, 211, 0.2); border-color: rgba(0, 142, 211, 0.3); }
-        .pv-fab-collapsed { padding: 10px 24px; color: #f8fafc; font-size: 15px; font-weight: 600; cursor: pointer; border: none; background: transparent; display: flex; align-items: center; gap: 10px; }
-        .pv-fab-collapsed:hover { color: #38bdf8; }
-        .pv-timer-clock { font-family: 'SF Pro Display', -apple-system, monospace; font-size: 22px; font-weight: 600; min-width: 65px; text-align: center; color: #f8fafc; letter-spacing: 0.5px; transition: color 0.3s ease; }
-        .pv-timer-clock.is-active-text { color: #38bdf8; }
-        .pv-timer-clock.urgent { color: #ef4444; animation: pulse 1s infinite; }
-        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
-        .pv-timer-btn { background: none; border: none; color: #94a3b8; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 6px; border-radius: 50%; transition: all 0.2s; }
-        .pv-timer-btn:hover { color: #ffffff; background-color: rgba(255, 255, 255, 0.1); }
-        .pv-timer-play { background-color: #008ed3; color: white; padding: 10px; box-shadow: 0 4px 12px rgba(0, 142, 211, 0.3); }
-        .pv-timer-play:hover { background-color: #0077b5; transform: scale(1.05); }
-        .pv-timer-play.is-playing { background-color: #ef4444; box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3); }
-        .srpe-modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15, 23, 42, 0.8); backdrop-filter: blur(4px); display: flex; justify-content: center; align-items: center; z-index: 10000; padding: 20px; }
-        .srpe-modal-content { background: white; border-radius: 20px; width: 100%; max-width: 400px; padding: 24px; box-shadow: 0 20px 40px rgba(0,0,0,0.2); }
-      `}</style>
-      {showSrpeModal && (
-        <div className="srpe-modal-overlay">
-          <div className="srpe-modal-content">
-            <h3 style={{ margin: '0 0 8px 0', fontSize: '20px', color: '#0f172a' }}>Session Complete!</h3>
-            <p style={{ margin: '0 0 20px 0', fontSize: '14px', color: '#64748b' }}>Log your load for your training schedule.</p>
-            <div style={{ marginBottom: '20px' }}>
-              <label style={{ display: 'block', fontWeight: '700', marginBottom: '8px', color: '#334155' }}>Duration (Minutes)</label>
-              <input type="number" min="1" value={sessionDuration} onChange={e => setSessionDuration(e.target.value)} style={{ width: '100%', padding: '12px', fontSize: '20px', fontWeight: 'bold', textAlign: 'center', borderRadius: '8px', border: '2px solid #e2e8f0', outline: 'none' }} />
-            </div>
-            <div style={{ marginBottom: '24px' }}>
-              <label style={{ display: 'block', fontWeight: '700', marginBottom: '8px', color: '#334155' }}>Session RPE (1-10)</label>
-              <div style={{ textAlign: 'center', fontSize: '24px', fontWeight: '900', color: '#f59e0b', marginBottom: '8px' }}>{sessionRpe}</div>
-              <input type="range" min="1" max="10" step="1" value={sessionRpe} onChange={e => setSessionRpe(e.target.value)} style={{ width: '100%', accentColor: '#f59e0b' }} />
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#94a3b8', fontWeight: '600', marginTop: '4px' }}>
-                <span>1 (Very Light)</span><span>10 (Max Effort)</span>
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: '12px' }}>
-              <button onClick={() => { setShowSrpeModal(false); setSaving(false); }} style={{ flex: 1, padding: '14px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#f8fafc', fontWeight: '700', color: '#475569', cursor: 'pointer' }}>Cancel</button>
-              <button onClick={() => executeSave(pendingSets, sessionDuration, sessionRpe)} disabled={saving} style={{ flex: 1, padding: '14px', borderRadius: '8px', border: 'none', background: '#008ed3', color: 'white', fontWeight: '800', cursor: 'pointer' }}>{saving ? 'Saving...' : 'Submit & Save'}</button>
-            </div>
-          </div>
-        </div>
-      )}
-      {selectedProgram && (
-      <div className={`pv-floating-fab ${timerActive ? 'is-active' : ''}`}>
-        {timerExpanded ? (
-          <>
-            <button className="pv-timer-btn" onClick={() => { setTimerExpanded(false); setTimerActive(false); }}><X size={18} /></button>
-            <div style={{ width: '1px', height: '24px', backgroundColor: 'rgba(255,255,255,0.15)', margin: '0 2px' }}></div>
-            <button className="pv-timer-btn" onClick={() => adjustTimer(-15)}><Minus size={16} /></button>
-            {isEditingTimer ? (
-              <form onSubmit={handleTimerSubmit} style={{ margin: 0, padding: 0, display: 'flex' }}>
-                <input autoFocus type="text" value={timerInputValue} onChange={e => setTimerInputValue(e.target.value)} onBlur={handleTimerSubmit} style={{ width: '65px', background: 'transparent', border: 'none', color: '#38bdf8', fontSize: '22px', fontWeight: '600', textAlign: 'center', outline: 'none' }} />
-              </form>
-            ) : (
-              <div className={`pv-timer-clock ${timerActive ? 'is-active-text' : ''} ${timeLeft <= 10 && timeLeft > 0 && timerActive ? 'urgent' : ''}`} onClick={handleTimerClick} style={{ cursor: 'pointer' }}>{formatTimeStr(timeLeft)}</div>
-            )}
-            <button className="pv-timer-btn" onClick={() => adjustTimer(15)}><Plus size={16} /></button>
-            <div style={{ width: '1px', height: '24px', backgroundColor: 'rgba(255,255,255,0.15)', margin: '0 2px' }}></div>
-            <button className={`pv-timer-btn pv-timer-play ${timerActive ? 'is-playing' : ''}`} onClick={() => setTimerActive(!timerActive)}>{timerActive ? <Pause size={18} /> : <Play size={18} style={{ marginLeft: '2px' }} />}</button>
-          </>
-        ) : (
-          <button className="pv-fab-collapsed" onClick={() => setTimerExpanded(true)}><Timer size={20} color="#38bdf8" /> <span>Rest Timer</span></button>
-        )}
-      </div>
-      )}
-      <div className="pv-body">
-        <div className="pv-page-heading">
-          <button className="pv-back-btn" onClick={() => navigate(-1)}>
-            <ArrowLeft size={28} />
-          </button>
-          <h2>Today's Workout</h2>
-        </div>
-        {athleteName && <p className="pv-welcome-msg">Welcome, {athleteName}</p>}
-        <div className="pv-search-box">
-          <input type="text" placeholder="Search programs..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
-        </div>
-        <div className="pv-panels">
-          <div className="pv-panel">
-            <div className="pv-panel-header">
-              <h3 className="pv-panel-title" style={{ color: '#008ed3' }}><UserPlus size={20} style={{ verticalAlign: 'middle', marginRight: 8 }} /> My Programs</h3>
-              <span className="pv-count-badge">{assignedPrograms.length}</span>
-            </div>
-            {assignedPrograms.length === 0 ? (
-              <p className="pv-panel-empty">No programs assigned yet.</p>
-            ) : (
-              <div className="pv-program-buttons">
-                {assignedPrograms.filter(prog => prog.toLowerCase().includes(searchQuery.toLowerCase())).map(prog => (
-                  <button key={prog} className={`pv-program-btn ${selectedProgram === prog ? 'active' : ''}`} onClick={() => handleProgramChange(prog)}><Play size={16} /> {prog}</button>
-                ))}
-              </div>
-            )}
-          </div>
-          <div className="pv-panel">
-            <div className="pv-panel-header">
-              <h3 className="pv-panel-title" style={{ color: '#2e7d32' }}><Globe size={20} style={{ verticalAlign: 'middle', marginRight: 8 }} /> Public Programs</h3>
-              <span className="pv-count-badge">{publicPrograms.length}</span>
-            </div>
-            {publicPrograms.length === 0 ? (
-              <p className="pv-panel-empty">No public programs available.</p>
-            ) : (
-              <div className="pv-program-buttons">
-                {publicPrograms.filter(prog => prog.name.toLowerCase().includes(searchQuery.toLowerCase())).map(prog => (
-                  <button key={prog.name} className={`pv-program-btn ${selectedProgram === prog.name ? 'active' : ''}`} onClick={() => handleProgramChange(prog.name)}><Play size={16} /> {prog.name}</button>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
+  // v1.11.2: the workout detail renders as an accordion INSIDE the panel
+  // that owns the selected program (see pv-program-detail usage below).
+  const detailBody = (
+    <>
         {(coachNote || programMediaUrl) && (
           <div className="pv-coach-note">
             <div className="pv-coach-note-header">
@@ -800,9 +698,6 @@ export default function ProgramViewer() {
         )}
         {workoutGroups.length === 0 && selectedProgram && (
           <p className="pv-placeholder">No exercises found for this program.</p>
-        )}
-        {!selectedProgram && (
-          <p className="pv-placeholder">Select a program from above to view your workout.</p>
         )}
         {phaseSections.map(section => (
           <div key={section.title} className="pv-phase-card" style={{ borderTopColor: section.color }}>
@@ -925,6 +820,147 @@ export default function ProgramViewer() {
             <p className="pv-success-msg"><CheckCircle size={18} /> Excellent work! Data logged to your history.</p>
           </div>
         )}
+    </>
+  );
+
+  return (
+    <div className="pv-container" style={{ paddingBottom: '100px' }}>
+      <style>{`
+        .pv-input-kg::-webkit-outer-spin-button, .pv-input-kg::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+        .pv-input-kg { -moz-appearance: textfield; width: 65px !important; text-align: center; }
+        .pv-input-text { width: 80px !important; text-align: center; }
+        .pv-input-history::placeholder { color: #1e293b; opacity: 1; font-weight: 700; }
+        .pv-input-calc::placeholder { color: #94a3b8; font-weight: 500; }
+        .uni-dot { display: inline-flex; align-items: center; justify-content: center; background-color: #4f46e5; color: white; font-weight: 800; font-size: 10px; width: 20px; height: 20px; border-radius: 50%; margin-left: 8px; vertical-align: middle; }
+        .superset-bracket { position: absolute; left: -4px; top: -8px; bottom: -8px; width: 8px; border-left: 3px solid #008ed3; border-top: 3px solid #008ed3; border-bottom: 3px solid #008ed3; border-radius: 4px 0 0 4px; }
+        .pv-floating-fab { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: rgba(15, 23, 42, 0.9); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.1); padding: 8px 16px; border-radius: 99px; display: flex; align-items: center; gap: 12px; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25); z-index: 9999; transition: all 0.3s ease; }
+        .pv-floating-fab.is-active { box-shadow: 0 8px 32px rgba(0, 142, 211, 0.2); border-color: rgba(0, 142, 211, 0.3); }
+        .pv-fab-collapsed { padding: 10px 24px; color: #f8fafc; font-size: 15px; font-weight: 600; cursor: pointer; border: none; background: transparent; display: flex; align-items: center; gap: 10px; }
+        .pv-fab-collapsed:hover { color: #38bdf8; }
+        .pv-timer-clock { font-family: 'SF Pro Display', -apple-system, monospace; font-size: 22px; font-weight: 600; min-width: 65px; text-align: center; color: #f8fafc; letter-spacing: 0.5px; transition: color 0.3s ease; }
+        .pv-timer-clock.is-active-text { color: #38bdf8; }
+        .pv-timer-clock.urgent { color: #ef4444; animation: pulse 1s infinite; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+        .pv-timer-btn { background: none; border: none; color: #94a3b8; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 6px; border-radius: 50%; transition: all 0.2s; }
+        .pv-timer-btn:hover { color: #ffffff; background-color: rgba(255, 255, 255, 0.1); }
+        .pv-timer-play { background-color: #008ed3; color: white; padding: 10px; box-shadow: 0 4px 12px rgba(0, 142, 211, 0.3); }
+        .pv-timer-play:hover { background-color: #0077b5; transform: scale(1.05); }
+        .pv-timer-play.is-playing { background-color: #ef4444; box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3); }
+        .srpe-modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15, 23, 42, 0.8); backdrop-filter: blur(4px); display: flex; justify-content: center; align-items: center; z-index: 10000; padding: 20px; }
+        .srpe-modal-content { background: white; border-radius: 20px; width: 100%; max-width: 400px; padding: 24px; box-shadow: 0 20px 40px rgba(0,0,0,0.2); }
+      `}</style>
+      {showSrpeModal && (
+        <div className="srpe-modal-overlay">
+          <div className="srpe-modal-content">
+            <h3 style={{ margin: '0 0 8px 0', fontSize: '20px', color: '#0f172a' }}>Session Complete!</h3>
+            <p style={{ margin: '0 0 20px 0', fontSize: '14px', color: '#64748b' }}>Log your load for your training schedule.</p>
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ display: 'block', fontWeight: '700', marginBottom: '8px', color: '#334155' }}>Duration (Minutes)</label>
+              <input type="number" min="1" value={sessionDuration} onChange={e => setSessionDuration(e.target.value)} style={{ width: '100%', padding: '12px', fontSize: '20px', fontWeight: 'bold', textAlign: 'center', borderRadius: '8px', border: '2px solid #e2e8f0', outline: 'none' }} />
+            </div>
+            <div style={{ marginBottom: '24px' }}>
+              <label style={{ display: 'block', fontWeight: '700', marginBottom: '8px', color: '#334155' }}>Session RPE (1-10)</label>
+              <div style={{ textAlign: 'center', fontSize: '24px', fontWeight: '900', color: '#f59e0b', marginBottom: '8px' }}>{sessionRpe}</div>
+              <input type="range" min="1" max="10" step="1" value={sessionRpe} onChange={e => setSessionRpe(e.target.value)} style={{ width: '100%', accentColor: '#f59e0b' }} />
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#94a3b8', fontWeight: '600', marginTop: '4px' }}>
+                <span>1 (Very Light)</span><span>10 (Max Effort)</span>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button onClick={() => { setShowSrpeModal(false); setSaving(false); }} style={{ flex: 1, padding: '14px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#f8fafc', fontWeight: '700', color: '#475569', cursor: 'pointer' }}>Cancel</button>
+              <button onClick={() => executeSave(pendingSets, sessionDuration, sessionRpe)} disabled={saving} style={{ flex: 1, padding: '14px', borderRadius: '8px', border: 'none', background: '#008ed3', color: 'white', fontWeight: '800', cursor: 'pointer' }}>{saving ? 'Saving...' : 'Submit & Save'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {selectedProgram && (
+      <div className={`pv-floating-fab ${timerActive ? 'is-active' : ''}`}>
+        {timerExpanded ? (
+          <>
+            <button className="pv-timer-btn" onClick={() => { setTimerExpanded(false); setTimerActive(false); }}><X size={18} /></button>
+            <div style={{ width: '1px', height: '24px', backgroundColor: 'rgba(255,255,255,0.15)', margin: '0 2px' }}></div>
+            <button className="pv-timer-btn" onClick={() => adjustTimer(-15)}><Minus size={16} /></button>
+            {isEditingTimer ? (
+              <form onSubmit={handleTimerSubmit} style={{ margin: 0, padding: 0, display: 'flex' }}>
+                <input autoFocus type="text" value={timerInputValue} onChange={e => setTimerInputValue(e.target.value)} onBlur={handleTimerSubmit} style={{ width: '65px', background: 'transparent', border: 'none', color: '#38bdf8', fontSize: '22px', fontWeight: '600', textAlign: 'center', outline: 'none' }} />
+              </form>
+            ) : (
+              <div className={`pv-timer-clock ${timerActive ? 'is-active-text' : ''} ${timeLeft <= 10 && timeLeft > 0 && timerActive ? 'urgent' : ''}`} onClick={handleTimerClick} style={{ cursor: 'pointer' }}>{formatTimeStr(timeLeft)}</div>
+            )}
+            <button className="pv-timer-btn" onClick={() => adjustTimer(15)}><Plus size={16} /></button>
+            <div style={{ width: '1px', height: '24px', backgroundColor: 'rgba(255,255,255,0.15)', margin: '0 2px' }}></div>
+            <button className={`pv-timer-btn pv-timer-play ${timerActive ? 'is-playing' : ''}`} onClick={() => setTimerActive(!timerActive)}>{timerActive ? <Pause size={18} /> : <Play size={18} style={{ marginLeft: '2px' }} />}</button>
+          </>
+        ) : (
+          <button className="pv-fab-collapsed" onClick={() => setTimerExpanded(true)}><Timer size={20} color="#38bdf8" /> <span>Rest Timer</span></button>
+        )}
+      </div>
+      )}
+      {/* v1.11.2: full-screen workout view — tapping a program name opens
+          the workout full page; the back arrow (or tapping the program
+          name) closes back down to the two program panels. Content is
+          width-capped on large screens and centered. */}
+      {selectedProgram && viewerOpen && (
+        <div className="pv-fullscreen-workout">
+          <div className="pv-page-heading pv-fullscreen-header">
+            <button className="pv-back-btn" onClick={() => setViewerOpen(false)} aria-label="Back to programs">
+              <ArrowLeft size={28} />
+            </button>
+            <h2 style={{ cursor: 'pointer' }} onClick={() => setViewerOpen(false)}>{selectedProgram}</h2>
+          </div>
+          <div className="pv-fullscreen-body">
+            {detailBody}
+          </div>
+          <HelpButton pageName="Program View" position="bottom-right" />
+        </div>
+      )}
+      <div className="pv-body">
+        <div className="pv-page-heading">
+          <button className="pv-back-btn" onClick={() => navigate(-1)}>
+            <ArrowLeft size={28} />
+          </button>
+          <h2>Today's Workout</h2>
+        </div>
+        {athleteName && <p className="pv-welcome-msg">Welcome, {athleteName}</p>}
+        <div className="pv-search-box">
+          <input type="text" placeholder="Search programs..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
+        </div>
+        <div className="pv-panels">
+          <div className="pv-panel">
+            <div className="pv-panel-header">
+              <h3 className="pv-panel-title" style={{ color: '#008ed3' }}><UserPlus size={20} style={{ verticalAlign: 'middle', marginRight: 8 }} /> My Programs</h3>
+              <span className="pv-count-badge">{assignedPrograms.length}</span>
+            </div>
+            {assignedPrograms.length === 0 ? (
+              <p className="pv-panel-empty">No programs assigned yet.</p>
+            ) : (
+              <div className="pv-program-buttons">
+                {assignedPrograms.filter(prog => prog.toLowerCase().includes(searchQuery.toLowerCase())).map(prog => (
+                  <button key={prog} className={`pv-program-btn ${selectedProgram === prog ? 'active' : ''}`} onClick={() => handleProgramChange(prog, 'mine')}><Play size={16} /> {prog}</button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="pv-panel">
+            <div className="pv-panel-header">
+              <h3 className="pv-panel-title" style={{ color: '#2e7d32' }}><Globe size={20} style={{ verticalAlign: 'middle', marginRight: 8 }} /> Public Programs</h3>
+              <span className="pv-count-badge">{publicPrograms.length}</span>
+            </div>
+            {publicPrograms.length === 0 ? (
+              <p className="pv-panel-empty">No public programs available.</p>
+            ) : (
+              <div className="pv-program-buttons">
+                {publicPrograms.filter(prog => prog.name.toLowerCase().includes(searchQuery.toLowerCase())).map(prog => (
+                  <button key={prog.name} className={`pv-program-btn ${selectedProgram === prog.name ? 'active' : ''}`} onClick={() => handleProgramChange(prog.name, 'public')}><Play size={16} /> {prog.name}</button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+        {!selectedProgram && (
+          <p className="pv-placeholder">Select a program from above to view your workout.</p>
+        )}
+
       </div>
       <HelpButton pageName="Program View" position="bottom-right" />
     </div>

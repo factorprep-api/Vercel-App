@@ -2272,7 +2272,7 @@ export const fetchMyPods = async () => {
 };
 
 // ---------- ADMIN PIPES (/manage-shop) — RLS: single shop admin ----------
-// Shop governance is locked to ONE account (crusty@hotmail.com) via the
+// Shop governance is locked to ONE account via the
 // is_shop_admin() DB function — see shop_admin_v1.5.1.sql. Club admins
 // (coach promotions) no longer imply shop powers.
 export const isShopAdmin = async () => {
@@ -2943,6 +2943,59 @@ export const countUnreadThreads = (threads, myUserId) => {
 };
 
 
+// ==========================================
+// REMOVE FROM ATHLETES (reverse of Assign Programs)
+// Archiving an assignment row removes the program from that athlete's
+// private library only — the program row itself (owner, privacy, other
+// athletes' assignments) is untouched. Views derive "Program Assignment"
+// from active, non-expired assignment rows, so archived rows disappear
+// from the athlete's view immediately.
+// ==========================================
+
+// All assignments the signed-in coach can see, active & non-expired.
+export const fetchVisibleAssignments = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('assignments')
+      .select('id, athlete_id, status, expires_at, assigned_at, athletes(name), programs(name)');
+    if (error) return { assignments: [], error: error.message };
+    const now = Date.now();
+    const active = (data || [])
+      .filter(a => a.status === 'active' && a.athletes && a.programs
+        && (!a.expires_at || new Date(a.expires_at).getTime() > now))
+      .map(a => ({
+        assignmentId: a.id,
+        athleteId: a.athlete_id,
+        athleteName: a.athletes.name,
+        programId: a.program_id,
+        programName: a.programs.name,
+        assignedAt: a.assigned_at
+      }))
+      .sort((x, y) => x.athleteName.localeCompare(y.athleteName) || x.programName.localeCompare(y.programName));
+    return { assignments: active, error: null };
+  } catch (err) { return { assignments: [], error: err.message }; }
+};
+
+// Archive specific (athleteId, programId) active assignments.
+export const archiveAssignments = async (pairs) => {
+  // pairs: [{ athleteId, programId }]
+  try {
+    let updated = 0;
+    for (const pair of pairs) {
+      const { data, error } = await supabase
+        .from('assignments')
+        .update({ status: 'archived' })
+        .eq('athlete_id', pair.athleteId)
+        .eq('program_id', pair.programId)
+        .eq('status', 'active')
+        .select('id');
+      if (error) return { status: 'Error', message: error.message };
+      updated += (data || []).length;
+    }
+    return { status: 'Success', rowsUpdated: updated };
+  } catch (err) { return { status: 'Error', message: err.message }; }
+};
+
 const api = {
   fetchAthletes, fetchPrograms, fetchLibrary, saveWellnessLog, 
   fetchWellnessLogs, saveScheduleSession, deleteScheduleSession, fetchSchedule, saveMedicalLog, 
@@ -2965,6 +3018,7 @@ const api = {
   fetchMyOpenInjuries,
   fetchMessagingThreads, fetchThreadMessages, replyToThread,
   staffMessageAthlete, staffMessageMany, staffBroadcast, athleteMessageStaff,
-  markThreadRead, fetchMessagingRoster, fetchMessagingStaff, countUnreadThreads
+  markThreadRead, fetchMessagingRoster, fetchMessagingStaff, countUnreadThreads,
+  fetchVisibleAssignments, archiveAssignments
 };
 export default api;
