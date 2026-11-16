@@ -25,6 +25,7 @@ export default function MessagingHub() {
   const [available, setAvailable] = useState(true);   // false → DB not migrated
   const [unread, setUnread] = useState(0);
   const [open, setOpen] = useState(false);
+  const [staffRoles, setStaffRoles] = useState({});   // athlete view: staffId → 'coach' | 'therapist'
 
   const [threads, setThreads] = useState([]);
   const [listLoading, setListLoading] = useState(false);
@@ -99,7 +100,16 @@ export default function MessagingHub() {
     if (error) { setListError(error); return; }
     setThreads(t);
     setUnread(countUnreadThreads(t, userId));
-  }, [userId]);
+    // v1.11.1: staff role labels for the athlete view (picker + headers).
+    if (!isStaff) {
+      const { staff: s } = await fetchMessagingStaff();
+      if (s) {
+        const map = {};
+        s.forEach(x => { map[x.staff_id] = x.staff_role; });
+        setStaffRoles(map);
+      }
+    }
+  }, [userId, isStaff]);
 
   const openThread = useCallback(async (t) => {
     setActiveThread(t);
@@ -203,6 +213,7 @@ export default function MessagingHub() {
         <MessagesPanel
           isStaff={isStaff}
           userId={userId}
+          staffRoles={staffRoles}
           view={view} setView={setView}
           threads={threads} listLoading={listLoading} listError={listError}
           activeThread={activeThread} messages={messages} msgLoading={msgLoading}
@@ -226,7 +237,7 @@ export default function MessagingHub() {
 // MessagesPanel — full-screen sheet: list / thread / compose.
 // ==========================================
 function MessagesPanel({
-  isStaff, userId, view, setView,
+  isStaff, userId, staffRoles, view, setView,
   threads, listLoading, listError,
   activeThread, messages, msgLoading,
   replyText, setReplyText, sending, sendReply,
@@ -256,9 +267,23 @@ function MessagesPanel({
   const filteredStaff = staffList.filter(s =>
     !search.trim() || (s.staff_name || '').toLowerCase().includes(search.trim().toLowerCase()));
 
+  // v1.11.1: role suffix for the athlete view ("— Therapist" / "— Coach").
+  const roleSuffix = (staffId) => {
+    if (isStaff) return null;
+    const r = staffRoles[staffId];
+    if (r === 'therapist') return 'Therapist';
+    if (r === 'coach') return 'Coach';
+    return null;
+  };
+  const staffDisplay = (staffId, name) => {
+    const suffix = roleSuffix(staffId);
+    return suffix ? `${name || 'Coach'} — ${suffix}` : (name || 'Coach');
+  };
+
   const headerTitle = view === 'list' ? 'Messages'
     : view === 'thread' ? (activeThread
-      ? (isStaff ? activeThread.athleteName : activeThread.staffName) || 'Messages'
+      ? (isStaff ? activeThread.athleteName
+        : staffDisplay(activeThread.staffId, activeThread.staffName))
       : 'Messages')
     : 'New Message';
 
@@ -329,7 +354,7 @@ function MessagesPanel({
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       <strong style={{ fontSize: '15px', color: '#333' }}>
-                        {isStaff ? t.athleteName : t.staffName || 'Coach'}
+                        {isStaff ? t.athleteName : staffDisplay(t.staffId, t.staffName)}
                       </strong>
                       {unread && <span style={{
                         width: 9, height: 9, borderRadius: '50%', background: '#ef4444', flexShrink: 0
@@ -471,7 +496,7 @@ function MessagesPanel({
                         }}
                       >
                         <span style={{ fontSize: '14px', color: '#333' }}>
-                          {pname || 'Unknown'}
+                          {isStaff ? pname : staffDisplay(pid, pname)}
                           {isStaff && p.is_own_coach === false && (
                             <span style={{ fontSize: '11px', color: '#94a3b8', marginLeft: '6px' }}>team athlete</span>
                           )}
