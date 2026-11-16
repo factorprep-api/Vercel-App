@@ -16,13 +16,11 @@ import {
   getLatestMaxes,
   saveAthleteMax,
   fetchCycleLogs,
-  saveCycleLog,
-  deleteCycleLog,
   fetchAthleteBodyData,
   saveAthleteProfile,
   saveBodyWeight
 } from '../api';
-import { getCycleContext, PHASE_STATUS, buildCycleChartData, ymd } from '../utils/cycleMath';
+import { getCycleContext, PHASE_STATUS, buildCycleChartData } from '../utils/cycleMath';
 import {
   ArrowLeft,
   ChevronLeft,
@@ -40,6 +38,7 @@ import {
   CheckCircle,
   AlertCircle,
   Droplet,
+  Layers,
   ChevronDown,
   ChevronUp,
   Trash2
@@ -51,6 +50,7 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
+  Legend,
   ResponsiveContainer,
   ReferenceLine
 } from 'recharts';
@@ -186,6 +186,8 @@ useEffect(() => {
       } catch {}
     } catch (err) {
       console.error('Failed to refresh active_pods:', err);
+    } finally {
+      setPodsLoaded(true);
     }
   };
 
@@ -195,8 +197,15 @@ useEffect(() => {
   const hasWellnessPod = activePods.includes('wellness');
 
   // Active Tab: 'wellness' | 'maxes' | 'history'
-  const [activeTab, setActiveTab] = useState(() => (hasWellnessPod ? 'wellness' : 'maxes'));
+  // v1.11.3: always opens on Wellness — athletes without the wellness pod
+  // are switched to Metrics once the pods list settles (see sync effect).
+  const [activeTab, setActiveTab] = useState('wellness');
+  const [podsLoaded, setPodsLoaded] = useState(false);
   const [selectedMetric, setSelectedMetric] = useState('Grip');
+  // v1.11.3: wellness view modes — 'single' (one metric), 'all' (every line
+  // overlaid, pills toggle lines), 'cycle' (cycle reporting pill).
+  const [wellnessView, setWellnessView] = useState('single');
+  const [allLines, setAllLines] = useState(['grip', 'feeling', 'soreness', 'sleep', 'nutrition']);
 
   // Data states
   const [, setLoading] = useState(true);
@@ -232,10 +241,6 @@ useEffect(() => {
 
   // ---- Cycle tracking (v1.6.0, opt-in) — full management lives here ----
   const [cycleLogs, setCycleLogs] = useState([]); // [{ date, kind, id }]
-  const [cycleOpen, setCycleOpen] = useState(false);
-  const [cycleDate, setCycleDate] = useState(ymd(new Date()));
-  const [cycleSaving, setCycleSaving] = useState(false);
-  const [cycleMsg, setCycleMsg] = useState(null);
 
   const loadCycleLogs = async () => {
     try {
@@ -252,28 +257,64 @@ useEffect(() => {
 
   const cycleCtx = getCycleContext(cycleLogs.map(c => ({ entryKind: c.kind, entryDate: c.date })));
   const cycleStatusInfo = cycleCtx ? PHASE_STATUS[cycleCtx.status] : null;
+  // v1.11.3: reusable cycle reporting block — hormone curve chart + status
+  // + warnings + privacy note. Used by the Cycle pill view and the All view.
+  const cycleChartBlock = (
+    <div>
+      {cycleCtx && (
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ height: 200, width: '100%' }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={buildCycleChartData(cycleCtx)} margin={{ top: 8, right: 8, left: -28, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                <XAxis dataKey="day" stroke="#94a3b8" fontSize={11} tickLine={false} />
+                <YAxis domain={[0, 110]} hide />
+                <Tooltip
+                  contentStyle={{ background: '#0f172a', border: 'none', borderRadius: '8px', color: '#fff', fontSize: '12px' }}
+                  labelFormatter={(d) => `Day ${d}`}
+                  formatter={(val, name) => [val, { estrogen: 'Estrogen', progesterone: 'Progesterone', testosterone: 'Testosterone' }[name] || name]}
+                />
+                <ReferenceLine x={cycleCtx.cycleDay} stroke="#0f172a" strokeDasharray="4 4" label={{ value: 'You', position: 'top', fill: '#0f172a', fontSize: 11, fontWeight: 700 }} />
+                <Line type="monotone" dataKey="estrogen" stroke="#ec4899" strokeWidth={2.5} dot={false} name="estrogen" />
+                <Line type="monotone" dataKey="progesterone" stroke="#8b5cf6" strokeWidth={2.5} dot={false} name="progesterone" />
+                <Line type="monotone" dataKey="testosterone" stroke="#f97316" strokeWidth={2} dot={false} name="testosterone" />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          <p style={{ fontSize: 11, color: '#94a3b8', margin: '4px 0 0 0', textAlign: 'center' }}>
+            Estrogen <span style={{ color: '#ec4899' }}>—</span> · Progesterone <span style={{ color: '#8b5cf6' }}>—</span> · Testosterone <span style={{ color: '#f97316' }}>—</span> · population-average curves for orientation
+          </p>
+        </div>
+      )}
 
-  const handleCycleLog = async (entryKind) => {
-    if (!cycleDate) { setCycleMsg({ ok: false, text: 'Pick a date first.' }); return; }
-    setCycleSaving(true);
-    setCycleMsg(null);
-    try {
-      const res = await saveCycleLog({ entryKind, date: cycleDate, athlete: athleteName, email: userEmail });
-      if (res.status === 'Success') {
-        setCycleMsg({ ok: true, text: entryKind === 'missed_cycle' ? 'Marked as delayed/absent.' : 'Period start logged.' });
-        await loadCycleLogs();
-      } else {
-        setCycleMsg({ ok: false, text: 'Could not save: ' + (res.message || 'unknown error') });
-      }
-    } catch { setCycleMsg({ ok: false, text: 'Network error. Please try again.' }); }
-    setCycleSaving(false);
-  };
+      {cycleCtx && cycleStatusInfo && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', background: cycleStatusInfo.bg, border: `1px solid ${cycleStatusInfo.border}`, borderRadius: 10, padding: '10px 12px', marginBottom: 12 }}>
+          <span style={{ fontWeight: 800, fontSize: 14, color: cycleStatusInfo.color }}>Day {cycleCtx.cycleDay} of ~{Math.round(cycleCtx.cycleLength)} · {cycleStatusInfo.label}</span>
+          {!cycleCtx.overdue && !cycleCtx.noCycle && !cycleCtx.missedFlagged && cycleCtx.daysUntilNext != null && (
+            <span style={{ fontSize: 12, color: '#64748b' }}>Next predicted start in ~{cycleCtx.daysUntilNext} day{cycleCtx.daysUntilNext === 1 ? '' : 's'}</span>
+          )}
+        </div>
+      )}
 
-  const handleCycleDelete = async (id) => {
-    setCycleSaving(true);
-    try { await deleteCycleLog(id); await loadCycleLogs(); } catch {}
-    setCycleSaving(false);
-  };
+      {(cycleCtx?.missedFlagged || cycleCtx?.noCycle || cycleCtx?.irregular) && (
+        <div style={{ background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 10, padding: '10px 12px', marginBottom: 12 }}>
+          {cycleCtx.missedFlagged && <p style={{ fontSize: 13, color: '#92400e', margin: '0 0 6px 0' }}><b>Cycle marked as delayed/absent.</b> In training athletes, missed cycles can signal over-training or low energy availability — worth raising with your coach or a medical professional.</p>}
+          {!cycleCtx.missedFlagged && cycleCtx.noCycle && <p style={{ fontSize: 13, color: '#92400e', margin: '0 0 6px 0' }}><b>No period logged in {cycleCtx.cycleDay} days.</b> In training athletes, this can signal over-training or low energy availability — worth raising with your coach or a medical professional.</p>}
+          {cycleCtx.irregular && <p style={{ fontSize: 13, color: '#92400e', margin: 0 }}>Your logged intervals vary quite a bit — phase estimates are rough. Regular logging makes them sharper.</p>}
+        </div>
+      )}
+
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, background: '#f8fafc', borderRadius: 8, padding: '8px 10px' }}>
+        <AlertCircle size={14} color="#94a3b8" style={{ flexShrink: 0, marginTop: 1 }} />
+        <p style={{ fontSize: 12, color: '#94a3b8', margin: 0, lineHeight: 1.45 }}>
+          Private by design: your coach sees your current phase and a low-hormone indicator — never your dates or notes. Hormone curves are population averages for orientation, not individual measurements.
+        </p>
+      </div>
+    </div>
+  );
+
+
+
 
   const [selectedSession, setSelectedSession] = useState(null);
   const [exerciseFilter, setExerciseFilter] = useState('All');
@@ -293,11 +334,13 @@ useEffect(() => {
   }
 
   // Sync tab if user does not have wellness pod
+  // v1.11.3: only after the pods list has settled — the pods load async,
+  // so an early check would bounce wellness-pod athletes to Metrics.
   useEffect(() => {
-    if (!hasWellnessPod && activeTab === 'wellness') {
+    if (podsLoaded && !hasWellnessPod && activeTab === 'wellness') {
       setActiveTab('maxes');
     }
-  }, [hasWellnessPod, activeTab]);
+  }, [podsLoaded, hasWellnessPod, activeTab]);
 
   useEffect(() => {
     if (userEmail && !loadedRef.current) {
@@ -763,6 +806,36 @@ useEffect(() => {
   const currentMetricConfig = metricConfigs[selectedMetric] || metricConfigs.Grip;
   const activeMetricKey = selectedMetric.toLowerCase();
 
+  // v1.11.3: pill behaviour per view mode.
+  const WELLNESS_LINE_KEYS = ['grip', 'feeling', 'soreness', 'sleep', 'nutrition'];
+  function handleAllPill() {
+    if (wellnessView === 'all') {
+      setWellnessView('single');
+      setSelectedMetric('Grip');
+    } else {
+      setWellnessView('all');
+      setAllLines([...WELLNESS_LINE_KEYS]);
+    }
+  }
+  function handleMetricPill(key) {
+    if (wellnessView === 'all') {
+      const k = key.toLowerCase();
+      setAllLines(prev => {
+        if (prev.includes(k)) {
+          if (prev.length === 1) { showToast('Keep at least one line on the chart.', true); return prev; }
+          return prev.filter(x => x !== k);
+        }
+        return [...prev, k];
+      });
+    } else {
+      setWellnessView('single');
+      setSelectedMetric(key);
+    }
+  }
+  function handleCyclePill() {
+    setWellnessView(wellnessView === 'cycle' ? 'single' : 'cycle');
+  }
+
   const currentMetricStats = useMemo(() => {
     if (!last7DaysWellness.length) return { avg: null, min: null, max: null, latest: null };
     const key = selectedMetric.toLowerCase();
@@ -993,16 +1066,32 @@ useEffect(() => {
             {/* TAB 1: WELLNESS */}
             {activeTab === 'wellness' && hasWellnessPod && (
               <div>
-                {/* Metric Selector Chips */}
+                {/* Metric Selector Chips — v1.11.3: All pill + toggleable lines + Cycle pill */}
                 <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '12px', marginBottom: '8px' }}>
+                  <button
+                    onClick={handleAllPill}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', borderRadius: '999px',
+                      border: wellnessView === 'all' ? '2px solid #008ed3' : '1px solid #cbd5e1',
+                      background: wellnessView === 'all' ? '#008ed315' : '#ffffff',
+                      color: wellnessView === 'all' ? '#008ed3' : '#475569',
+                      fontWeight: wellnessView === 'all' ? '800' : '600', fontSize: '13px',
+                      cursor: 'pointer', whiteSpace: 'nowrap', transition: 'all 0.15s ease'
+                    }}
+                  >
+                    <Layers size={15} />
+                    <span>All</span>
+                  </button>
                   {Object.keys(metricConfigs).map(key => {
                     const conf = metricConfigs[key];
                     const IconComponent = conf.icon;
-                    const isSelected = selectedMetric === key;
+                    const isSelected = wellnessView === 'all'
+                      ? allLines.includes(key.toLowerCase())
+                      : (wellnessView === 'single' && selectedMetric === key);
                     return (
                       <button
                         key={key}
-                        onClick={() => setSelectedMetric(key)}
+                        onClick={() => handleMetricPill(key)}
                         style={{
                           display: 'flex',
                           alignItems: 'center',
@@ -1024,9 +1113,27 @@ useEffect(() => {
                       </button>
                     );
                   })}
+                  {cycleCtx && (
+                    <button
+                      onClick={handleCyclePill}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', borderRadius: '999px',
+                        border: wellnessView === 'cycle' ? '2px solid #8b5cf6' : '1px solid #cbd5e1',
+                        background: wellnessView === 'cycle' ? '#8b5cf615' : '#ffffff',
+                        color: wellnessView === 'cycle' ? '#8b5cf6' : '#475569',
+                        fontWeight: wellnessView === 'cycle' ? '800' : '600', fontSize: '13px',
+                        cursor: 'pointer', whiteSpace: 'nowrap', transition: 'all 0.15s ease'
+                      }}
+                    >
+                      <Droplet size={15} />
+                      <span>Cycle</span>
+                    </button>
+                  )}
                 </div>
 
-                {/* Quick Stat Highlights */}
+                {/* Quick Stat Highlights — v1.11.3: metric bars in single mode,
+                    cycle bars in cycle mode, hidden in All mode (mixed units). */}
+                {wellnessView === 'single' && (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '12px', marginBottom: '16px' }}>
                   <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '14px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
                     <p style={{ fontSize: '12px', fontWeight: '700', color: '#64748b', margin: 0, textTransform: 'uppercase' }}>7-Day Average</p>
@@ -1051,24 +1158,56 @@ useEffect(() => {
                     </h3>
                   </div>
                 </div>
+                )}
+                {wellnessView === 'cycle' && cycleCtx && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '12px', marginBottom: '16px' }}>
+                  <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '14px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+                    <p style={{ fontSize: '12px', fontWeight: '700', color: '#64748b', margin: 0, textTransform: 'uppercase' }}>Cycle Day</p>
+                    <h3 style={{ fontSize: '24px', fontWeight: '800', color: cycleStatusInfo ? cycleStatusInfo.color : '#8b5cf6', margin: '4px 0 0 0' }}>
+                      {cycleCtx.cycleDay} <span style={{ fontSize: '14px', color: '#64748b' }}>of ~{Math.round(cycleCtx.cycleLength)}</span>
+                    </h3>
+                  </div>
+                  <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '14px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+                    <p style={{ fontSize: '12px', fontWeight: '700', color: '#64748b', margin: 0, textTransform: 'uppercase' }}>Phase</p>
+                    <h3 style={{ fontSize: '16px', fontWeight: '800', color: cycleStatusInfo ? cycleStatusInfo.color : '#8b5cf6', margin: '8px 0 0 0' }}>
+                      {cycleStatusInfo ? cycleStatusInfo.label.split(' — ')[0] : '—'}
+                    </h3>
+                  </div>
+                  <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '14px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+                    <p style={{ fontSize: '12px', fontWeight: '700', color: '#64748b', margin: 0, textTransform: 'uppercase' }}>Next Predicted Start</p>
+                    <h3 style={{ fontSize: '18px', fontWeight: '800', color: '#334155', margin: '8px 0 0 0' }}>
+                      {cycleCtx.daysUntilNext != null ? `~${cycleCtx.daysUntilNext} days` : '—'}
+                    </h3>
+                  </div>
+                </div>
+                )}
+                {wellnessView === 'all' && (
+                  <p style={{ fontSize: '12px', color: '#94a3b8', margin: '0 0 10px 0' }}>
+                    All metrics overlaid — tap a pill above to add or remove a line.
+                  </p>
+                )}
 
                 {/* 7-Day Trendline Recharts Card */}
                 <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '20px', marginBottom: '20px', boxShadow: '0 2px 6px rgba(0,0,0,0.04)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                     <div>
                       <h2 style={{ fontSize: '16px', fontWeight: '800', color: '#0f172a', margin: 0 }}>
-                        {currentMetricConfig.label} Trendline
+                        {wellnessView === 'all' ? 'All Wellness Metrics' : wellnessView === 'cycle' ? 'Menstrual Cycle' : `${currentMetricConfig.label} Trendline`}
                       </h2>
                       <p style={{ fontSize: '13px', color: '#64748b', margin: '2px 0 0 0' }}>
-                        {currentMetricConfig.description}
+                        {wellnessView === 'all'
+                          ? 'Every metric overlaid on one chart — tap a pill to add or remove lines.'
+                          : wellnessView === 'cycle'
+                            ? 'Your position in your cycle, relative to population-average hormone curves.'
+                            : currentMetricConfig.description}
                       </p>
                     </div>
-                    <span style={{ fontSize: '12px', fontWeight: '700', color: currentMetricConfig.color, background: `${currentMetricConfig.color}15`, padding: '4px 10px', borderRadius: '999px' }}>
-                      7-Day Trend
+                    <span style={{ fontSize: '12px', fontWeight: '700', color: wellnessView === 'all' ? '#008ed3' : wellnessView === 'cycle' ? '#8b5cf6' : currentMetricConfig.color, background: wellnessView === 'all' ? '#008ed315' : wellnessView === 'cycle' ? '#8b5cf615' : `${currentMetricConfig.color}15`, padding: '4px 10px', borderRadius: '999px' }}>
+                      {wellnessView === 'all' ? 'All Lines' : wellnessView === 'cycle' ? 'Cycle View' : '7-Day Trend'}
                     </span>
                   </div>
 
-                  {last7DaysWellness.length > 0 ? (
+                  {wellnessView === 'single' && (last7DaysWellness.length > 0 ? (
                     <div style={{ width: '100%', height: 260 }}>
                       <ResponsiveContainer width="100%" height="100%">
                         <LineChart data={last7DaysWellness} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
@@ -1121,7 +1260,63 @@ useEffect(() => {
                         Log Today's Wellness
                       </button>
                     </div>
-                  )}
+                  ))}
+
+                  {wellnessView === 'all' && (last7DaysWellness.length > 0 ? (
+                    <>
+                      <div style={{ width: '100%', height: 300 }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={last7DaysWellness} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                            <XAxis dataKey="dateStr" stroke="#94a3b8" fontSize={12} tickLine={false} />
+                            <YAxis yAxisId="ten" domain={[0, 10]} hide />
+                            <YAxis yAxisId="free" orientation="right" hide />
+                            <Tooltip
+                              contentStyle={{ background: '#0f172a', border: 'none', borderRadius: '8px', color: '#fff', fontSize: '13px', boxShadow: '0 4px 12px rgba(0,0,0,0.2)' }}
+                              labelStyle={{ color: '#94a3b8', fontWeight: 600, marginBottom: '4px' }}
+                            />
+                            <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
+                            {WELLNESS_LINE_KEYS.filter(k => allLines.includes(k)).map(k => {
+                              const conf = metricConfigs[k.charAt(0).toUpperCase() + k.slice(1)];
+                              return (
+                                <Line
+                                  key={k}
+                                  yAxisId={(k === 'grip' || k === 'sleep') ? 'free' : 'ten'}
+                                  type="monotone"
+                                  dataKey={k}
+                                  name={conf.label}
+                                  stroke={conf.color}
+                                  strokeWidth={3}
+                                  dot={{ r: 4, fill: conf.color, stroke: '#ffffff', strokeWidth: 2 }}
+                                  activeDot={{ r: 6, fill: conf.color, stroke: '#ffffff', strokeWidth: 2 }}
+                                />
+                              );
+                            })}
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </div>
+                      {cycleCtx && (
+                        <div style={{ marginTop: '14px' }}>
+                          {cycleChartBlock}
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div style={{ padding: '40px 20px', textAlign: 'center', background: '#f8fafc', borderRadius: '12px' }}>
+                      <Activity size={32} color="#94a3b8" style={{ marginBottom: '8px' }} />
+                      <p style={{ fontSize: '14px', fontWeight: '600', color: '#64748b', margin: 0 }}>
+                        No wellness logs recorded yet in the last 7 days.
+                      </p>
+                      <button
+                        onClick={() => navigate('/athlete-wellness')}
+                        style={{ marginTop: '12px', background: '#008ed3', color: '#ffffff', border: 'none', padding: '8px 16px', borderRadius: '8px', fontWeight: '700', fontSize: '13px', cursor: 'pointer' }}
+                      >
+                        Log Today's Wellness
+                      </button>
+                    </div>
+                  ))}
+
+                  {wellnessView === 'cycle' && (cycleCtx ? cycleChartBlock : null)}
                 </div>
 
                 {/* 7-Day Log Summary Table */}
@@ -1147,19 +1342,22 @@ useEffect(() => {
                         >
                           <div>
                             <span style={{ fontSize: '14px', fontWeight: '700', color: '#0f172a' }}>{entry.fullDateStr}</span>
-                            <div style={{ display: 'flex', gap: '12px', marginTop: '4px', fontSize: '12px', color: '#64748b' }}>
-                              <span>Feeling: <b style={{ color: '#0f172a' }}>{entry.feeling || '—'}/10</b></span>
-                              <span>Soreness: <b style={{ color: '#0f172a' }}>{entry.soreness || '—'}/10</b></span>
-                              <span>Sleep: <b style={{ color: '#0f172a' }}>{entry.sleep ? `${entry.sleep}h` : '—'}</b></span>
+                            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginTop: '4px', fontSize: '12px', color: '#64748b' }}>
+                              {entry.feeling != null && <span>Feeling: <b style={{ color: '#0f172a' }}>{entry.feeling}/10</b></span>}
+                              {entry.soreness != null && <span>Soreness: <b style={{ color: '#0f172a' }}>{entry.soreness}/10</b></span>}
+                              {entry.sleep != null && <span>Sleep: <b style={{ color: '#0f172a' }}>{entry.sleep}h</b></span>}
+                              {entry.nutrition != null && <span>Nutrition: <b style={{ color: '#0f172a' }}>{entry.nutrition}/10</b></span>}
                             </div>
                           </div>
 
-                          <div style={{ textAlign: 'right' }}>
-                            <span style={{ fontSize: '11px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: '700' }}>Grip Peak</span>
-                            <p style={{ fontSize: '16px', fontWeight: '800', color: '#0284c7', margin: 0 }}>
-                              {entry.grip ? `${entry.grip} kg` : '—'}
-                            </p>
-                          </div>
+                          {entry.grip != null && (
+                            <div style={{ textAlign: 'right' }}>
+                              <span style={{ fontSize: '11px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: '700' }}>Grip Peak</span>
+                              <p style={{ fontSize: '16px', fontWeight: '800', color: '#0284c7', margin: 0 }}>
+                                {entry.grip} kg
+                              </p>
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -1170,129 +1368,6 @@ useEffect(() => {
                   )}
                 </div>
 
-                {/* ---- CYCLE TRACKING (v1.6.0) — collapsed & discreet by default ---- */}
-                <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '20px', boxShadow: '0 2px 6px rgba(0,0,0,0.04)' }}>
-                  <div onClick={() => setCycleOpen(!cycleOpen)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <Droplet size={18} color="#8b5cf6" />
-                      <h3 style={{ fontSize: '16px', fontWeight: '800', color: '#0f172a', margin: 0 }}>Cycle Tracking</h3>
-                    </div>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      {cycleCtx && cycleStatusInfo ? (
-                        <span style={{ fontSize: 12, fontWeight: 700, color: cycleStatusInfo.color, background: cycleStatusInfo.bg, padding: '4px 10px', borderRadius: 999 }}>
-                          Day {cycleCtx.cycleDay} · {cycleStatusInfo.label.split(' — ')[0]}
-                        </span>
-                      ) : (
-                        <span style={{ fontSize: 12, fontWeight: 600, color: '#94a3b8' }}>Optional</span>
-                      )}
-                      {cycleOpen ? <ChevronUp size={18} color="#94a3b8" /> : <ChevronDown size={18} color="#94a3b8" />}
-                    </span>
-                  </div>
-
-                  {cycleOpen && (
-                    <div style={{ marginTop: 16 }}>
-                      <p style={{ fontSize: 13, color: '#64748b', margin: '0 0 12px 0', lineHeight: 1.5 }}>
-                        {cycleCtx
-                          ? 'Log each period start date — the cycle re-bases to it automatically. Edit or delete entries below anytime.'
-                          : 'Optional. Log a period start date and your training guidance adapts to your cycle phases. One date is all we need to begin.'}
-                      </p>
-
-                      {cycleCtx && (
-                        <div style={{ marginBottom: 14 }}>
-                          <div style={{ height: 200, width: '100%' }}>
-                            <ResponsiveContainer width="100%" height="100%">
-                              <LineChart data={buildCycleChartData(cycleCtx)} margin={{ top: 8, right: 8, left: -28, bottom: 0 }}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                                <XAxis dataKey="day" stroke="#94a3b8" fontSize={11} tickLine={false} />
-                                <YAxis domain={[0, 110]} hide />
-                                <Tooltip
-                                  contentStyle={{ background: '#0f172a', border: 'none', borderRadius: '8px', color: '#fff', fontSize: '12px' }}
-                                  labelFormatter={(d) => `Day ${d}`}
-                                  formatter={(val, name) => [val, { estrogen: 'Estrogen', progesterone: 'Progesterone', testosterone: 'Testosterone' }[name] || name]}
-                                />
-                                <ReferenceLine x={cycleCtx.cycleDay} stroke="#0f172a" strokeDasharray="4 4" label={{ value: 'You', position: 'top', fill: '#0f172a', fontSize: 11, fontWeight: 700 }} />
-                                <Line type="monotone" dataKey="estrogen" stroke="#ec4899" strokeWidth={2.5} dot={false} name="estrogen" />
-                                <Line type="monotone" dataKey="progesterone" stroke="#8b5cf6" strokeWidth={2.5} dot={false} name="progesterone" />
-                                <Line type="monotone" dataKey="testosterone" stroke="#f97316" strokeWidth={2} dot={false} name="testosterone" />
-                              </LineChart>
-                            </ResponsiveContainer>
-                          </div>
-                          <p style={{ fontSize: 11, color: '#94a3b8', margin: '4px 0 0 0', textAlign: 'center' }}>
-                            Estrogen <span style={{ color: '#ec4899' }}>—</span> · Progesterone <span style={{ color: '#8b5cf6' }}>—</span> · Testosterone <span style={{ color: '#f97316' }}>—</span> · population-average curves for orientation
-                          </p>
-                        </div>
-                      )}
-
-                      {cycleCtx && cycleStatusInfo && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', background: cycleStatusInfo.bg, border: `1px solid ${cycleStatusInfo.border}`, borderRadius: 10, padding: '10px 12px', marginBottom: 12 }}>
-                          <span style={{ fontWeight: 800, fontSize: 14, color: cycleStatusInfo.color }}>Day {cycleCtx.cycleDay} of ~{Math.round(cycleCtx.cycleLength)} · {cycleStatusInfo.label}</span>
-                          {!cycleCtx.overdue && !cycleCtx.noCycle && !cycleCtx.missedFlagged && cycleCtx.daysUntilNext != null && (
-                            <span style={{ fontSize: 12, color: '#64748b' }}>Next predicted start in ~{cycleCtx.daysUntilNext} day{cycleCtx.daysUntilNext === 1 ? '' : 's'}</span>
-                          )}
-                        </div>
-                      )}
-
-                      {(cycleCtx?.missedFlagged || cycleCtx?.noCycle || cycleCtx?.irregular) && (
-                        <div style={{ background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 10, padding: '10px 12px', marginBottom: 12 }}>
-                          {cycleCtx.missedFlagged && <p style={{ fontSize: 13, color: '#92400e', margin: '0 0 6px 0' }}><b>Cycle marked as delayed/absent.</b> In training athletes, missed cycles can signal over-training or low energy availability — worth raising with your coach or a medical professional.</p>}
-                          {!cycleCtx.missedFlagged && cycleCtx.noCycle && <p style={{ fontSize: 13, color: '#92400e', margin: '0 0 6px 0' }}><b>No period logged in {cycleCtx.cycleDay} days.</b> In training athletes, this can signal over-training or low energy availability — worth raising with your coach or a medical professional.</p>}
-                          {cycleCtx.irregular && <p style={{ fontSize: 13, color: '#92400e', margin: 0 }}>Your logged intervals vary quite a bit — phase estimates are rough. Regular logging makes them sharper.</p>}
-                        </div>
-                      )}
-
-                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
-                        <input
-                          type="date"
-                          value={cycleDate}
-                          max={ymd(new Date())}
-                          onChange={(e) => setCycleDate(e.target.value)}
-                          style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 14, color: '#0f172a', flex: '1 1 150px' }}
-                        />
-                        <button
-                          onClick={() => handleCycleLog('period_start')}
-                          disabled={cycleSaving}
-                          style={{ padding: '8px 14px', borderRadius: 8, border: 'none', background: '#8b5cf6', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
-                        >
-                          Period started
-                        </button>
-                        <button
-                          onClick={() => handleCycleLog('missed_cycle')}
-                          disabled={cycleSaving}
-                          style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', color: '#64748b', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
-                        >
-                          Didn&apos;t come / late
-                        </button>
-                      </div>
-
-                      {cycleMsg && (
-                        <p style={{ fontSize: 13, margin: '0 0 12px 0', color: cycleMsg.ok ? '#16a34a' : '#dc2626', fontWeight: 600 }}>{cycleMsg.text}</p>
-                      )}
-
-                      {cycleLogs.length > 0 && (
-                        <div style={{ marginBottom: 12 }}>
-                          <p style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.5, margin: '0 0 6px 0' }}>History</p>
-                          {[...cycleLogs].reverse().slice(0, 8).map((c) => (
-                            <div key={c.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 0' }}>
-                              <span style={{ fontSize: 13, color: '#475569' }}>
-                                {c.date} — {c.kind === 'missed_cycle' ? <span style={{ color: '#d97706', fontWeight: 700 }}>marked delayed/absent</span> : 'period start'}
-                              </span>
-                              <button onClick={() => handleCycleDelete(c.id)} disabled={cycleSaving} title="Delete entry" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#cbd5e1', padding: 2 }}>
-                                <Trash2 size={14} />
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, background: '#f8fafc', borderRadius: 8, padding: '8px 10px' }}>
-                        <AlertCircle size={14} color="#94a3b8" style={{ flexShrink: 0, marginTop: 1 }} />
-                        <p style={{ fontSize: 12, color: '#94a3b8', margin: 0, lineHeight: 1.45 }}>
-                          Private by design: your coach sees your current phase and a low-hormone indicator — never your dates or notes. Hormone curves are population averages for orientation, not individual measurements. Growth hormone isn&apos;t charted because it follows sleep and training, not cycle day.
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                </div>
               </div>
             )}
 
