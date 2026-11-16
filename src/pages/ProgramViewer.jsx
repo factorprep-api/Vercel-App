@@ -160,7 +160,8 @@ export default function ProgramViewer() {
   const [athleteRowIndex, setAthleteRowIndex] = useState(null);
   const [athleteName, setAthleteName] = useState('');
   const [selectedProgram, setSelectedProgram] = useState('');
-  const [selectedSource, setSelectedSource] = useState(null); // 'mine' | 'public' — which panel holds the accordion
+  const [selectedSource, setSelectedSource] = useState(null); // 'mine' | 'public' — which panel the tap came from
+  const [viewerOpen, setViewerOpen] = useState(false);        // v1.11.2: full-screen workout view
   const [expandedVideos, setExpandedVideos] = useState(new Set());
   const [inputValues, setInputValues] = useState({});
   const [saving, setSaving] = useState(false);
@@ -519,6 +520,7 @@ export default function ProgramViewer() {
     }
     setSelectedSource(progName ? source : null);
     setSelectedProgram(progName);
+    setViewerOpen(progName ? true : false); // v1.11.2: tap a program name -> full-screen workout
     setInputValues({});
     setSaveSuccess(false);
     setShowProgramMedia(false);
@@ -894,6 +896,23 @@ export default function ProgramViewer() {
         )}
       </div>
       )}
+      {/* v1.11.2: full-screen workout view — tapping a program name opens
+          the workout full page; the back arrow (or tapping the program
+          name) closes back down to the two program panels. */}
+      {selectedProgram && viewerOpen && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 1200, background: '#f8fafc', display: 'flex', flexDirection: 'column', fontFamily: '"Roboto Flex", sans-serif' }}>
+          <div className="pv-page-heading" style={{ background: 'white', borderBottom: '2px solid #e0e0e0', margin: 0, padding: '12px 16px', alignItems: 'center' }}>
+            <button className="pv-back-btn" onClick={() => setViewerOpen(false)} aria-label="Back to programs">
+              <ArrowLeft size={28} />
+            </button>
+            <h2 style={{ cursor: 'pointer' }} onClick={() => setViewerOpen(false)}>{selectedProgram}</h2>
+          </div>
+          <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px' }}>
+            {detailBody}
+          </div>
+          <HelpButton pageName="Program View" position="bottom-right" />
+        </div>
+      )}
       <div className="pv-body">
         <div className="pv-page-heading">
           <button className="pv-back-btn" onClick={() => navigate(-1)}>
@@ -905,8 +924,8 @@ export default function ProgramViewer() {
         <div className="pv-search-box">
           <input type="text" placeholder="Search programs..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
         </div>
-        <div className={`pv-panels ${selectedProgram ? 'has-expanded' : ''}`}>
-          <div className={`pv-panel ${selectedProgram && selectedSource === 'mine' ? 'pv-panel-expanded' : ''}`}>
+        <div className="pv-panels">
+          <div className="pv-panel">
             <div className="pv-panel-header">
               <h3 className="pv-panel-title" style={{ color: '#008ed3' }}><UserPlus size={20} style={{ verticalAlign: 'middle', marginRight: 8 }} /> My Programs</h3>
               <span className="pv-count-badge">{assignedPrograms.length}</span>
@@ -916,18 +935,12 @@ export default function ProgramViewer() {
             ) : (
               <div className="pv-program-buttons">
                 {assignedPrograms.filter(prog => prog.toLowerCase().includes(searchQuery.toLowerCase())).map(prog => (
-                  <button key={prog} className={`pv-program-btn ${selectedProgram === prog && selectedSource === 'mine' ? 'active' : ''}`} onClick={() => (selectedProgram === prog && selectedSource === 'mine' ? handleProgramChange('') : handleProgramChange(prog, 'mine'))}><Play size={16} /> {prog}</button>
+                  <button key={prog} className={`pv-program-btn ${selectedProgram === prog ? 'active' : ''}`} onClick={() => handleProgramChange(prog, 'mine')}><Play size={16} /> {prog}</button>
                 ))}
               </div>
             )}
-            {/* Accordion: the selected program's workout expands right here */}
-            {selectedProgram && selectedSource === 'mine' && (
-              <div className="pv-program-detail">
-                {detailBody}
-              </div>
-            )}
           </div>
-          <div className={`pv-panel ${selectedProgram && selectedSource === 'public' ? 'pv-panel-expanded' : ''}`}>
+          <div className="pv-panel">
             <div className="pv-panel-header">
               <h3 className="pv-panel-title" style={{ color: '#2e7d32' }}><Globe size={20} style={{ verticalAlign: 'middle', marginRight: 8 }} /> Public Programs</h3>
               <span className="pv-count-badge">{publicPrograms.length}</span>
@@ -937,14 +950,8 @@ export default function ProgramViewer() {
             ) : (
               <div className="pv-program-buttons">
                 {publicPrograms.filter(prog => prog.name.toLowerCase().includes(searchQuery.toLowerCase())).map(prog => (
-                  <button key={prog.name} className={`pv-program-btn ${selectedProgram === prog.name && selectedSource === 'public' ? 'active' : ''}`} onClick={() => (selectedProgram === prog.name && selectedSource === 'public' ? handleProgramChange('') : handleProgramChange(prog.name, 'public'))}><Play size={16} /> {prog.name}</button>
+                  <button key={prog.name} className={`pv-program-btn ${selectedProgram === prog.name ? 'active' : ''}`} onClick={() => handleProgramChange(prog.name, 'public')}><Play size={16} /> {prog.name}</button>
                 ))}
-              </div>
-            )}
-            {/* Accordion: the selected program's workout expands right here */}
-            {selectedProgram && selectedSource === 'public' && (
-              <div className="pv-program-detail">
-                {detailBody}
               </div>
             )}
           </div>

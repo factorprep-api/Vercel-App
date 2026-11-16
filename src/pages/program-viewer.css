@@ -73,12 +73,9 @@
 .pv-program-btn { display: flex; align-items: center; gap: 8px; padding: 10px 14px; background: white; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; color: #333; cursor: pointer; transition: all 0.15s; text-align: left; }
 .pv-program-btn:hover { border-color: #008ed3; background: #f0f7ff; }
 
-/* v1.11.2 — accordion: when a program is open its panel grows to full
-   content height (no internal scroll box) and neighbors top-align. */
-.pv-panels.has-expanded { align-items: flex-start; }
-.pv-panel.pv-panel-expanded { max-height: none; overflow-y: visible; }
-.pv-program-detail { margin-top: 14px; }
-.pv-program-detail .pv-coach-note { margin-bottom: 16px; }
+/* v1.11.2 — programs open as a full-screen workout view (see the
+   overlay in ProgramViewer.jsx); the panels keep their original
+   fixed-height scrollable boxes. */
 .pv-program-btn.active { background: #008ed3; color: white; border-color: #008ed3; }
 
 .pv-category-filter { display: flex; gap: 10px; align-items: center; margin-bottom: 16px; }
