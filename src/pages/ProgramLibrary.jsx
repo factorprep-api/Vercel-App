@@ -28,7 +28,8 @@ export default function ProgramLibrary() {
   const [bulkAssigning, setBulkAssigning] = useState(false);
 
   // "Remove from Athletes" — a second mode inside the assign modal: archive
-  // active assignment rows. The program itself is never touched.
+  // active assignment rows. The program itself is never touched. Shares the
+  // SAME athlete selection (assignAthletes) as the assign mode.
   const [assignMode, setAssignMode] = useState('assign');   // 'assign' | 'remove'
   const [removeAssignments, setRemoveAssignments] = useState([]);   // active assignments of selected athletes
   const [removeSelected, setRemoveSelected] = useState(new Set());  // keys: `${athleteId}|${programId}`
@@ -269,20 +270,13 @@ export default function ProgramLibrary() {
   }
 
   // ---- "Remove from Athletes" handlers (reverse of assign) ----
-  function toggleRemoveAthlete(rowNum) {
-    setRemoveAthletes(prev => {
-      const next = new Set(prev);
-      if (next.has(rowNum)) next.delete(rowNum); else next.add(rowNum);
-      return next;
-    });
-  }
-
+  // Shares the assign selection (assignAthletes) — same Step 1 list.
   const selectedRemoveNames = useMemo(() => {
-    return [...removeAthletes]
+    return [...assignAthletes]
       .map(r => athleteOptions.find(a => a.row === r))
       .filter(Boolean)
       .map(a => a.name);
-  }, [removeAthletes, athleteOptions]);
+  }, [assignAthletes, athleteOptions]);
 
   useEffect(() => {
     if (assignModalOpen && assignMode === 'remove' && selectedRemoveNames.length > 0) {
@@ -307,6 +301,9 @@ export default function ProgramLibrary() {
         });
       })();
       return () => { cancelled = true; };
+    } else if (assignMode === 'assign') {
+      // Switching back to assign mode drops stale remove checkboxes.
+      setRemoveSelected(new Set());
     }
   }, [assignModalOpen, assignMode, selectedRemoveNames]);
 
@@ -331,8 +328,8 @@ export default function ProgramLibrary() {
       const res = await archiveAssignments(pairs);
       if (res.status === 'Success') {
         showToast(`Removed ${res.rowsUpdated} program assignment(s) — programs untouched in your library`);
-        setRemoveModalOpen(false);
-        setRemoveAthletes(new Set());
+        setAssignModalOpen(false);
+        setAssignAthletes(new Set());
         setRemoveSelected(new Set());
         await loadData();
       } else {

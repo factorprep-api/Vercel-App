@@ -898,16 +898,17 @@ export default function ProgramViewer() {
       )}
       {/* v1.11.2: full-screen workout view — tapping a program name opens
           the workout full page; the back arrow (or tapping the program
-          name) closes back down to the two program panels. */}
+          name) closes back down to the two program panels. Content is
+          width-capped on large screens and centered. */}
       {selectedProgram && viewerOpen && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 1200, background: '#f8fafc', display: 'flex', flexDirection: 'column', fontFamily: '"Roboto Flex", sans-serif' }}>
-          <div className="pv-page-heading" style={{ background: 'white', borderBottom: '2px solid #e0e0e0', margin: 0, padding: '12px 16px', alignItems: 'center' }}>
+        <div className="pv-fullscreen-workout">
+          <div className="pv-page-heading pv-fullscreen-header">
             <button className="pv-back-btn" onClick={() => setViewerOpen(false)} aria-label="Back to programs">
               <ArrowLeft size={28} />
             </button>
             <h2 style={{ cursor: 'pointer' }} onClick={() => setViewerOpen(false)}>{selectedProgram}</h2>
           </div>
-          <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px' }}>
+          <div className="pv-fullscreen-body">
             {detailBody}
           </div>
           <HelpButton pageName="Program View" position="bottom-right" />
