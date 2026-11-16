@@ -13,6 +13,10 @@
 -- Run in the Supabase SQL editor.
 -- =====================================================================
 
+-- Safe guard: drop the function first (keeps the file runnable on any
+-- earlier state of athlete_visible_staff).
+drop function if exists public.athlete_visible_staff();
+
 -- staff_can_see_athlete(): coach_user_id OR active team coach OR club admin
 -- of the athlete's primary club.
 create or replace function public.staff_can_see_athlete(p_staff uuid, p_athlete_id uuid)

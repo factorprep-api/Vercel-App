@@ -10,6 +10,11 @@
 -- Run in the Supabase SQL editor.
 -- =====================================================================
 
+-- The signature changes (adds staff_role), so Postgres requires a drop
+-- before replace. RLS policies referencing it are re-satisfied the moment
+-- the function is recreated below (same statement batch).
+drop function if exists public.athlete_visible_staff();
+
 create or replace function public.athlete_visible_staff()
 returns table (staff_id uuid, staff_name text, staff_role text)
 language sql stable security definer
