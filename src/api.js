@@ -301,19 +301,27 @@ export const saveCycleLog = async (payload) => {
     }
     if (!athleteId) return { status: 'Error', message: 'Athlete not found' };
 
-    const entryKind = payload.entryKind === 'missed_cycle' ? 'missed_cycle' : 'period_start';
+    // v1.12.0: 'cycle_tracking_off' is a pause bookmark, not a dated event —
+    // it always inserts (the newest one wins) and skips the duplicate guard.
+    // Resuming deletes the bookmark (deleteCycleLog) instead of inserting an
+    // on-event, so a later period start resumes tracking by itself.
+    const entryKind = ['missed_cycle', 'cycle_tracking_off'].includes(payload.entryKind)
+      ? payload.entryKind
+      : 'period_start';
     const entryDate = payload.date || new Date().toISOString().split('T')[0];
 
     // Guard against double-logging the same kind on the same day
-    const { data: existing } = await supabase
-      .from('cycle_logs')
-      .select('id')
-      .eq('athlete_id', athleteId)
-      .eq('entry_kind', entryKind)
-      .eq('entry_date', entryDate)
-      .is('deleted_at', null)
-      .maybeSingle();
-    if (existing) return { status: 'Success', duplicate: true };
+    if (entryKind === 'period_start' || entryKind === 'missed_cycle') {
+      const { data: existing } = await supabase
+        .from('cycle_logs')
+        .select('id')
+        .eq('athlete_id', athleteId)
+        .eq('entry_kind', entryKind)
+        .eq('entry_date', entryDate)
+        .is('deleted_at', null)
+        .maybeSingle();
+      if (existing) return { status: 'Success', duplicate: true };
+    }
 
     const { error } = await supabase
       .from('cycle_logs')
@@ -2211,9 +2219,10 @@ export const fetchShopProducts = async (includeInactive = false) => {
   try {
     let q = supabase
       .from('shop_products')
-      .select('id, slug, name, blurb, product_type, fulfilment, paddle_price_id, linked_program_id, price_display, price_usd, grants_pods, grants_coach_role, is_active, sort_order')
+      .select('id, slug, name, blurb, product_type, fulfilment, paddle_price_id, linked_program_id, price_display, price_usd, grants_pods, grants_coach_role, is_active, sort_order, athlete_guidance, archived_at')
       .order('sort_order', { ascending: true });
-    if (!includeInactive) q = q.eq('is_active', true);
+    // v1.13.0: archived products drop off the shop front entirely
+    if (!includeInactive) q = q.eq('is_active', true).is('archived_at', null);
     const { data, error } = await q;
     if (error) return { products: [], error: error.message };
     return { products: data || [], error: null };
@@ -2302,6 +2311,94 @@ export const adminDeleteShopProduct = async (productId) => {
     const { error } = await supabase.from('shop_products').delete().eq('id', productId);
     return { error: error ? error.message : null };
   } catch (err) { return { error: err.message }; }
+};
+
+// ==========================================
+// PROGRAM BUNDLES + GUIDANCE CARDS (v1.13.0)
+// One shop product bundles many ordered programs; ONE guidance sheet
+// (dos/donts/red_flags/note) lives on the product — never per program,
+// never inherited. Shared programs resolve deterministically in the RPC.
+// ==========================================
+
+// v1.13.0: archive / restore instead of hard delete — products with
+// entitlements must never be deleted (Manage Shop blocks it). Archived
+// products drop off the shop front and out of bundle building while
+// existing entitlements and their access keep working.
+export const adminArchiveShopProduct = async (productId, archived) => {
+  try {
+    const { error } = await supabase.from('shop_products')
+      .update({ archived_at: archived ? new Date().toISOString() : null })
+      .eq('id', productId);
+    return { error: error ? error.message : null };
+  } catch (err) { return { error: err.message }; }
+};
+
+// v1.13.0: the bundle of one product, ordered (admin editor source).
+export const adminFetchProgramBundle = async (productId) => {
+  try {
+    const { data, error } = await supabase
+      .from('shop_product_programs')
+      .select('id, product_id, program_id, programs(name), sort_order, stage_label, advance_criteria')
+      .eq('product_id', productId)
+      .order('sort_order', { ascending: true });
+    if (error) return { bundle: [], error: error.message };
+    return {
+      bundle: (data || []).map(r => ({
+        id: r.id,
+        program_id: r.program_id,
+        program_name: r.programs ? r.programs.name : '',
+        sort_order: r.sort_order,
+        stage_label: r.stage_label || '',
+        advance_criteria: r.advance_criteria || ''
+      })),
+      error: null
+    };
+  } catch (err) { return { bundle: [], error: err.message }; }
+};
+
+// v1.13.0: replace a product's whole bundle. sort_order is the array index,
+// so the editor list is the single source of truth for ordering.
+export const adminSetProgramBundle = async (productId, entries) => {
+  try {
+    const del = await supabase.from('shop_product_programs').delete().eq('product_id', productId);
+    if (del.error) return { error: del.error.message };
+    const rows = (entries || []).map((e, i) => ({
+      product_id: productId,
+      program_id: e.program_id,
+      sort_order: i,
+      stage_label: e.stage_label || null,
+      advance_criteria: e.advance_criteria || null
+    }));
+    if (rows.length) {
+      const ins = await supabase.from('shop_product_programs').insert(rows);
+      if (ins.error) return { error: ins.error.message };
+    }
+    return { error: null };
+  } catch (err) { return { error: err.message }; }
+};
+
+// v1.13.0: guidance sheets for one program (athlete-facing). The program is
+// resolved by NAME — the viewer's currency — and every sheet is gated on an
+// active entitlement inside the RPC. The client sorts by purchased_at desc:
+// the first row is the resolved sheet, the rest render collapsed under
+// "Also applies to you".
+export const fetchProgramGuidance = async (programName) => {
+  try {
+    const { data, error } = await supabase.rpc('program_guidance_sheets', { p_program_name: programName });
+    if (error) return { sheets: [], error: error.message };
+    return { sheets: data || [], error: null };
+  } catch (err) { return { sheets: [], error: err.message }; }
+};
+
+// v1.13.0: how many products with active entitlements reference a program —
+// powers the Program Builder edit warning ("changes will affect existing
+// athletes"). Resolves by name, same as the viewer.
+export const programLiveProductCount = async (programName) => {
+  try {
+    const { data, error } = await supabase.rpc('program_live_product_count', { p_program_name: programName });
+    if (error) return { count: 0, error: error.message };
+    return { count: data || 0, error: null };
+  } catch (err) { return { count: 0, error: err.message }; }
 };
 
 // v1.10.1: pending club signups — signups with no club yet (and any
@@ -3008,7 +3105,9 @@ const api = {
   parseProgramsFromRaw,
   fetchShopProducts, fetchMyEntitlements, fetchEntitledPods, fetchMyPods,
   isShopAdmin, adminListShopProducts, adminUpsertShopProduct, 
-  adminDeleteShopProduct, adminListAthletes, adminListEntitlements, 
+  adminDeleteShopProduct, adminArchiveShopProduct,
+  adminFetchProgramBundle, adminSetProgramBundle, fetchProgramGuidance, programLiveProductCount,
+  adminListAthletes, adminListEntitlements, 
   adminGrantEntitlement, adminRevokeEntitlement,
   fetchCurrentAthlete, fetchMyTherapistProfile, upsertMyTherapistProfile,
   fetchClubTherapists, adminAddTherapist, adminSetTherapistActive,

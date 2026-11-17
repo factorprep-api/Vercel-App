@@ -20,7 +20,7 @@ import {
   saveAthleteProfile,
   saveBodyWeight
 } from '../api';
-import { getCycleContext, PHASE_STATUS, buildCycleChartData } from '../utils/cycleMath';
+import { getCycleContext, PHASE_STATUS, buildCycleChartData, getPhase, PHASE_BAND_COLORS } from '../utils/cycleMath';
 import {
   ArrowLeft,
   ChevronLeft,
@@ -41,7 +41,8 @@ import {
   Layers,
   ChevronDown,
   ChevronUp,
-  Trash2
+  Trash2,
+  Info
 } from 'lucide-react';
 import {
   LineChart,
@@ -52,7 +53,8 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
-  ReferenceLine
+  ReferenceLine,
+  ReferenceArea
 } from 'recharts';
 import './my-progress.css';
 
@@ -257,11 +259,30 @@ useEffect(() => {
 
   const cycleCtx = getCycleContext(cycleLogs.map(c => ({ entryKind: c.kind, entryDate: c.date })));
   const cycleStatusInfo = cycleCtx ? PHASE_STATUS[cycleCtx.status] : null;
+  // v1.12.0: phase shading behind the athlete's chart, using the shared
+  // PHASE_BAND_COLORS so every screen speaks the same color language
+  // (yellow = menstrual, green = follicular/ovulatory, amber = luteal).
+  // Informational only — no advice, no RPE numbers on the athlete side.
+  const cycleBands = (() => {
+    if (!cycleCtx) return [];
+    const len = Math.max(1, Math.round(cycleCtx.cycleLength));
+    const bands = [];
+    let bandStart = null, bandPhase = null;
+    for (let d = 1; d <= len; d++) {
+      const ph = getPhase(d, cycleCtx.cycleLength);
+      if (ph !== bandPhase) {
+        if (bandPhase) bands.push({ from: bandStart, to: d - 1, phase: bandPhase });
+        bandPhase = ph; bandStart = d;
+      }
+    }
+    if (bandPhase) bands.push({ from: bandStart, to: len, phase: bandPhase });
+    return bands;
+  })();
   // v1.11.3: reusable cycle reporting block — hormone curve chart + status
   // + warnings + privacy note. Used by the Cycle pill view and the All view.
   const cycleChartBlock = (
     <div>
-      {cycleCtx && (
+      {cycleCtx && !cycleCtx.trackingPaused && (
         <div style={{ marginBottom: 12 }}>
           <div style={{ height: 200, width: '100%' }}>
             <ResponsiveContainer width="100%" height="100%">
@@ -274,6 +295,9 @@ useEffect(() => {
                   labelFormatter={(d) => `Day ${d}`}
                   formatter={(val, name) => [val, { estrogen: 'Estrogen', progesterone: 'Progesterone', testosterone: 'Testosterone' }[name] || name]}
                 />
+                {cycleBands.map((b, i) => (
+                  <ReferenceArea key={i} x1={b.from} x2={b.to} fill={PHASE_BAND_COLORS[b.phase] || '#f8fafc'} fillOpacity={0.4} stroke="none" />
+                ))}
                 <ReferenceLine x={cycleCtx.cycleDay} stroke="#0f172a" strokeDasharray="4 4" label={{ value: 'You', position: 'top', fill: '#0f172a', fontSize: 11, fontWeight: 700 }} />
                 <Line type="monotone" dataKey="estrogen" stroke="#ec4899" strokeWidth={2.5} dot={false} name="estrogen" />
                 <Line type="monotone" dataKey="progesterone" stroke="#8b5cf6" strokeWidth={2.5} dot={false} name="progesterone" />
@@ -283,11 +307,13 @@ useEffect(() => {
           </div>
           <p style={{ fontSize: 11, color: '#94a3b8', margin: '4px 0 0 0', textAlign: 'center' }}>
             Estrogen <span style={{ color: '#ec4899' }}>—</span> · Progesterone <span style={{ color: '#8b5cf6' }}>—</span> · Testosterone <span style={{ color: '#f97316' }}>—</span> · population-average curves for orientation
+            <br />
+            <span style={{ color: '#16a34a', fontWeight: 700 }}>green</span> = follicular &amp; ovulatory · <span style={{ color: '#d97706', fontWeight: 700 }}>amber</span> = menstrual &amp; luteal
           </p>
         </div>
       )}
 
-      {cycleCtx && cycleStatusInfo && (
+      {cycleCtx && cycleStatusInfo && !cycleCtx.trackingPaused && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', background: cycleStatusInfo.bg, border: `1px solid ${cycleStatusInfo.border}`, borderRadius: 10, padding: '10px 12px', marginBottom: 12 }}>
           <span style={{ fontWeight: 800, fontSize: 14, color: cycleStatusInfo.color }}>Day {cycleCtx.cycleDay} of ~{Math.round(cycleCtx.cycleLength)} · {cycleStatusInfo.label}</span>
           {!cycleCtx.overdue && !cycleCtx.noCycle && !cycleCtx.missedFlagged && cycleCtx.daysUntilNext != null && (
@@ -296,7 +322,16 @@ useEffect(() => {
         </div>
       )}
 
-      {(cycleCtx?.missedFlagged || cycleCtx?.noCycle || cycleCtx?.irregular) && (
+      {cycleCtx?.trackingPaused && (
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10, padding: '10px 12px', marginBottom: 12 }}>
+          <Info size={14} color="#64748b" style={{ flexShrink: 0, marginTop: 2 }} />
+          <p style={{ fontSize: 12.5, color: '#475569', margin: 0, lineHeight: 1.5 }}>
+            <b>Cycle guidance is off.</b> Cycle phases, curves and check-in flags are hidden while tracking is paused — for example while using a hormonal contraceptive, which changes the hormone patterns these curves are built on. Turn it back on in the Cycle tracking card of your Wellness page; your logged history is kept.
+          </p>
+        </div>
+      )}
+
+      {cycleCtx && !cycleCtx.trackingPaused && (cycleCtx.missedFlagged || cycleCtx.noCycle || cycleCtx.irregular) && (
         <div style={{ background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 10, padding: '10px 12px', marginBottom: 12 }}>
           {cycleCtx.missedFlagged && <p style={{ fontSize: 13, color: '#92400e', margin: '0 0 6px 0' }}><b>Cycle marked as delayed/absent.</b> In training athletes, missed cycles can signal over-training or low energy availability — worth raising with your coach or a medical professional.</p>}
           {!cycleCtx.missedFlagged && cycleCtx.noCycle && <p style={{ fontSize: 13, color: '#92400e', margin: '0 0 6px 0' }}><b>No period logged in {cycleCtx.cycleDay} days.</b> In training athletes, this can signal over-training or low energy availability — worth raising with your coach or a medical professional.</p>}

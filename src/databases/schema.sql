@@ -170,12 +170,19 @@ create table public.cycle_logs (
   id uuid primary key default gen_random_uuid(),
   athlete_id uuid not null references public.athletes(id) on delete cascade,
   entry_kind text not null default 'period_start'
-    check (entry_kind in ('period_start', 'missed_cycle')),
+    check (entry_kind in ('period_start', 'missed_cycle', 'cycle_tracking_off')),
                                               -- 'period_start' = a period began
                                               -- on entry_date; 'missed_cycle' =
                                               -- athlete flagged a cycle as
                                               -- delayed/absent on entry_date
-                                              -- (over-training signal)
+                                              -- (over-training signal);
+                                              -- v1.12.0 'cycle_tracking_off' =
+                                              -- pause bookmark (one integrated
+                                              -- toggle: "not tracking" or "on
+                                              -- the pill"). Newest event by date
+                                              -- wins; a later period start
+                                              -- resumes tracking. While paused,
+                                              -- all cycle guidance is hidden
   entry_date date not null,
   deleted_at timestamptz,
   created_at timestamptz not null default now()
@@ -590,9 +597,37 @@ create table public.shop_products (
   price_usd numeric,                          -- numeric anchor for internal reference
   grants_pods text[],                         -- pods unlocked, e.g. '{wellness,medical,schedule}'
   grants_coach_role boolean not null default false, -- Coaching Kit: elevate athlete -> coach
+  athlete_guidance jsonb check (athlete_guidance is null or public.valid_athlete_guidance(athlete_guidance)),
+                                              -- v1.13.0: ONE guidance sheet per
+                                              -- bundle product — dos / donts /
+                                              -- red_flags / note, all optional;
+                                              -- shape validated by
+                                              -- valid_athlete_guidance(). Never
+                                              -- per program, never inherited.
+  archived_at timestamptz,                    -- v1.13.0: archived products drop
+                                              -- off the shop front and out of
+                                              -- bundle building; existing
+                                              -- entitlements keep working.
+                                              -- Never hard-delete a product
+                                              -- that has entitlements.
   is_active boolean not null default true,
   sort_order int not null default 0,
   created_at timestamptz not null default now()
+);
+
+-- v1.13.0: SHOP PROGRAM BUNDLES — one product bundles many ordered programs.
+-- Any count, any names (authoring-time naming, never hard-coded). The
+-- guidance sheet lives on the PRODUCT above, not here — no sharing, no
+-- inheritance. stage_label is display only; advance_criteria renders in the
+-- athlete's next-program card only when populated.
+create table public.shop_product_programs (
+  id uuid primary key default gen_random_uuid(),
+  product_id uuid not null references public.shop_products(id) on delete cascade,
+  program_id uuid not null references public.programs(id) on delete cascade,
+  sort_order int not null default 0,
+  stage_label text,
+  advance_criteria text,
+  unique (product_id, program_id)
 );
 
 -- ---------- ENTITLEMENT LEDGER ----------

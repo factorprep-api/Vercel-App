@@ -5,7 +5,8 @@ import HelpButton from '../components/HelpButton';
 import { supabase } from '../supabase';
 import {
   isShopAdmin, adminListShopProducts, adminUpsertShopProduct,
-  adminDeleteShopProduct, adminListAthletes, adminListEntitlements,
+  adminDeleteShopProduct, adminArchiveShopProduct, adminListAthletes, adminListEntitlements,
+  adminFetchProgramBundle, adminSetProgramBundle,
   adminListPendingSignups, adminApproveClubRequest,
   adminGrantEntitlement, adminRevokeEntitlement,
   adminListTeams, adminCreateTeam, adminListTeamMemberships,
@@ -24,9 +25,34 @@ const POD_OPTIONS = [
 ];
 
 const EMPTY = {
-  slug: '', name: '', blurb: '', product_type: 'one_time', fulfilment: 'auto',
+  id: '', slug: '', name: '', blurb: '', product_type: 'one_time', fulfilment: 'auto',
   paddle_price_id: '', linked_program_id: '', price_display: '', price_usd: '',
-  grants_coach_role: false, is_active: true, sort_order: 50, grants_pods: []
+  grants_coach_role: false, is_active: true, sort_order: 50, grants_pods: [],
+  athlete_guidance: null, archived_at: null
+};
+
+// ---------- v1.13.0: guidance card helpers (ONE sheet per bundle product) ----------
+// Authoring is four plain textareas, one bullet per line — the shape limits
+// (20 bullets/section, 300 chars/bullet) are enforced again by
+// valid_athlete_guidance() in the database, so a paste accident can never
+// break the card layout.
+const linesToArr = (t) => String(t || '').split('\n').map(s => s.trim()).filter(Boolean);
+
+const guidanceToDraft = (g) => ({
+  dos: (g && Array.isArray(g.dos) ? g.dos : []).join('\n'),
+  donts: (g && Array.isArray(g.donts) ? g.donts : []).join('\n'),
+  red_flags: (g && Array.isArray(g.red_flags) ? g.red_flags : []).join('\n'),
+  note: (g && g.note) || ''
+});
+
+const draftToGuidance = (d) => {
+  if (!d) return null;
+  const dos = linesToArr(d.dos);
+  const donts = linesToArr(d.donts);
+  const red_flags = linesToArr(d.red_flags);
+  const note = String(d.note || '').trim();
+  if (!dos.length && !donts.length && !red_flags.length && !note) return null;
+  return { dos, donts, red_flags, note: note || null };
 };
 
 export default function ManageShop() {
@@ -49,6 +75,9 @@ export default function ManageShop() {
   const [rosterAthlete, setRosterAthlete] = useState('');
   // v1.10.1: pending club signups (self-serve onboarding)
   const [pending, setPending] = useState([]);
+  // v1.13.0: bundle + guidance editor state (one sheet per bundle product)
+  const [bundle, setBundle] = useState([]);
+  const [guidanceDraft, setGuidanceDraft] = useState({ dos: '', donts: '', red_flags: '', note: '' });
 
   const togglePod = (key) => setForm(f => ({
     ...f,
@@ -84,6 +113,7 @@ export default function ManageShop() {
 
   const saveProduct = async () => {
     const payload = {
+      id: form.id || undefined,
       slug: form.slug.trim(),
       name: form.name.trim(),
       blurb: form.blurb || null,
@@ -96,29 +126,54 @@ export default function ManageShop() {
       grants_coach_role: form.grants_coach_role,
       is_active: form.is_active,
       sort_order: Number(form.sort_order) || 0,
-      grants_pods: form.grants_pods.length > 0 ? form.grants_pods : null
+      grants_pods: form.grants_pods.length > 0 ? form.grants_pods : null,
+      athlete_guidance: draftToGuidance(guidanceDraft)
     };
     if (!payload.slug || !payload.name || !payload.price_display) {
       setMsg('Slug, name and price display are required.');
       return;
     }
+    // v1.13.0: bundle rows without a chosen program are dropped silently
+    const bundleRows = bundle.filter(b => b.program_id);
     const res = await adminUpsertShopProduct(payload);
-    setMsg(res.error ? `Error: ${res.error}` : `Saved "${payload.name}".`);
-    if (!res.error) { setForm(EMPTY); reload(); }
+    if (res.error) { setMsg(`Error: ${res.error}`); return; }
+    const bundleRes = await adminSetProgramBundle(res.product.id, bundleRows);
+    if (bundleRes.error) { setMsg(`Product saved, but the bundle failed to save: ${bundleRes.error}`); reload(); return; }
+    // v1.13.0: stay in the editor (bundles need a saved product id anyway)
+    setForm(f => ({ ...f, id: res.product.id }));
+    setMsg(`Saved "${payload.name}" — bundle programs and guidance cards saved (${bundleRows.length} in bundle).`);
+    reload();
   };
 
   const editProduct = (p) => {
     setForm({
+      id: p.id,
       slug: p.slug, name: p.name, blurb: p.blurb || '',
       product_type: p.product_type, fulfilment: p.fulfilment,
       paddle_price_id: p.paddle_price_id || '', linked_program_id: p.linked_program_id || '',
       price_display: p.price_display, price_usd: p.price_usd == null ? '' : String(p.price_usd),
       grants_coach_role: !!p.grants_coach_role, is_active: !!p.is_active, sort_order: p.sort_order ?? 50,
-      grants_pods: Array.isArray(p.grants_pods) ? [...p.grants_pods] : []
+      grants_pods: Array.isArray(p.grants_pods) ? [...p.grants_pods] : [],
+      athlete_guidance: p.athlete_guidance || null, archived_at: p.archived_at || null
     });
+    setGuidanceDraft(guidanceToDraft(p.athlete_guidance));
+    // v1.13.0: load the saved bundle into the editor
+    if (p.id) adminFetchProgramBundle(p.id).then(res => { if (!res.error) setBundle(res.bundle); });
     setTab('products');
     window.scrollTo({ top: 0 });
   };
+
+  // v1.13.0: bundle list builder helpers — the editor list IS the ordering
+  const updateBundleRow = (i, patch) => setBundle(b => b.map((x, idx) => idx === i ? { ...x, ...patch } : x));
+  const moveBundle = (i, dir) => setBundle(b => {
+    const j = i + dir;
+    if (j < 0 || j >= b.length) return b;
+    const next = [...b];
+    [next[i], next[j]] = [next[j], next[i]];
+    return next;
+  });
+  const addBundleRow = () => setBundle(b => [...b, { program_id: '', stage_label: '', advance_criteria: '' }]);
+  const removeBundleRow = (i) => setBundle(b => b.filter((_, idx) => idx !== i));
 
   // ---------- Teams tab actions (v1.9.18) ----------
   const createTeam = async () => {
@@ -162,9 +217,25 @@ export default function ManageShop() {
   };
 
   const removeProduct = async (p) => {
+    // v1.13.0: hard delete is blocked when any entitlement references the
+    // product — sold plans must never silently vanish. Archive instead.
+    if (entitlements.some(x => x.product_id === p.id)) {
+      setMsg(`"${p.name}" has purchases and cannot be deleted. Archive it instead: existing buyers keep access, and it disappears from the shop and bundle building.`);
+      return;
+    }
     if (!window.confirm(`Delete "${p.name}"?`)) return;
     const res = await adminDeleteShopProduct(p.id);
     setMsg(res.error ? `Error: ${res.error}` : 'Product deleted.');
+    if (!res.error) reload();
+  };
+
+  // v1.13.0: archive / restore — hidden from shop front + bundle building,
+  // existing entitlements keep working.
+  const archiveProduct = async (p) => {
+    const archiving = !p.archived_at;
+    if (archiving && !window.confirm(`Archive "${p.name}"? It disappears from the shop; existing buyers keep access.`)) return;
+    const res = await adminArchiveShopProduct(p.id, archiving);
+    setMsg(res.error ? `Error: ${res.error}` : (archiving ? `"${p.name}" archived — existing buyers keep access.` : `"${p.name}" restored to the shop.`));
     if (!res.error) reload();
   };
 
@@ -278,6 +349,128 @@ export default function ManageShop() {
                 ))}
               </div>
             </div>
+            {/* ---------- v1.13.0: BUNDLE BUILDER ---------- */}
+            <div style={{ gridColumn: '1 / -1' }}>
+              <label>Bundle programs (any number — the athlete sees them in this order)</label>
+              {bundle.length === 0 && (
+                <p style={{ fontSize: 12, color: '#64748b', margin: '4px 0' }}>
+                  No bundle yet. Legacy single-program products can keep using the Linked program field above.
+                </p>
+              )}
+              {bundle.map((b, i) => (
+                <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center', margin: '6px 0', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 12, fontWeight: 800, color: '#64748b', width: 22 }}>{i + 1}.</span>
+                  <select value={b.program_id} onChange={e => updateBundleRow(i, { program_id: e.target.value })}
+                    style={{ flex: '2 1 180px', padding: '7px 9px', border: '1px solid #cbd5e1', borderRadius: 8, fontSize: 13 }}>
+                    <option value="">— choose a program —</option>
+                    {programs.map(pr => <option key={pr.id} value={pr.id}>{pr.name}</option>)}
+                  </select>
+                  <input placeholder="Stage label (display only)" value={b.stage_label}
+                    onChange={e => updateBundleRow(i, { stage_label: e.target.value })}
+                    style={{ flex: '1 1 150px', padding: '7px 9px', border: '1px solid #cbd5e1', borderRadius: 8, fontSize: 13 }} />
+                  <input placeholder="Advance criteria (blank = hidden)" value={b.advance_criteria}
+                    onChange={e => updateBundleRow(i, { advance_criteria: e.target.value })}
+                    style={{ flex: '2 1 180px', padding: '7px 9px', border: '1px solid #cbd5e1', borderRadius: 8, fontSize: 13 }} />
+                  <button className="ms-btn ghost" onClick={() => moveBundle(i, -1)} disabled={i === 0}>↑</button>
+                  <button className="ms-btn ghost" onClick={() => moveBundle(i, 1)} disabled={i === bundle.length - 1}>↓</button>
+                  <button className="ms-btn danger" onClick={() => removeBundleRow(i)}>✕</button>
+                </div>
+              ))}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <button className="ms-btn ghost" onClick={addBundleRow}>+ Add program to bundle</button>
+                {bundle.length > 0 && (
+                  <span style={{ fontSize: 12, color: '#64748b' }}>
+                    {bundle.filter(b => b.program_id).length} program{bundle.filter(b => b.program_id).length === 1 ? '' : 's'} in bundle
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* ---------- v1.13.0: GUIDANCE CARDS (one sheet per bundle) ---------- */}
+            <div style={{ gridColumn: '1 / -1' }}>
+              <label>Guidance cards — do's / don'ts / red flags (one bullet per line)</label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div>
+                  <textarea value={guidanceDraft.dos} onChange={e => setGuidanceDraft(d => ({ ...d, dos: e.target.value }))}
+                    placeholder="DO'S — one per line, e.g. Keep sessions pain-free (max 3/10)" rows={5}
+                    style={{ width: '100%', boxSizing: 'border-box', padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: 8, fontSize: 12.5, fontFamily: 'inherit' }} />
+                  <span style={{ fontSize: 11, color: '#16a34a', fontWeight: 700 }}>Do's ({linesToArr(guidanceDraft.dos).length}/20)</span>
+                </div>
+                <div>
+                  <textarea value={guidanceDraft.donts} onChange={e => setGuidanceDraft(d => ({ ...d, donts: e.target.value }))}
+                    placeholder="DON'TS / can't-do — one per line, e.g. No pivoting or change-of-direction sports" rows={5}
+                    style={{ width: '100%', boxSizing: 'border-box', padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: 8, fontSize: 12.5, fontFamily: 'inherit' }} />
+                  <span style={{ fontSize: 11, color: '#d97706', fontWeight: 700 }}>Don'ts ({linesToArr(guidanceDraft.donts).length}/20)</span>
+                </div>
+                <div>
+                  <textarea value={guidanceDraft.red_flags} onChange={e => setGuidanceDraft(d => ({ ...d, red_flags: e.target.value }))}
+                    placeholder="RED FLAGS (stop & seek advice) — one per line, e.g. Sudden swelling or giving way" rows={4}
+                    style={{ width: '100%', boxSizing: 'border-box', padding: '8px 10px', border: '1px solid #fecaca', borderRadius: 8, fontSize: 12.5, fontFamily: 'inherit' }} />
+                  <span style={{ fontSize: 11, color: '#dc2626', fontWeight: 700 }}>Red flags ({linesToArr(guidanceDraft.red_flags).length}/20) — shows on the collapsed card</span>
+                </div>
+                <div>
+                  <textarea value={guidanceDraft.note} onChange={e => setGuidanceDraft(d => ({ ...d, note: e.target.value }))}
+                    placeholder="Short note — one paragraph of context" rows={4}
+                    style={{ width: '100%', boxSizing: 'border-box', padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: 8, fontSize: 12.5, fontFamily: 'inherit' }} />
+                  <span style={{ fontSize: 11, color: '#64748b' }}>Short note</span>
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 8, flexWrap: 'wrap' }}>
+                {products.filter(x => x.id !== form.id && x.athlete_guidance).length > 0 && (
+                  <select value="" style={{ padding: '6px 10px', border: '1px solid #cbd5e1', borderRadius: 8, fontSize: 12 }}
+                    onChange={e => {
+                      const src = products.find(x => x.id === e.target.value);
+                      if (src && src.athlete_guidance) {
+                        setGuidanceDraft(guidanceToDraft(src.athlete_guidance));
+                        setMsg(`Guidance pre-filled from "${src.name}" — edit freely and save; the copy is fully independent.`);
+                      }
+                    }}>
+                    <option value="">Copy guidance from an existing bundle…</option>
+                    {products.filter(x => x.id !== form.id && x.athlete_guidance).map(x => (
+                      <option key={x.id} value={x.id}>{x.name}</option>
+                    ))}
+                  </select>
+                )}
+                <span style={{ fontSize: 11.5, color: '#64748b' }}>
+                  Previews exactly as the athlete sees them · limits (20 bullets / 300 chars) enforced by the database
+                </span>
+              </div>
+              {(() => {
+                const g = draftToGuidance(guidanceDraft);
+                if (!g) return null;
+                return (
+                  <div style={{ background: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: 10, padding: '10px 12px', marginTop: 10 }}>
+                    <span style={{ fontSize: 11, fontWeight: 800, color: '#64748b', textTransform: 'uppercase' }}>Live preview</span>
+                    {g.red_flags.length > 0 && (
+                      <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 10px', margin: '6px 0' }}>
+                        <b style={{ fontSize: 12, color: '#b91c1c' }}>Red flags — stop &amp; seek advice</b>
+                        <ul style={{ margin: '4px 0 0 18px', padding: 0, color: '#b91c1c', fontSize: 12.5 }}>
+                          {g.red_flags.map((f, i) => <li key={i}>{f}</li>)}
+                        </ul>
+                      </div>
+                    )}
+                    {g.donts.length > 0 && (
+                      <div style={{ background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 8, padding: '8px 10px', margin: '6px 0' }}>
+                        <b style={{ fontSize: 12, color: '#92400e' }}>Don'ts / can't-do</b>
+                        <ul style={{ margin: '4px 0 0 18px', padding: 0, color: '#92400e', fontSize: 12.5 }}>
+                          {g.donts.map((f, i) => <li key={i}>{f}</li>)}
+                        </ul>
+                      </div>
+                    )}
+                    {g.dos.length > 0 && (
+                      <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '8px 10px', margin: '6px 0' }}>
+                        <b style={{ fontSize: 12, color: '#0f172a' }}>Do's</b>
+                        <ul style={{ margin: '4px 0 0 18px', padding: 0, color: '#0f172a', fontSize: 12.5 }}>
+                          {g.dos.map((f, i) => <li key={i}>{f}</li>)}
+                        </ul>
+                      </div>
+                    )}
+                    {g.note && <p style={{ margin: '6px 0 0 0', fontSize: 12.5, color: '#475569' }}>{g.note}</p>}
+                  </div>
+                );
+              })()}
+            </div>
+
             <div style={{ gridColumn: '1 / -1' }}>
               <button className="ms-btn primary" onClick={saveProduct}>Save Product</button>
             </div>
@@ -291,7 +484,7 @@ export default function ManageShop() {
             <tbody>
               {products.map(p => (
                 <tr key={p.id}>
-                  <td>{p.name}</td>
+                  <td>{p.name}{p.archived_at && <span style={{ fontSize: 10, fontWeight: 800, color: '#64748b', background: '#f1f5f9', padding: '2px 6px', borderRadius: 4, marginLeft: 6 }}>ARCHIVED</span>}</td>
                   <td>{p.slug}</td>
                   <td>{p.product_type}{p.grants_coach_role ? ' + coach' : ''}</td>
                   <td>{p.price_display}</td>
@@ -299,7 +492,10 @@ export default function ManageShop() {
                   <td>{p.is_active ? 'yes' : 'no'}</td>
                   <td style={{ whiteSpace: 'nowrap' }}>
                     <button className="ms-btn ghost" onClick={() => editProduct(p)}>Edit</button>{' '}
-                    <button className="ms-btn danger" onClick={() => removeProduct(p)}><Trash2 size={13} /></button>
+                    <button className="ms-btn ghost" onClick={() => archiveProduct(p)}>{p.archived_at ? 'Restore' : 'Archive'}</button>{' '}
+                    {!entitlements.some(x => x.product_id === p.id) && (
+                      <button className="ms-btn danger" onClick={() => removeProduct(p)}><Trash2 size={13} /></button>
+                    )}
                   </td>
                 </tr>
               ))}

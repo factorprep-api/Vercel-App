@@ -73,6 +73,27 @@
 .pv-program-btn { display: flex; align-items: center; gap: 8px; padding: 10px 14px; background: white; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; color: #333; cursor: pointer; transition: all 0.15s; text-align: left; }
 .pv-program-btn:hover { border-color: #008ed3; background: #f0f7ff; }
 
+/* v1.13.0 — print stylesheet: a clinician-friendly one-pager via the
+   browser print dialog. Hides app chrome and controls, prints the guidance
+   cards and exercise tables black-on-white with page breaks between phase
+   blocks, and repeats table headers across pages. No Storage, no PDF. */
+@media print {
+  body * { visibility: hidden; }
+  .pv-container, .pv-container * { visibility: visible; }
+  .pv-container { position: absolute; left: 0; top: 0; width: 100%; background: #fff; box-shadow: none; padding: 0 8px; }
+  .pv-container * { color: #000 !important; background: #fff !important; box-shadow: none !important; text-shadow: none !important; }
+  .pv-container button, .pv-container input, .pv-container select,
+  .pv-info-tabs, .pv-video-toggle, .pv-media-inline-btn, .pv-video-container,
+  .pv-floating-fab, .srpe-modal-overlay { display: none !important; }
+  .pv-print-only { display: block !important; }
+  .pv-print-meta { border-bottom: 2px solid #000; margin-bottom: 14px; padding-bottom: 6px; font-size: 12px; }
+  .pv-coach-note { border-left: 2px solid #999; page-break-inside: avoid; margin-bottom: 10px; }
+  .pv-phase-card { break-before: page; border-top-color: #999 !important; }
+  .pv-phase-header { background: #fff !important; color: #000 !important; }
+  .pv-set-row, .pv-phase-card tr { break-inside: avoid; }
+  thead { display: table-header-group; }
+}
+
 /* v1.11.2 — programs open as a full-screen workout view (see the
    overlay in ProgramViewer.jsx); the panels keep their original
    fixed-height scrollable boxes. Content is capped at 960px and centered
@@ -242,6 +263,39 @@
 }
 
 /* ===== Coach Notes Media Inline Button ===== */
+/* v1.13.0 — tabbed info card (Notes / Video / Guidance) */
+.pv-info-tabs { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.pv-info-tab { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; border: 1px solid #cbd5e1; background: #f8fafc; color: #475569; padding: 5px 12px; border-radius: 999px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; transition: 0.15s; }
+.pv-info-tab:hover { border-color: #008ed3; color: #008ed3; }
+.pv-info-tab.active { background: #008ed3; border-color: #008ed3; color: #fff; }
+.pv-info-collapse { margin-left: auto; border: none; background: none; cursor: pointer; color: #64748b; padding: 2px; display: flex; align-items: center; }
+.pv-info-collapse:hover { color: #008ed3; }
+.pv-info-collapsed { padding-bottom: 6px; }
+.pv-redflag-strip { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left; background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; border-radius: 8px; font-size: 12.5px; font-weight: 700; padding: 7px 10px; margin-top: 8px; cursor: pointer; }
+.pv-redflag-strip:hover { background: #fee2e2; }
+.pv-guidance-attribution { margin: 0 0 8px 0; font-size: 11.5px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.4px; }
+.pv-guidance-section h5 { margin: 0 0 6px 0; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 5px; }
+.pv-guidance-section ul { margin: 0; padding-left: 18px; }
+.pv-guidance-section li { margin: 3px 0; }
+.pv-redflags { background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 10px 12px; margin: 8px 0; }
+.pv-redflags h5, .pv-redflags li { color: #b91c1c; }
+.pv-donts { background: #fffbeb; border: 1px solid #fcd34d; border-radius: 8px; padding: 10px 12px; margin: 8px 0; }
+.pv-donts h5, .pv-donts li { color: #92400e; }
+.pv-dos { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; margin: 8px 0; }
+.pv-dos h5, .pv-dos li { color: #0f172a; }
+.pv-guidance-note { color: #555; font-size: 15px; line-height: 1.5; white-space: pre-wrap; margin: 8px 0 0 0; }
+.pv-guidance-extra { margin-top: 12px; border-top: 1px dashed #e2e8f0; padding-top: 8px; }
+.pv-guidance-extra-title { margin: 0 0 6px 0; font-size: 11.5px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.4px; }
+.pv-guidance-extra details { margin: 6px 0; }
+.pv-guidance-extra summary { cursor: pointer; font-weight: 700; font-size: 13px; color: #0f172a; }
+.pv-next-program { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 14px 16px; margin: 20px 0; }
+.pv-next-program p { margin: 0 0 8px 0; color: #1e3a8a; font-size: 14px; }
+.pv-next-program button { background: #008ed3; color: #fff; border: none; border-radius: 8px; padding: 8px 14px; font-weight: 800; cursor: pointer; font-size: 13px; }
+.pv-next-program button:hover { background: #0077b5; }
+.pv-next-program.pv-complete { background: #f0fdf4; border-color: #bbf7d0; }
+.pv-next-program.pv-complete p { color: #15803d; }
+.pv-print-only { display: none; }
+
 .pv-coach-note-header {
   display: flex;
   justify-content: space-between;
