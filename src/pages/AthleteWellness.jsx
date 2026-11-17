@@ -43,6 +43,15 @@ export default function AthleteWellness() {
 
   const cycleCtx = getCycleContext(cycleLogs.map(c => ({ entryKind: c.kind, entryDate: c.date })));
   const cycleStatusInfo = cycleCtx ? PHASE_STATUS[cycleCtx.status] : null;
+  // v1.12.0: one integrated toggle. OFF pauses everything cycle-based — it
+  // covers both "I don't want tracking" and "I'm on a hormonal contraceptive"
+  // (the pill changes the hormone patterns this guidance is built on).
+  // ON = tracking active. State: any pause bookmark with no later period
+  // start. Derived straight from cycleLogs so the switch also works for
+  // athletes who never logged a period.
+  const pauseEvents = cycleLogs.filter(c => c.kind === 'cycle_tracking_off');
+  const trackingPaused = cycleCtx ? cycleCtx.trackingPaused : false;
+  const trackOn = cycleLogs.length > 0 && !trackingPaused;
 
   const handleCycleLog = async (entryKind) => {
     if (!cycleDate) { setCycleMsg({ ok: false, text: 'Pick a date first.' }); return; }
@@ -55,6 +64,34 @@ export default function AthleteWellness() {
         await loadCycleLogs();
       } else {
         setCycleMsg({ ok: false, text: 'Could not save: ' + (res.message || 'unknown error') });
+      }
+    } catch { setCycleMsg({ ok: false, text: 'Network error. Please try again.' }); }
+    setCycleSaving(false);
+  };
+
+  // v1.12.0: pause / resume the whole cycle system with one toggle
+  const handleTrackingToggle = async () => {
+    setCycleSaving(true);
+    setCycleMsg(null);
+    try {
+      if (trackOn) {
+        // OFF: insert a pause bookmark (the pipe skips the duplicate guard for it)
+        const res = await saveCycleLog({ entryKind: 'cycle_tracking_off', date: ymd(new Date()), athlete: athleteName, email: userEmail });
+        if (res.status === 'Success') {
+          setCycleMsg({ ok: true, text: 'Cycle tracking paused — everything cycle-based is hidden. Your logged history is kept.' });
+          await loadCycleLogs();
+        } else {
+          setCycleMsg({ ok: false, text: 'Could not save: ' + (res.message || 'unknown error') });
+        }
+      } else if (pauseEvents.length > 0) {
+        // ON after a pause: remove the newest bookmark (athlete owns the row)
+        const newestPause = [...pauseEvents].sort((a, b) => String(a.date).localeCompare(String(b.date))).slice(-1)[0];
+        await deleteCycleLog(newestPause.id);
+        setCycleMsg({ ok: true, text: 'Cycle tracking re-enabled — log your next period start to re-base it.' });
+        await loadCycleLogs();
+      } else {
+        // never started: nothing to resume — show the logging UI
+        setCycleMsg({ ok: true, text: 'Cycle tracking on — log your first period start below.' });
       }
     } catch { setCycleMsg({ ok: false, text: 'Network error. Please try again.' }); }
     setCycleSaving(false);
@@ -203,7 +240,11 @@ export default function AthleteWellness() {
         <div className="aw-card-header" onClick={() => setCycleOpen(!cycleOpen)} style={{ marginBottom: 0, cursor: 'pointer' }}>
           <h3 className="aw-card-title" style={{ fontSize: 14 }}><Droplet size={18} color="#8b5cf6" /> Cycle tracking</h3>
           <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {cycleCtx && cycleStatusInfo ? (
+            {cycleCtx && trackingPaused ? (
+              <span style={{ fontSize: 12, fontWeight: 700, color: '#64748b', background: '#f1f5f9', padding: '3px 10px', borderRadius: 999 }}>
+                Guidance paused
+              </span>
+            ) : cycleCtx && cycleStatusInfo ? (
               <span style={{ fontSize: 12, fontWeight: 700, color: cycleStatusInfo.color, background: cycleStatusInfo.bg, padding: '3px 10px', borderRadius: 999 }}>
                 Day {cycleCtx.cycleDay} · {cycleStatusInfo.label.split(' — ')[0]}
               </span>
@@ -222,7 +263,25 @@ export default function AthleteWellness() {
                 : 'Optional. Log a period start date and your training guidance adapts to your cycle phases. One date is all we need to begin.'}
             </p>
 
-            {cycleCtx && cycleStatusInfo && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10, padding: '10px 12px', marginBottom: 12 }}>
+              <div style={{ flex: 1 }}>
+                <p style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', margin: 0 }}>Track my menstrual cycle?</p>
+                <p style={{ fontSize: 11.5, color: '#64748b', margin: '2px 0 0 0', lineHeight: 1.45 }}>
+                  On: your logged cycle powers the phase guidance and chart. Off: everything cycle-based is paused — including while using a hormonal contraceptive, which changes the hormone patterns this guidance is built on. Your logged history is kept.
+                </p>
+              </div>
+              <button
+                onClick={handleTrackingToggle}
+                disabled={cycleSaving}
+                aria-pressed={trackOn}
+                title={trackOn ? 'Cycle tracking on — click to pause' : 'Cycle tracking off — click to turn on'}
+                style={{ flexShrink: 0, width: 44, height: 24, borderRadius: 999, border: 'none', cursor: cycleSaving ? 'wait' : 'pointer', position: 'relative', background: trackOn ? '#8b5cf6' : '#cbd5e1', transition: 'background 0.15s' }}
+              >
+                <span style={{ position: 'absolute', top: 3, left: trackOn ? 23 : 3, width: 18, height: 18, borderRadius: '50%', background: '#ffffff', boxShadow: '0 1px 2px rgba(0,0,0,0.2)', transition: 'left 0.15s' }} />
+              </button>
+            </div>
+
+            {cycleCtx && cycleStatusInfo && !trackingPaused && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', background: cycleStatusInfo.bg, border: `1px solid ${cycleStatusInfo.border}`, borderRadius: 10, padding: '10px 12px', marginBottom: 12 }}>
                 <span style={{ fontWeight: 800, fontSize: 14, color: cycleStatusInfo.color }}>Day {cycleCtx.cycleDay} of ~{Math.round(cycleCtx.cycleLength)} · {cycleStatusInfo.label}</span>
                 {!cycleCtx.overdue && !cycleCtx.noCycle && !cycleCtx.missedFlagged && cycleCtx.daysUntilNext != null && (
@@ -231,7 +290,7 @@ export default function AthleteWellness() {
               </div>
             )}
 
-            {(cycleCtx?.missedFlagged || cycleCtx?.noCycle || cycleCtx?.irregular) && (
+            {cycleCtx && !trackingPaused && (cycleCtx.missedFlagged || cycleCtx.noCycle || cycleCtx.irregular) && (
               <div style={{ background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 10, padding: '10px 12px', marginBottom: 12 }}>
                 {cycleCtx.missedFlagged && <p style={{ fontSize: 13, color: '#92400e', margin: '0 0 6px 0' }}><b>Cycle marked as delayed/absent.</b> In training athletes, missed cycles can signal over-training or low energy availability — worth raising with your coach or a medical professional.</p>}
                 {!cycleCtx.missedFlagged && cycleCtx.noCycle && <p style={{ fontSize: 13, color: '#92400e', margin: '0 0 6px 0' }}><b>No period logged in {cycleCtx.cycleDay} days.</b> In training athletes, this can signal over-training or low energy availability — worth raising with your coach or a medical professional.</p>}

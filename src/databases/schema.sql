@@ -170,12 +170,19 @@ create table public.cycle_logs (
   id uuid primary key default gen_random_uuid(),
   athlete_id uuid not null references public.athletes(id) on delete cascade,
   entry_kind text not null default 'period_start'
-    check (entry_kind in ('period_start', 'missed_cycle')),
+    check (entry_kind in ('period_start', 'missed_cycle', 'cycle_tracking_off')),
                                               -- 'period_start' = a period began
                                               -- on entry_date; 'missed_cycle' =
                                               -- athlete flagged a cycle as
                                               -- delayed/absent on entry_date
-                                              -- (over-training signal)
+                                              -- (over-training signal);
+                                              -- v1.12.0 'cycle_tracking_off' =
+                                              -- pause bookmark (one integrated
+                                              -- toggle: "not tracking" or "on
+                                              -- the pill"). Newest event by date
+                                              -- wins; a later period start
+                                              -- resumes tracking. While paused,
+                                              -- all cycle guidance is hidden
   entry_date date not null,
   deleted_at timestamptz,
   created_at timestamptz not null default now()

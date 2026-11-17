@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import HelpButton from '../components/HelpButton';
 import { fetchAthletes, fetchLogbookByAthlete, fetchWellnessLogs, fetchMedicalLogs, fetchCycleLogs, saveMedicalLog, fetchExerciseLibrary, getLatestMaxes, saveAthleteMax } from '../api';
-import { getCycleContext, PHASE_STATUS, compositeLevel, buildCycleChartData, getForwardWindow, getTrainingGuidance, getPhase, ymd } from '../utils/cycleMath';
+import { getCycleContext, PHASE_STATUS, compositeLevel, buildCycleChartData, getForwardWindow, getTrainingGuidance, getPhase, PHASE_BAND_COLORS, ymd } from '../utils/cycleMath';
 import { ArrowLeft, Search, AlertCircle, Heart, Moon, Utensils, HandMetal, Smile, BarChart2, LayoutGrid, Dumbbell, Activity, ShieldAlert, X, Plus, Droplet, TrendingDown, TrendingUp, MoveHorizontal } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, ReferenceArea, ComposedChart, Area } from 'recharts';
 
@@ -923,11 +923,11 @@ export default function CoachResults() {
                             {athlete.name}
                             {medBadge}
                             {athlete.cycle && athlete.cycle.isLowHormone && (
-                              <span title="Low hormone window (menstrual phase) — estrogen and progesterone at their lowest. Consider lighter loading today; capacity typically returns within days." style={{ fontSize:'10px', background:'#fef3c7', color:'#d97706', padding:'2px 6px', borderRadius:'4px', border:'1px solid #fcd34d', marginLeft:'8px', display:'inline-flex', alignItems:'center', gap:'4px', whiteSpace:'nowrap' }}>
+                              <span title="Menstrual phase — estrogen and progesterone at their lowest. Individual variability is high: her wellness scores and how she reports feeling are the primary signal. Iron status is worth monitoring." style={{ fontSize:'10px', background:'#fef3c7', color:'#d97706', padding:'2px 6px', borderRadius:'4px', border:'1px solid #fcd34d', marginLeft:'8px', display:'inline-flex', alignItems:'center', gap:'4px', whiteSpace:'nowrap' }}>
                                 <TrendingDown size={10}/> LOW-H
                               </span>
                             )}
-                            {athlete.cycle && (athlete.cycle.missedFlagged || athlete.cycle.noCycle) && (
+                            {athlete.cycle && !athlete.cycle.trackingPaused && (athlete.cycle.missedFlagged || athlete.cycle.noCycle) && (
                               <span title="No recent period logged — in training athletes this can signal over-training or low energy availability. Worth a supportive check-in." style={{ fontSize:'10px', background:'#fffbeb', color:'#b45309', padding:'2px 6px', borderRadius:'4px', border:'1px solid #fcd34d', marginLeft:'8px', display:'inline-flex', alignItems:'center', gap:'4px', whiteSpace:'nowrap' }}>
                                 <ShieldAlert size={10}/> CHECK IN
                               </span>
@@ -1176,7 +1176,8 @@ const ProgressionChart = memo(function ProgressionChart({ data, weeklyData }) {
 // Rendered only for athletes who opted in to cycle tracking. Coach sees
 // phase-level context and forward outlook — never raw logged dates.
 // =====================================================================
-const CYCLE_BAND_COLORS = { menstrual: '#fef3c7', follicular: '#dcfce7', ovulatory: '#e0f2fe', luteal: '#ede9fe', 'late-luteal': '#fef3c7' };
+// v1.12.0: band colors are the program-wide phase shades (see PHASE_BAND_COLORS)
+const CYCLE_BAND_COLORS = PHASE_BAND_COLORS;
 
 const CycleSparkline = memo(function CycleSparkline({ ctx }) {
   const lastDay = Math.max(28, ctx.cycleDay);
@@ -1203,6 +1204,22 @@ const CycleSparkline = memo(function CycleSparkline({ ctx }) {
 
 const CycleCell = memo(function CycleCell({ athlete, onOpen }) {
   const ctx = athlete.cycle;
+  // v1.12.0: tracking paused (not tracking, or on a hormonal contraceptive —
+  // the app never assumes which) — phase guidance and the sparkline are
+  // hidden behind a neutral state.
+  if (ctx.trackingPaused) {
+    return (
+      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+        <button
+          onClick={onOpen}
+          title="Cycle tracking is paused for this athlete — phase guidance is hidden. Tap for details."
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 4, border: '1px solid #e2e8f0', background: '#f1f5f9', color: '#64748b', padding: '4px 10px', borderRadius: 999, fontWeight: 700, fontSize: 11, cursor: 'pointer', whiteSpace: 'nowrap' }}
+        >
+          PAUSED
+        </button>
+      </div>
+    );
+  }
   const status = PHASE_STATUS[ctx.status] || {};
   const ArrowIcon = status.arrow === 'down' ? TrendingDown : status.arrow === 'up' ? TrendingUp : MoveHorizontal;
   const welfare = ctx.missedFlagged || ctx.noCycle;
@@ -1229,6 +1246,31 @@ const CycleInsightsModal = memo(function CycleInsightsModal({ athlete, onClose }
   const data = buildCycleChartData(ctx, 4);
   const guidance = getTrainingGuidance(ctx);
   const forward = getForwardWindow(ctx, 7);
+
+  // v1.12.0: tracking paused — nothing phase-based to show.
+  if (ctx.trackingPaused) {
+    return (
+      <div className="modal-overlay" onClick={onClose}>
+        <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 560 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', paddingBottom: '16px', borderBottom: '1px solid #e2e8f0' }}>
+            <div>
+              <h2 style={{ margin: 0, fontSize: '20px', color: '#0f172a' }}>{athlete.name} — Cycle Insights</h2>
+              <span style={{ fontSize: '12px', fontWeight: 700, color: '#64748b', background: '#f1f5f9', padding: '3px 10px', borderRadius: 999, display: 'inline-block', marginTop: 6 }}>
+                Cycle tracking paused
+              </span>
+            </div>
+            <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b' }}><X size={24}/></button>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10, padding: '12px 14px' }}>
+            <AlertCircle size={15} color="#64748b" style={{ flexShrink: 0, marginTop: 1 }} />
+            <p style={{ fontSize: 13, color: '#475569', margin: 0, lineHeight: 1.5 }}>
+              Cycle tracking is off for this athlete, so phase guidance is hidden rather than shown. She may have paused it herself, or be using a hormonal contraceptive — the pill changes the hormone patterns behind the population-average curves. Her logged history is retained; she can re-enable tracking at any time from her Wellness page.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // Group consecutive days into phase bands for the background shading.
   const bands = [];
@@ -1277,7 +1319,7 @@ const CycleInsightsModal = memo(function CycleInsightsModal({ athlete, onClose }
           </ResponsiveContainer>
         </div>
         <p style={{ fontSize: 11, color: '#94a3b8', margin: '0 0 16px 0', textAlign: 'center' }}>
-          <span style={{ color: '#ec4899', fontWeight: 700 }}>Estrogen</span> · <span style={{ color: '#8b5cf6', fontWeight: 700 }}>Progesterone</span> · <span style={{ color: '#f97316', fontWeight: 700 }}>Testosterone</span> — shaded bands are cycle phases
+          <span style={{ color: '#ec4899', fontWeight: 700 }}>Estrogen</span> · <span style={{ color: '#8b5cf6', fontWeight: 700 }}>Progesterone</span> · <span style={{ color: '#f97316', fontWeight: 700 }}>Testosterone</span> — bands: <span style={{ color: '#16a34a', fontWeight: 700 }}>green</span> = follicular/ovulatory · <span style={{ color: '#d97706', fontWeight: 700 }}>amber/yellow</span> = menstrual/luteal (informational only)
         </p>
 
         {/* 7-day forward outlook — "low today, peaking Wednesday" */}

@@ -44,15 +44,29 @@ export const OVERDUE_GRACE_DAYS = 4;      // predicted start + this many days = 
 export const NO_CYCLE_DAYS = 45;          // days since last start that flags a welfare check-in
 export const IRREGULAR_RANGE_DAYS = 9;    // shortest/longest interval spread that flags irregularity
 
-// Visual states used by both athlete and coach UIs. Colors stay inside
-// the app's existing palette (amber caution / green good / blue peak /
-// violet luteal) so nothing clashes with the Wellness Center.
+// Visual states used by both athlete and coach UIs.
+// v1.12.0: one program-wide color language, so a phase means the same thing
+// on every screen: yellow = menstrual, green = follicular (slightly stronger
+// than the ovulatory green), soft green = ovulatory, amber = luteal. Status
+// chips and chart bands share the same hues (see PHASE_BAND_COLORS).
 export const PHASE_STATUS = {
-  low:     { label: 'Low hormone window', color: '#d97706', bg: '#fef3c7', border: '#fcd34d', arrow: 'down' },
-  rising:  { label: 'Rising — build window', color: '#16a34a', bg: '#dcfce7', border: '#86efac', arrow: 'up' },
-  peak:    { label: 'Peak capacity window', color: '#0ea5e9', bg: '#e0f2fe', border: '#7dd3fc', arrow: 'up' },
-  high:    { label: 'Luteal — high effort cost', color: '#8b5cf6', bg: '#ede9fe', border: '#c4b5fd', arrow: 'flat' },
-  falling: { label: 'Declining — monitor readiness', color: '#f59e0b', bg: '#fef3c7', border: '#fcd34d', arrow: 'down' },
+  low:     { label: 'Low hormone window', color: '#a16207', bg: '#fef9c3', border: '#fde047', arrow: 'down' },
+  rising:  { label: 'Rising — build window', color: '#15803d', bg: '#bbf7d0', border: '#86efac', arrow: 'up' },
+  peak:    { label: 'Peak capacity window', color: '#059669', bg: '#d1fae5', border: '#6ee7b7', arrow: 'up' },
+  high:    { label: 'Luteal — high effort cost', color: '#c2410c', bg: '#fed7aa', border: '#fdba74', arrow: 'flat' },
+  falling: { label: 'Declining — monitor readiness', color: '#d97706', bg: '#ffedd5', border: '#fdba74', arrow: 'down' },
+};
+
+// v1.12.0: program-wide shading colors for the phase bands on the hormone
+// charts (athlete My Progress + coach Cycle Insights). Shades, not strong
+// colors — they sit behind the hormone lines. Follicular green is slightly
+// stronger than the ovulatory green; menstrual is yellow; luteal is amber.
+export const PHASE_BAND_COLORS = {
+  menstrual: '#fef08a',   // yellow-200
+  follicular: '#bbf7d0',  // green-200 — stronger than the ovulatory green
+  ovulatory: '#d1fae5',   // emerald-100 — softer green
+  luteal: '#fed7aa',      // orange-200 — amber shade
+  'late-luteal': '#fed7aa',
 };
 
 // ---------- small date helpers (local-safe, no external deps) ----------
@@ -111,8 +125,11 @@ export function getPhase(cycleDay, cycleLength) {
   const day = Math.max(1, cycleDay);
   const ovulationDay = Math.max(len - LUTEAL_LENGTH, MENSTRUAL_DAYS + 1);
   if (day <= MENSTRUAL_DAYS) return 'menstrual';
-  if (day < ovulationDay - 1) return 'follicular';
-  if (day <= ovulationDay + 1) return 'ovulatory';
+  // v1.12.0: zones aligned to the training protocol — follicular runs to the
+  // day before ovulation (days 6-13 on a 28-day cycle), the ovulatory window
+  // spans ovulationDay..+2 (days 14-16), luteal starts the next day.
+  if (day < ovulationDay) return 'follicular';
+  if (day <= ovulationDay + 2) return 'ovulatory';
   if (day <= len) return 'luteal';
   return 'late-luteal'; // cycle running past its learned length — extended luteal
 }
@@ -159,10 +176,12 @@ export function compositeLevel(cycleDay, cycleLength) {
 export function getCycleContext(cycleEntries, today = new Date()) {
   const starts = [];
   const missed = [];
+  const pauses = []; // v1.12.0: 'cycle_tracking_off' pause bookmarks
   (cycleEntries || []).forEach((e) => {
     const d = e.entryDate instanceof Date ? e.entryDate : parseYmd(e.entryDate);
     if (!d) return;
     if (e.entryKind === 'missed_cycle') missed.push(d);
+    else if (e.entryKind === 'cycle_tracking_off') pauses.push(d);
     else starts.push(d);
   });
   if (!starts.length) return null;
@@ -192,13 +211,24 @@ export function getCycleContext(cycleEntries, today = new Date()) {
   // start — the athlete told us this cycle didn't arrive on its own.
   const missedFlagged = missed.length > 0 && diffDays(missed[missed.length - 1], lastStart) > 0;
 
+  // v1.12.0: one integrated tracking toggle. OFF inserts a dated
+  // 'cycle_tracking_off' bookmark — it covers both "I don't track" and
+  // "I'm on a hormonal contraceptive" (the pill changes the hormone patterns
+  // this guidance is built on). ON removes the bookmark, and a later period
+  // start resumes tracking by itself. While paused, UIs hide phase guidance,
+  // the LOW-H indicator and the welfare interpretation of missing periods.
+  pauses.sort((a, b) => a - b);
+  const trackingPaused = pauses.length > 0
+    && diffDays(pauses[pauses.length - 1], lastStart) >= 0;
+
   return {
     lastStart,
     cycleLength,
     cycleDay,
     phase,
     status,
-    isLowHormone: phase === 'menstrual',
+    trackingPaused,
+    isLowHormone: phase === 'menstrual' && !trackingPaused,
     irregular,
     overdue,
     noCycle,
@@ -262,31 +292,35 @@ export function buildCycleChartData(ctx, extraDays = 4) {
 
 // ---------- plain-language training guidance ----------
 
-// Evidence-informed heuristics for load planning, phrased for coaches.
-// Deliberately conservative — population averages, not medical advice.
+// Evidence-informed INFORMATION for load planning, phrased for coaches.
+// v1.12.0: deliberately informational, never prescriptive — no RPE targets
+// anywhere. Numeric phase targets get applied every day by enthusiastic
+// coaches and athletes alike; the honest hierarchy is that the weekly plan
+// and the athlete's own wellness/RPE data decide the dose, while this
+// explains the physiology behind it. Pauses while tracking is paused.
 export function getTrainingGuidance(ctx) {
-  if (!ctx) return null;
+  if (!ctx || ctx.trackingPaused) return null;
   const s = PHASE_STATUS[ctx.status] || {};
   const guidance = {
     low: {
-      headline: 'Low-hormone window — favor recovery, technique and aerobic work.',
-      detail: 'Estrogen and progesterone are at their lowest during the menstrual days. Some athletes train fine; others feel flat or cramped. Default to lighter loading and watch readiness scores.',
+      headline: 'Menstrual — hormones at their lowest.',
+      detail: 'Estrogen and progesterone bottom out early in the cycle, and day-to-day responses vary widely — the population-average curves are orientation only. The athlete\'s own wellness scores and how she reports feeling are the primary signal. Iron status is worth monitoring across heavy training blocks.',
     },
     rising: {
-      headline: 'Estrogen rising — good window for progressive strength work.',
-      detail: 'Rising estrogen is generally associated with good recovery and strength gains. A good phase to build volume and intensity.',
+      headline: 'Late follicular — hormones rising.',
+      detail: 'Estrogen climbs toward its peak and recovery capacity is at its best in the population-average data — physiologically the most sustainable window for demanding sessions. The weekly plan, not the calendar, decides the dose.',
     },
     peak: {
-      headline: 'Peak capacity window — best day(s) for heavy or high-intensity sessions.',
-      detail: 'Estrogen peaks around ovulation with a coinciding testosterone bump — typically the athlete\'s highest-capacity days.',
+      headline: 'Ovulatory — peak power window, highest reported injury risk.',
+      detail: 'Estrogen and testosterone peak together: the highest power output of the cycle on average. The literature also associates this window with greater joint laxity and higher injury rates in landing and change-of-direction actions — worth factoring into session design.',
     },
     high: {
-      headline: 'Luteal phase — effort feels harder, recovery slightly slower.',
-      detail: 'Progesterone is high: core temperature and perceived effort run up. Keep quality work but expect the same session to feel harder.',
+      headline: 'Luteal — progesterone high, effort reads higher.',
+      detail: 'Core temperature and perceived effort run up, so the same session reads harder even when the work is right. Premenstrual days can pull wellness scores down — read those scores first rather than the calendar.',
     },
     falling: {
-      headline: 'Hormones declining — PMS symptoms possible; monitor readiness.',
-      detail: 'The pre-period dip: mood, sleep and soreness can wobble. Consider lighter loading and rely on daily readiness data.',
+      headline: 'Late luteal — premenstrual window.',
+      detail: 'The pre-period dip: mood, sleep and soreness can wobble. Daily wellness scores are the primary signal in this window.',
     },
   };
   const flags = [];

@@ -301,19 +301,27 @@ export const saveCycleLog = async (payload) => {
     }
     if (!athleteId) return { status: 'Error', message: 'Athlete not found' };
 
-    const entryKind = payload.entryKind === 'missed_cycle' ? 'missed_cycle' : 'period_start';
+    // v1.12.0: 'cycle_tracking_off' is a pause bookmark, not a dated event —
+    // it always inserts (the newest one wins) and skips the duplicate guard.
+    // Resuming deletes the bookmark (deleteCycleLog) instead of inserting an
+    // on-event, so a later period start resumes tracking by itself.
+    const entryKind = ['missed_cycle', 'cycle_tracking_off'].includes(payload.entryKind)
+      ? payload.entryKind
+      : 'period_start';
     const entryDate = payload.date || new Date().toISOString().split('T')[0];
 
     // Guard against double-logging the same kind on the same day
-    const { data: existing } = await supabase
-      .from('cycle_logs')
-      .select('id')
-      .eq('athlete_id', athleteId)
-      .eq('entry_kind', entryKind)
-      .eq('entry_date', entryDate)
-      .is('deleted_at', null)
-      .maybeSingle();
-    if (existing) return { status: 'Success', duplicate: true };
+    if (entryKind === 'period_start' || entryKind === 'missed_cycle') {
+      const { data: existing } = await supabase
+        .from('cycle_logs')
+        .select('id')
+        .eq('athlete_id', athleteId)
+        .eq('entry_kind', entryKind)
+        .eq('entry_date', entryDate)
+        .is('deleted_at', null)
+        .maybeSingle();
+      if (existing) return { status: 'Success', duplicate: true };
+    }
 
     const { error } = await supabase
       .from('cycle_logs')
