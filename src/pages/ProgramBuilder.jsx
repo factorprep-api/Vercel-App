@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { Plus, Save, ArrowUp, ArrowDown, CheckCircle, X, Settings, ArrowLeft } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
-import { fetchPrograms, fetchLibrary, saveFullProgram, updateProgram, getMediaType } from '../api';
+import { fetchPrograms, fetchLibrary, saveFullProgram, updateProgram, getMediaType, programLiveProductCount } from '../api';
 import './program-builder.css';
 import HelpButton from '../components/HelpButton';
 import { useNavigate } from 'react-router-dom';
@@ -229,6 +229,16 @@ export default function ProgramBuilder() {
   async function handleSaveProgram() {
     if (!form.name) { showToast('Program Name is required.', true); return; }
     if (draft.length === 0) { showToast('Draft is empty. Add movements first.', true); return; }
+    // v1.13.0: editing a program that live shop products reference affects
+    // every athlete mid-plan immediately — warn once, then let the coach decide.
+    if (loadProgramName) {
+      try {
+        const cntRes = await programLiveProductCount(loadProgramName);
+        if (cntRes.count > 0 && !window.confirm(
+          `This program is part of ${cntRes.count} live product${cntRes.count === 1 ? '' : 's'} with active purchases. Changes will affect existing athletes mid-plan. Continue?`
+        )) return;
+      } catch { /* the warning is best-effort — never block saving on it */ }
+    }
     setSaving(true);
     
     const rows = draft.map(i => [

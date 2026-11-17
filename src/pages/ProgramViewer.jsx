@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Play, Video, Image as ImageIcon, Save, CheckCircle, MessageSquare, UserPlus, Globe, Timer, Pause, Plus, Minus, X, ArrowLeft } from 'lucide-react';
+import { Play, Video, Image as ImageIcon, Save, CheckCircle, MessageSquare, UserPlus, Globe, Timer, Pause, Plus, Minus, X, ArrowLeft, ShieldAlert, ChevronDown, ChevronUp } from 'lucide-react';
 import { getYouTubeId } from '../utils/helpers';
 import { useAuth } from '../hooks/useAuth';
-import { getAthleteByEmail, saveSession, getMediaType, getLatestMaxes, fetchLogbookByAthlete, saveScheduleSession, fetchPrograms, fetchLibrary, fetchEntitledPods } from '../api';
+import { getAthleteByEmail, saveSession, getMediaType, getLatestMaxes, fetchLogbookByAthlete, saveScheduleSession, fetchPrograms, fetchLibrary, fetchEntitledPods, fetchProgramGuidance } from '../api';
 import HelpButton from '../components/HelpButton';
 import './program-viewer.css';
 
@@ -32,6 +32,36 @@ function extractMediaUrl(rawVid) {
     return url;
   }
   return '';
+}
+
+// v1.13.0: guidance sheet renderer — text nodes only, never HTML. Section
+// headers render only when the section has content (no empty red block).
+function GuidanceSections({ g }) {
+  if (!g) return null;
+  const arr = (v) => (Array.isArray(v) ? v : []);
+  return (
+    <>
+      {arr(g.red_flags).length > 0 && (
+        <div className="pv-guidance-section pv-redflags">
+          <h5><ShieldAlert size={13} /> Red flags — stop &amp; seek advice</h5>
+          <ul>{arr(g.red_flags).map((f, i) => <li key={i}>{f}</li>)}</ul>
+        </div>
+      )}
+      {arr(g.donts).length > 0 && (
+        <div className="pv-guidance-section pv-donts">
+          <h5>Don'ts / can't-do</h5>
+          <ul>{arr(g.donts).map((f, i) => <li key={i}>{f}</li>)}</ul>
+        </div>
+      )}
+      {arr(g.dos).length > 0 && (
+        <div className="pv-guidance-section pv-dos">
+          <h5>Do's</h5>
+          <ul>{arr(g.dos).map((f, i) => <li key={i}>{f}</li>)}</ul>
+        </div>
+      )}
+      {g.note && <p className="pv-guidance-note">{g.note}</p>}
+    </>
+  );
 }
 
 function parseTimeToSeconds(str) {
@@ -160,6 +190,10 @@ export default function ProgramViewer() {
   const [athleteRowIndex, setAthleteRowIndex] = useState(null);
   const [athleteName, setAthleteName] = useState('');
   const [selectedProgram, setSelectedProgram] = useState('');
+  // v1.13.0: tabbed info card state + entitlement-gated guidance sheets
+  const [guidanceSheets, setGuidanceSheets] = useState([]);
+  const [noteTab, setNoteTab] = useState('notes');   // 'notes' | 'video' | 'guidance'
+  const [noteCardOpen, setNoteCardOpen] = useState(false);
   const [selectedSource, setSelectedSource] = useState(null); // 'mine' | 'public' — which panel the tap came from
   const [viewerOpen, setViewerOpen] = useState(false);        // v1.11.2: full-screen workout view
   const [expandedVideos, setExpandedVideos] = useState(new Set());
@@ -524,6 +558,8 @@ export default function ProgramViewer() {
     setInputValues({});
     setSaveSuccess(false);
     setShowProgramMedia(false);
+    setNoteTab('notes');          // v1.13.0: the info card resets per program
+    setNoteCardOpen(false);
     const restTimes = [];
     programData.slice(1).forEach(row => {
       if (String(row[0] || '').trim() === progName) {
@@ -560,6 +596,25 @@ export default function ProgramViewer() {
     const exists = programData.slice(1).some(r => String(r[0] || '').trim() === linkedProgramParam);
     if (exists && selectedProgram !== linkedProgramParam) handleProgramChange(linkedProgramParam);
   }, [linkedProgramParam, programData, selectedProgram, handleProgramChange]);
+
+  // v1.13.0: plan guidance sheets for the open program. Entitlement-gated
+  // server-side; the client sorts by purchased_at desc — the first row is
+  // the RESOLVED sheet (most recent purchase wins), the rest render collapsed
+  // under \"Also applies to you\". Zero rows when the athlete owns nothing
+  // containing this program: no Guidance tab, no strip, no errors.
+  useEffect(() => {
+    if (!selectedProgram) { setGuidanceSheets([]); return; }
+    let alive = true;
+    fetchProgramGuidance(selectedProgram).then(res => {
+      if (!alive) return;
+      const sheets = (res.sheets || []).sort((a, b) => new Date(b.purchased_at) - new Date(a.purchased_at));
+      setGuidanceSheets(sheets);
+    }).catch(() => { if (alive) setGuidanceSheets([]); });
+    return () => { alive = false; };
+  }, [selectedProgram]);
+  const resolvedSheet = guidanceSheets.length > 0 ? guidanceSheets[0] : null;
+  const resolvedGuidance = resolvedSheet ? (resolvedSheet.athlete_guidance || null) : null;
+  const redFlags = resolvedGuidance && Array.isArray(resolvedGuidance.red_flags) ? resolvedGuidance.red_flags : [];
 
   function toggleMedia(groupId) {
     setExpandedVideos(prev => {
@@ -668,16 +723,45 @@ export default function ProgramViewer() {
   // that owns the selected program (see pv-program-detail usage below).
   const detailBody = (
     <>
-        {(coachNote || programMediaUrl) && (
-          <div className="pv-coach-note">
-            <div className="pv-coach-note-header">
-              <h4><MessageSquare size={14} /> Coach's Notes</h4>
-              {programMediaUrl && (
-                <button className="pv-media-inline-btn" onClick={() => setShowProgramMedia(!showProgramMedia)}>{getMediaType(programMediaUrl) === 'audio' ? '🎙️' : '🎬'} {showProgramMedia ? 'Hide' : 'Play'}</button>
+        {/* v1.13.0: print metadata — renders in print output only */}
+        <div className="pv-print-only pv-print-meta">
+          <b>{selectedProgram}</b> — {athleteName} — printed {new Date().toLocaleDateString()}
+        </div>
+
+        {/* v1.13.0: ONE info card — tabbed Notes / Video / Guidance, sharing
+            the same card space, collapsible to the tab row. Guidance sheets
+            come only from owned bundle products (RPC-gated). */}
+        {(coachNote || programMediaUrl || guidanceSheets.length > 0) && (
+          <div className={`pv-coach-note${noteCardOpen ? '' : ' pv-info-collapsed'}`}>
+            <div className="pv-info-tabs">
+              {coachNote && (
+                <button className={`pv-info-tab${noteTab === 'notes' ? ' active' : ''}`} onClick={() => { setNoteTab('notes'); setNoteCardOpen(true); }}>
+                  <MessageSquare size={13} /> Notes
+                </button>
               )}
+              {programMediaUrl && (
+                <button className={`pv-info-tab${noteTab === 'video' ? ' active' : ''}`} onClick={() => { setNoteTab('video'); setNoteCardOpen(true); }}>
+                  <Video size={13} /> {getMediaType(programMediaUrl) === 'audio' ? 'Audio' : (programMediaUrl.toLowerCase().includes('.png') || programMediaUrl.toLowerCase().includes('.jpg')) ? 'Image' : 'Video'}
+                </button>
+              )}
+              {guidanceSheets.length > 0 && (
+                <button className={`pv-info-tab${noteTab === 'guidance' ? ' active' : ''}`} onClick={() => { setNoteTab('guidance'); setNoteCardOpen(true); }}>
+                  <ShieldAlert size={13} /> Guidance
+                </button>
+              )}
+              <button className="pv-info-collapse" title={noteCardOpen ? 'Collapse' : 'Expand'} onClick={() => setNoteCardOpen(o => !o)}>
+                {noteCardOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+              </button>
             </div>
-            {coachNote && <p>{coachNote}</p>}
-            {programMediaUrl && showProgramMedia && (
+            {/* Safety-critical: the red-flag strip persists in the collapsed
+                state regardless of active tab — never two taps away. */}
+            {!noteCardOpen && redFlags.length > 0 && (
+              <button className="pv-redflag-strip" onClick={() => { setNoteTab('guidance'); setNoteCardOpen(true); }}>
+                <ShieldAlert size={12} /> Red flags: {redFlags[0]}{redFlags.length > 1 ? ` (+${redFlags.length - 1} more)` : ''}
+              </button>
+            )}
+            {noteCardOpen && noteTab === 'notes' && coachNote && <p>{coachNote}</p>}
+            {noteCardOpen && noteTab === 'video' && programMediaUrl && (
               <div style={{ marginTop: '12px' }}>
                 {getYouTubeId(programMediaUrl) ? (
                   <div style={{ position: 'relative', paddingBottom: '56.25%', height: 0, overflow: 'hidden', borderRadius: '8px' }}>
@@ -691,6 +775,25 @@ export default function ProgramViewer() {
                   <video controls playsInline preload="metadata" controlsList="nodownload" style={{ width: '100%', borderRadius: '8px' }}>
                     <source src={programMediaUrl} type="video/mp4" />
                   </video>
+                )}
+              </div>
+            )}
+            {noteCardOpen && noteTab === 'guidance' && (
+              <div>
+                <p className="pv-guidance-attribution">Guidance from: {resolvedSheet.product_name}</p>
+                <GuidanceSections g={resolvedGuidance} />
+                {guidanceSheets.length > 1 && (
+                  <div className="pv-guidance-extra">
+                    <p className="pv-guidance-extra-title">Also applies to you:</p>
+                    {guidanceSheets.slice(1).map(s => (
+                      <details key={s.product_id}>
+                        <summary>{s.product_name}</summary>
+                        <div style={{ paddingTop: 4 }}>
+                          <GuidanceSections g={s.athlete_guidance} />
+                        </div>
+                      </details>
+                    ))}
+                  </div>
                 )}
               </div>
             )}
@@ -819,6 +922,27 @@ export default function ProgramViewer() {
           <div className="pv-tracker">
             <p className="pv-success-msg"><CheckCircle size={18} /> Excellent work! Data logged to your history.</p>
           </div>
+        )}
+        {/* v1.13.0: next-program prompt — only in an unambiguous bundle
+            context (exactly one owned bundle). Soft gating: the next program
+            stays openable ahead of time. Shared adjunct programs (in several
+            bundles) get no prompt. */}
+        {guidanceSheets.length === 1 && resolvedSheet && resolvedSheet.bundle_program_count > 1 && (
+          resolvedSheet.next_program_id ? (
+            <div className="pv-next-program">
+              <p><b>Finished {selectedProgram}?</b></p>
+              {resolvedSheet.advance_criteria && <p>You advance when: {resolvedSheet.advance_criteria}</p>}
+              {resolvedSheet.next_program_name && (
+                <button onClick={() => handleProgramChange(resolvedSheet.next_program_name)}>
+                  Open {resolvedSheet.next_program_name}
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="pv-next-program pv-complete">
+              <p>Plan complete — that was the last program in {resolvedSheet.product_name}.</p>
+            </div>
+          )
         )}
     </>
   );
