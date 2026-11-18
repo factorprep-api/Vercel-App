@@ -810,7 +810,7 @@ export default function CoachResults() {
                       <tbody>
                         {comparisonMatrix.sort((a, b) => b.pctAt85 - a.pctAt85).map((a, i) => (
                           <tr key={i} style={styles.tr}>
-                            <td style={styles.td}>{a.name}</td><td style={styles.td}>{a.sessions}</td><td style={styles.td}>{a.avgPerWeek != null ? a.avgPerWeek.toFixed(1) : '—'}</td><td style={styles.td}>{fmt(a.totalVol)} kg</td><td style={styles.td}>{a.pctAt85 != null ? a.pctAt85.toFixed(0) : '—'}%</td>
+                            <td style={styles.td}><span title={a.name} style={styles.athleteNameCell}>{a.name}</span></td><td style={styles.td}>{a.sessions}</td><td style={styles.td}>{a.avgPerWeek != null ? a.avgPerWeek.toFixed(1) : '—'}</td><td style={styles.td}>{fmt(a.totalVol)} kg</td><td style={styles.td}>{a.pctAt85 != null ? a.pctAt85.toFixed(0) : '—'}%</td>
                             <td style={styles.td}><div style={styles.miniBarTrack}><div style={{ ...styles.miniBarFill, width: `${Math.min(a.pctAt85, 100)}%`, backgroundColor: a.pctAt85 >= 30 ? COLORS.zone4 : COLORS.zone2 }} /></div></td>
                           </tr>
                         ))}
@@ -831,7 +831,7 @@ export default function CoachResults() {
                       <tbody>
                         {filteredMaxes.map((a, i) => (
                           <tr key={i} style={styles.tr}>
-                            <td style={styles.td}>{a.name}</td>
+                            <td style={styles.td}><span title={a.name} style={styles.athleteNameCell}>{a.name}</span></td>
                             <td style={styles.td}>{a['Back Squat With Barbell - (CORE)'] ? `${a['Back Squat With Barbell - (CORE)']} kg` : '—'}</td>
                             <td style={styles.td}>{a['Deadlift With Barbell.v (CORE)'] ? `${a['Deadlift With Barbell.v (CORE)']} kg` : '—'}</td>
                             <td style={styles.td}>{a['Bench Press With Barbell - (CORE)'] ? `${a['Bench Press With Barbell - (CORE)']} kg` : '—'}</td>
@@ -860,7 +860,7 @@ export default function CoachResults() {
                           <tbody>
                             {filteredLogbook.map((entry, i) => (
                               <tr key={i} style={styles.tr}>
-                                <td style={styles.td}>{entry.date ? new Date(entry.date).toLocaleDateString() : '—'}</td><td style={styles.td}>{entry.name || '—'}</td><td style={styles.td}>{entry.exercise || '—'}</td><td style={styles.td}>{entry.sets || '—'}</td><td style={styles.td}>{entry.reps || '—'}</td><td style={styles.td}>{entry.percentIntensity || entry.intensity || '—'}</td><td style={styles.td}>{entry.weight ? `${entry.weight} kg` : '—'}</td><td style={styles.td}>{entry.tempo || '—'}</td><td style={styles.td}>{entry.rest || '—'}</td><td style={styles.td}>{fmt(calcSetVolume(entry, maxesByAthlete))} kg</td>
+                                <td style={styles.td}>{entry.date ? new Date(entry.date).toLocaleDateString() : '—'}</td><td style={styles.td}><span title={entry.name} style={styles.athleteNameCell}>{entry.name || '—'}</span></td><td style={styles.td}>{entry.exercise || '—'}</td><td style={styles.td}>{entry.sets || '—'}</td><td style={styles.td}>{entry.reps || '—'}</td><td style={styles.td}>{entry.percentIntensity || entry.intensity || '—'}</td><td style={styles.td}>{entry.weight ? `${entry.weight} kg` : '—'}</td><td style={styles.td}>{entry.tempo || '—'}</td><td style={styles.td}>{entry.rest || '—'}</td><td style={styles.td}>{fmt(calcSetVolume(entry, maxesByAthlete))} kg</td>
                               </tr>
                             ))}
                           </tbody>
@@ -920,7 +920,7 @@ export default function CoachResults() {
                         <td>
                           <div className="cr-athlete-name" onClick={() => openMedicalModal(athlete)}>
                             <div className="cr-avatar">{athlete.name.charAt(0)}</div>
-                            {athlete.name}
+                            <span title={athlete.name} style={{ maxWidth: '17ch', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{athlete.name}</span>
                             {medBadge}
                             {athlete.cycle && athlete.cycle.isLowHormone && (
                               <span title="Menstrual phase — estrogen and progesterone at their lowest. Individual variability is high: her wellness scores and how she reports feeling are the primary signal. Iron status is worth monitoring." style={{ fontSize:'10px', background:'#fef3c7', color:'#d97706', padding:'2px 6px', borderRadius:'4px', border:'1px solid #fcd34d', marginLeft:'8px', display:'inline-flex', alignItems:'center', gap:'4px', whiteSpace:'nowrap' }}>
@@ -1402,6 +1402,7 @@ const styles = {
   th: { textAlign: 'left', padding: '10px 12px', backgroundColor: COLORS.primaryBlue, color: COLORS.white, fontWeight: '600', fontSize: '13px', whiteSpace: 'nowrap' },
   tr: { borderBottom: `1px solid ${COLORS.border}` },
   td: { padding: '10px 12px', color: COLORS.darkText, fontSize: '14px', whiteSpace: 'nowrap' },
+  athleteNameCell: { display: 'inline-block', verticalAlign: 'bottom', maxWidth: '20ch', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   miniBarTrack: { width: '80px', height: '10px', backgroundColor: COLORS.lightBg, borderRadius: '5px', overflow: 'hidden' },
   miniBarFill: { height: '100%', borderRadius: '5px', transition: 'width 0.3s ease' },
   collapsibleHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', userSelect: 'none' },
