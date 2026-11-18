@@ -1210,7 +1210,7 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
                            <table className="cs-table">
                 <thead>
                   <tr>
-                    <th>Athlete</th>
+                    <th style={{ maxWidth: '20ch' }}>Athlete</th>
                     <th>Acute Load (7D)</th>
                     <th>Chronic Load (28D Avg)</th>
                     <th>Sessions (7D)</th>
@@ -1230,16 +1230,21 @@ setScheduleLogs(parsed.sort((a,b) => b.rawDate - a.rawDate)); // Newest first
                     return (
                       <React.Fragment key={idx}>
                         <tr>
-                          <td>
+                          <td style={{ maxWidth: '20ch' }}>
                             <label style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
                               <input
                                 type="checkbox"
                                 checked={squadSelection.includes(ath.name)}
                                 onChange={() => toggleSquadAthlete(ath.name)}
                                 title="Add to Squad Comparison"
-                                style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                                style={{ width: '16px', height: '16px', cursor: 'pointer', flexShrink: 0 }}
                               />
-                              {ath.name}
+                              <span
+                                title={ath.name}
+                                style={{ maxWidth: '17ch', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                              >
+                                {ath.name}
+                              </span>
                             </label>
                           </td>
                           <td style={{ color: '#0ea5e9' }}>{Math.round(ath.acuteLoad)} AU</td>
