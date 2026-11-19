@@ -572,7 +572,7 @@ export default function ProgramBuilder() {
           </div>
           
           <div className="pb-field-group" style={{ position: 'relative' }}>
-            <label className="pb-label">Select Exercise from Library:{editingIndex !== null && ' (locked while editing — same exercise, same position)'}</label>
+            <label className="pb-label">Select Exercise from Library:{editingIndex !== null && <span className="pb-edit-locked-label"> (locked while editing — same exercise, same position)</span>}</label>
             <input
               className="pb-input"
               value={form.exercise}
