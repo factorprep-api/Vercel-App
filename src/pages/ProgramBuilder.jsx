@@ -558,12 +558,7 @@ export default function ProgramBuilder() {
           <h3 className="pb-section-title">{editingIndex !== null ? '2. Edit Movement' : '2. Add Movement'}</h3>
           {editingIndex !== null && (
             <div className="pb-edit-banner">
-              <div>
-                <strong>Editing: {draft[editingIndex]?.exercise}</strong>
-                <span style={{ fontWeight: 400, marginLeft: '6px' }}>
-                  (position {editingIndex + 1} of {draft.length}) — change any variable and press Update Exercise. The exercise stays in place.
-                </span>
-              </div>
+              <span className="pb-edit-banner-text">Editing: {draft[editingIndex]?.exercise}</span>
               <button type="button" className="pb-edit-cancel" onClick={cancelEdit}>Cancel Edit</button>
             </div>
           )}
