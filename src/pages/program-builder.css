@@ -406,10 +406,6 @@
   margin: 0 0 12px 0;
   font-size: 16px;
   color: #333;
-.pb-media-modal h4 {
-  margin: 0 0 12px 0;
-  font-size: 16px;
-  color: #333;
 }
 
 /* ===== Exercise Edit Mode (right-click / long-press on a draft card) ===== */
@@ -526,4 +522,3 @@
 
 .pb-save-choice-confirm:hover:not(:disabled) { background: #007bb5; }
 .pb-save-choice-confirm:disabled { opacity: 0.6; cursor: not-allowed; }
-}
