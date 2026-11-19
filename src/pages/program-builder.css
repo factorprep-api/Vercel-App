@@ -436,10 +436,15 @@
   white-space: nowrap;
 }
 
+.pb-edit-locked-label {
+  color: #dc2626;
+  font-weight: 600;
+}
+
 .pb-edit-cancel {
   background: #fff;
   border: 1px solid #fdba74;
-  color: #9a3412;
+  color: #dc2626;
   border-radius: 5px;
   padding: 6px 12px;
   font-size: 12px;
