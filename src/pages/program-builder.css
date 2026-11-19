@@ -421,11 +421,18 @@
   background: #fff7ed;
   border: 1px solid #fdba74;
   border-radius: 6px;
-  padding: 10px 12px;
+  padding: 6px 10px;
   margin-bottom: 12px;
   font-size: 13px;
   color: #9a3412;
   line-height: 1.4;
+}
+
+.pb-edit-banner-text {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .pb-edit-cancel {
