@@ -55,6 +55,19 @@ export default function ProgramBuilder() {
   const [mediaUrl, setMediaUrl] = useState('');
   const [showMediaInput, setShowMediaInput] = useState(false);
   const [mediaInputDraft, setMediaInputDraft] = useState('');
+
+  // ===== EXERCISE EDIT MODE (right-click / long-press on a draft card) =====
+  // While editing, the "Add Movement" form is hijacked as the editor: every
+  // variable is populated from the selected draft card, the exercise selector
+  // is locked (same exercise, same position — only variables change), and the
+  // "Add to Draft" button becomes "Update Exercise" which splices the change
+  // back into the draft at the exact index it came from.
+  const [editingIndex, setEditingIndex] = useState(null);
+  const [showSaveChoice, setShowSaveChoice] = useState(false);
+  const [saveChoiceName, setSaveChoiceName] = useState('');
+  const [saveChoiceError, setSaveChoiceError] = useState('');
+  const editPressTimer = useRef(null);
+  const suppressClickRef = useRef(false);
   
   const draftRef = useRef(null);
   const setsInputRef = useRef(null);
@@ -204,12 +217,27 @@ export default function ProgramBuilder() {
       }
     };
 
-    setDraft([...draft, {
+    const item = {
       phase: form.phase, exercise: form.exercise, sets: form.sets,
       reps: form.reps, intensity: form.intensity, tempo: form.tempo, rest: form.rest,
       advanced: JSON.parse(JSON.stringify(sanitizedAdvanced))
-    }]);
-    
+    };
+
+    // EDIT MODE: the same exercise keeps its exact position — only the
+    // variables change. Splice the edited values back into the draft card
+    // the edit was opened from.
+    if (editingIndex !== null && editingIndex >= 0 && editingIndex < draft.length) {
+      const newDraft = [...draft];
+      newDraft[editingIndex] = item;
+      setDraft(newDraft);
+      setEditingIndex(null);
+      lastMovedIndexRef.current = editingIndex; // keep the edited card in view
+      showToast('Exercise updated!');
+      return;
+    }
+    setEditingIndex(null);
+
+    setDraft([...draft, item]);
     showToast('Added! Settings kept for next exercise.');
   }
 
@@ -219,19 +247,83 @@ export default function ProgramBuilder() {
     if (j < 0 || j >= newDraft.length) return;
     [newDraft[i], newDraft[j]] = [newDraft[j], newDraft[i]];
     lastMovedIndexRef.current = j;
+    // If the card being edited is moved, the edit target follows the card.
+    if (editingIndex === i) setEditingIndex(j);
+    else if (editingIndex === j) setEditingIndex(i);
     setDraft(newDraft);
   }
 
   function deleteItem(i) {
+    if (editingIndex === i) cancelEdit();
+    else if (editingIndex !== null && editingIndex > i) setEditingIndex(editingIndex - 1);
     setDraft(draft.filter((_, idx) => idx !== i));
+  }
+
+  // ===== EXERCISE EDIT MODE HANDLERS =====
+  // Right-click (desktop) or long-press ~500ms (mobile) on a draft card
+  // hijacks the Add Movement form as the editor — same methodology as the
+  // schedule pages' discreet session edit.
+  function openEditExercise(i) {
+    const item = draft[i];
+    if (!item) return;
+    suppressClickRef.current = true; // eat the click that trails the gesture
+    setEditingIndex(i);
+    setForm(f => ({
+      ...f,
+      phase: item.phase || 'Work Block',
+      exercise: item.exercise || '',
+      sets: item.sets || '',
+      reps: item.reps || '',
+      intensity: item.intensity || '',
+      tempo: item.tempo || '',
+      rest: item.rest || ''
+    }));
+    setAdvanced(JSON.parse(JSON.stringify(item.advanced || DEFAULT_ADVANCED)));
+    setShowAdvanced(true);
+    // Scroll the form into view so the coach sees the populated editor.
+    setTimeout(() => {
+      document.querySelector('.pb-left')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    }, 50);
+  }
+
+  function beginEditPress(i) {
+    suppressClickRef.current = false;
+    clearTimeout(editPressTimer.current);
+    editPressTimer.current = setTimeout(() => openEditExercise(i), 500);
+  }
+  function cancelEditPress() { clearTimeout(editPressTimer.current); }
+
+  function cancelEdit() {
+    setEditingIndex(null);
+    setAdvanced(DEFAULT_ADVANCED);
+    setShowAdvanced(false);
+    setForm(f => ({ ...f, phase: 'Work Block', exercise: '', sets: '', reps: '', intensity: '', tempo: '', rest: '' }));
+    showToast('Edit cancelled.');
+  }
+
+  function editClickGuard() {
+    if (suppressClickRef.current) { suppressClickRef.current = false; return true; }
+    return false;
   }
 
   async function handleSaveProgram() {
     if (!form.name) { showToast('Program Name is required.', true); return; }
     if (draft.length === 0) { showToast('Draft is empty. Add movements first.', true); return; }
+    // A loaded program saved under its original name offers a choice:
+    // edit in place (keep the name) or save as a new program.
+    if (loadProgramName && loadProgramName === form.name) {
+      setSaveChoiceName('');
+      setSaveChoiceError('');
+      setShowSaveChoice(true);
+      return;
+    }
+    await performSave(form.name);
+  }
+
+  async function performSave(finalName) {
     // v1.13.0: editing a program that live shop products reference affects
     // every athlete mid-plan immediately — warn once, then let the coach decide.
-    if (loadProgramName) {
+    if (loadProgramName && loadProgramName === finalName) {
       try {
         const cntRes = await programLiveProductCount(loadProgramName);
         if (cntRes.count > 0 && !window.confirm(
@@ -242,18 +334,18 @@ export default function ProgramBuilder() {
     setSaving(true);
     
     const rows = draft.map(i => [
-      form.name, form.category, i.phase, i.exercise, i.sets, i.reps, 
+      finalName, form.category, i.phase, i.exercise, i.sets, i.reps, 
       i.intensity, i.tempo, i.rest, form.notes, form.privacyLevel, coachEmail, mediaUrl,
       JSON.stringify(i.advanced || DEFAULT_ADVANCED)
     ]);
     
     try {
       let res;
-      if (loadProgramName && loadProgramName !== form.name) {
-        if (uniqueProgramNames.includes(form.name)) { res = await updateProgram(form.name, rows); } 
+      if (loadProgramName && loadProgramName !== finalName) {
+        if (uniqueProgramNames.includes(finalName)) { res = await updateProgram(finalName, rows); } 
         else { res = await saveFullProgram(rows); }
       } else {
-        if (uniqueProgramNames.includes(form.name)) { res = await updateProgram(form.name, rows); } 
+        if (uniqueProgramNames.includes(finalName)) { res = await updateProgram(finalName, rows); } 
         else { res = await saveFullProgram(rows); }
       }
 
@@ -261,12 +353,14 @@ export default function ProgramBuilder() {
         localStorage.removeItem('fp_program_data');
         localStorage.removeItem('fp_builder_data_v3');
 
-        showToast(loadProgramName && loadProgramName !== form.name ? 'Saved as new program!' : 'Program saved!');
+        showToast(loadProgramName && loadProgramName !== finalName ? 'Saved as new program!' : 'Program saved!');
         setDraft([]);
+        setEditingIndex(null);
         setForm(f => ({ ...f, name: '', notes: '', privacyLevel: 'PRIVATE', category: 'Gym Workout' }));
         setLoadProgramName('');
         setMediaUrl('');
         setAdvanced(DEFAULT_ADVANCED);
+        setShowAdvanced(false);
         
         await new Promise(resolve => setTimeout(resolve, 1500));
         await refreshData();
@@ -277,6 +371,20 @@ export default function ProgramBuilder() {
       showToast('Network error', true); 
     }
     setSaving(false);
+  }
+
+  // Save-choice modal actions: edit in place (keep the name) or save as new.
+  function handleSaveChoiceEditInPlace() {
+    setShowSaveChoice(false);
+    performSave(form.name);
+  }
+  function handleSaveChoiceConfirmNew() {
+    const name = saveChoiceName.trim();
+    if (!name) { setSaveChoiceError('Enter a name for the new program.'); return; }
+    if (name === loadProgramName) { setSaveChoiceError('That is the original name — pick a different one, or choose "Edit in place".'); return; }
+    setShowSaveChoice(false);
+    setForm(f => ({ ...f, name }));
+    performSave(name);
   }
 
   function handleLoadExisting() {
@@ -447,7 +555,18 @@ export default function ProgramBuilder() {
             </select>
           </div>
 
-          <h3 className="pb-section-title">2. Add Movement</h3>
+          <h3 className="pb-section-title">{editingIndex !== null ? '2. Edit Movement' : '2. Add Movement'}</h3>
+          {editingIndex !== null && (
+            <div className="pb-edit-banner">
+              <div>
+                <strong>Editing: {draft[editingIndex]?.exercise}</strong>
+                <span style={{ fontWeight: 400, marginLeft: '6px' }}>
+                  (position {editingIndex + 1} of {draft.length}) — change any variable and press Update Exercise. The exercise stays in place.
+                </span>
+              </div>
+              <button type="button" className="pb-edit-cancel" onClick={cancelEdit}>Cancel Edit</button>
+            </div>
+          )}
           <div className="pb-field-group">
             <label className="pb-label">Training Phase:</label>
             <select className="pb-select" value={form.phase} onChange={e => setForm({...form, phase: e.target.value})}>
@@ -458,13 +577,16 @@ export default function ProgramBuilder() {
           </div>
           
           <div className="pb-field-group" style={{ position: 'relative' }}>
-            <label className="pb-label">Select Exercise from Library:</label>
+            <label className="pb-label">Select Exercise from Library:{editingIndex !== null && ' (locked while editing — same exercise, same position)'}</label>
             <input
               className="pb-input"
               value={form.exercise}
-              onFocus={() => { setForm({...form, exercise: ''}); setShowExDropdown(true); }}
+              disabled={editingIndex !== null}
+              style={editingIndex !== null ? { background: '#f1f5f9', cursor: 'not-allowed' } : undefined}
+              onFocus={() => { if (editingIndex !== null) return; setForm({...form, exercise: ''}); setShowExDropdown(true); }}
               onBlur={() => setShowExDropdown(false)}
               onChange={e => {
+                if (editingIndex !== null) return;
                 setForm({...form, exercise: e.target.value});
                 setShowExDropdown(true);
               }}
@@ -569,7 +691,7 @@ export default function ProgramBuilder() {
           </div>
 
           <button className="pb-add-btn" onClick={addDraftExercise}>
-            <Plus size={16} /> Add to Draft
+            <Plus size={16} /> {editingIndex !== null ? 'Update Exercise' : 'Add to Draft'}
           </button>
         </div>
         
@@ -579,7 +701,18 @@ export default function ProgramBuilder() {
             {draft.length === 0 ? (
               <p className="pb-draft-empty">Draft is empty.</p>
             ) : draft.map((item, i) => (
-              <div key={i} data-draft-index={i} className="pb-draft-card" style={{ position: 'relative' }}>
+              <div
+                key={i}
+                data-draft-index={i}
+                className={`pb-draft-card${editingIndex === i ? ' pb-editing-card' : ''}`}
+                style={{ position: 'relative' }}
+                title={`${item.exercise} — right-click (or long-press) to edit`}
+                onContextMenu={(e) => { e.preventDefault(); openEditExercise(i); }}
+                onTouchStart={() => beginEditPress(i)}
+                onTouchEnd={cancelEditPress}
+                onTouchMove={cancelEditPress}
+                onClick={() => { editClickGuard(); }}
+              >
                 
                 {item.advanced?.setType === 'superset' && <div className="superset-bracket"></div>}
 
@@ -647,6 +780,41 @@ export default function ProgramBuilder() {
           </div>
         </div>
       )}
+      {showSaveChoice && (
+        <div className="pb-media-modal-overlay" onClick={() => setShowSaveChoice(false)}>
+          <div className="pb-media-modal pb-save-choice-modal" onClick={e => e.stopPropagation()}>
+            <h4>Save "{form.name}"</h4>
+            <p className="pb-save-choice-text">
+              You have edited this loaded program. How would you like to save it?
+            </p>
+            <button type="button" className="pb-save-choice-btn" onClick={handleSaveChoiceEditInPlace}>
+              Edit "{loadProgramName}" in place
+              <span className="pb-save-choice-hint">Keeps the same name and updates the existing program</span>
+            </button>
+            <button type="button" className="pb-save-choice-btn" onClick={() => setSaveChoiceName(loadProgramName ? loadProgramName + ' (Edited)' : '')}>
+              Save as a new program
+              <span className="pb-save-choice-hint">Create a copy under a new name — the original stays untouched</span>
+            </button>
+            {saveChoiceName !== '' && saveChoiceName !== null && (
+              <div className="pb-save-choice-newname">
+                <label className="pb-label">New Program Name:</label>
+                <input
+                  className="pb-input"
+                  value={saveChoiceName}
+                  onChange={e => { setSaveChoiceName(e.target.value); setSaveChoiceError(''); }}
+                  placeholder="e.g. Off-Season Block v2"
+                  autoFocus
+                />
+                {saveChoiceError && <p className="pb-save-choice-error">{saveChoiceError}</p>}
+                <button type="button" className="pb-save-choice-confirm" onClick={handleSaveChoiceConfirmNew} disabled={saving}>
+                  {saving ? 'Saving...' : 'Save New Program'}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+      <HelpButton pageName="Program Builder" position="bottom-right" />
       <HelpButton pageName="Program Builder" position="bottom-right" />
       {toast && (
         <div className={`pb-toast ${toast.isError ? 'error' : ''}`}>

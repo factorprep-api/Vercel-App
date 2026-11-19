@@ -406,4 +406,111 @@
   margin: 0 0 12px 0;
   font-size: 16px;
   color: #333;
+.pb-media-modal h4 {
+  margin: 0 0 12px 0;
+  font-size: 16px;
+  color: #333;
+}
+
+/* ===== Exercise Edit Mode (right-click / long-press on a draft card) ===== */
+.pb-edit-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: #fff7ed;
+  border: 1px solid #fdba74;
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: #9a3412;
+  line-height: 1.4;
+}
+
+.pb-edit-cancel {
+  background: #fff;
+  border: 1px solid #fdba74;
+  color: #9a3412;
+  border-radius: 5px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+
+.pb-edit-cancel:hover { background: #ffedd5; }
+
+.pb-draft-card.pb-editing-card {
+  border: 2px solid #008ed3;
+  background: #f0f9ff;
+  box-shadow: 0 0 0 3px rgba(0, 142, 211, 0.15);
+}
+
+/* ===== Save-Choice Modal (edit in place vs save as new) ===== */
+.pb-save-choice-modal { max-width: 460px; }
+
+.pb-save-choice-text {
+  margin: 0 0 14px 0;
+  font-size: 13px;
+  color: #475569;
+}
+
+.pb-save-choice-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  background: #fff;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 10px 14px;
+  margin-bottom: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.pb-save-choice-btn:hover { background: #f8fafc; border-color: #008ed3; }
+
+.pb-save-choice-hint {
+  font-size: 12px;
+  font-weight: 400;
+  color: #64748b;
+  margin-top: 3px;
+}
+
+.pb-save-choice-newname {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.pb-save-choice-error {
+  color: #dc3545;
+  font-size: 12px;
+  margin: 6px 0 0 0;
+}
+
+.pb-save-choice-confirm {
+  width: 100%;
+  margin-top: 10px;
+  padding: 10px;
+  background: #008ed3;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 14px;
+  transition: background 0.15s;
+}
+
+.pb-save-choice-confirm:hover:not(:disabled) { background: #007bb5; }
+.pb-save-choice-confirm:disabled { opacity: 0.6; cursor: not-allowed; }
 }
