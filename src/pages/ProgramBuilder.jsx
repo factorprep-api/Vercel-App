@@ -45,7 +45,7 @@ export default function ProgramBuilder() {
   const [saving, setSaving] = useState(false);
   const [draft, setDraft] = useState([]);
   
-  const [form, setForm] = useState({ name: '', category: 'Gym Workout', notes: '', phase: 'Work Block', exercise: '', sets: '', reps: '', intensity: '', tempo: '', rest: '', privacyLevel: 'PRIVATE' });
+  const [form, setForm] = useState({ name: '', category: 'Gym Workout', notes: '', phase: 'Warm Up', exercise: '', sets: '', reps: '', intensity: '', tempo: '', rest: '', privacyLevel: 'PRIVATE' });
   const [advanced, setAdvanced] = useState(DEFAULT_ADVANCED);
   const [showAdvanced, setShowAdvanced] = useState(false);
   
@@ -88,6 +88,25 @@ export default function ProgramBuilder() {
     }
     prevDraftLengthRef.current = draft.length;
   }, [draft]);
+
+  // ===== SUPERSET BRACKET POSITIONING =====
+  // Each superset bracket must span from the vertical center of the card
+  // above down to the vertical center of the supersetted card itself. Pure
+  // CSS can't reach the *previous* card's center (card heights differ), so
+  // we measure the sibling cards after every draft change and position the
+  // bracket via inline styles (these override the CSS fallback offsets).
+  useEffect(() => {
+    const list = draftRef.current;
+    if (!list) return;
+    list.querySelectorAll('.superset-bracket').forEach(el => {
+      const card = el.closest('.pb-draft-card');
+      const prev = card ? card.previousElementSibling : null;
+      if (!prev) return;
+      const distToPrevCenter = card.offsetTop - (prev.offsetTop + prev.offsetHeight / 2);
+      el.style.top = `-${distToPrevCenter}px`;
+      el.style.bottom = `${card.offsetHeight / 2}px`;
+    });
+  }, [draft, editingIndex]);
 
   async function loadData() {
     const cached = localStorage.getItem('fp_builder_data_v3');
@@ -297,7 +316,7 @@ export default function ProgramBuilder() {
     setEditingIndex(null);
     setAdvanced(DEFAULT_ADVANCED);
     setShowAdvanced(false);
-    setForm(f => ({ ...f, phase: 'Work Block', exercise: '', sets: '', reps: '', intensity: '', tempo: '', rest: '' }));
+    setForm(f => ({ ...f, phase: 'Warm Up', exercise: '', sets: '', reps: '', intensity: '', tempo: '', rest: '' }));
     showToast('Edit cancelled.');
   }
 
@@ -709,7 +728,8 @@ export default function ProgramBuilder() {
                 onClick={() => { editClickGuard(); }}
               >
                 
-                {item.advanced?.setType === 'superset' && <div className="superset-bracket"></div>}
+                {/* Nothing above the first card to link to, so no bracket there. */}
+                {i > 0 && item.advanced?.setType === 'superset' && <div className="superset-bracket"></div>}
 
                 <div className="pb-draft-info">
                   <div style={{ display: 'flex', alignItems: 'center', marginBottom: '4px' }}>
