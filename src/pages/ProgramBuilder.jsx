@@ -729,7 +729,7 @@ export default function ProgramBuilder() {
               >
                 
                 {/* Nothing above the first card to link to, so no bracket there. */}
-                {i > 0 && item.advanced?.setType === 'superset' && <div className="superset-bracket"></div>}
+                {i > 0 && item.advanced?.setType === 'superset' && <div className="superset-bracket" title="Superset"></div>}
 
                 <div className="pb-draft-info">
                   <div style={{ display: 'flex', alignItems: 'center', marginBottom: '4px' }}>
@@ -744,7 +744,9 @@ export default function ProgramBuilder() {
                     {item.advanced?.setType === 'superset' && <span title="Superset">🔗</span>}
                     {item.exercise}
                     {item.advanced?.setType === 'drop' && (
-                      <img src="/drop-set-icon.png" alt="Drop Set 📉" style={{ width: '20px', height: '20px', marginLeft: '4px', verticalAlign: 'middle' }} onError={(e) => { e.target.style.display='none'; e.target.insertAdjacentText('afterend', '📉'); }} />
+                      <span title="Drop Set" style={{ display: 'inline-flex', alignItems: 'center', marginLeft: '4px' }}>
+                        <img src="/drop-set-icon.png" alt="Drop Set" style={{ width: '20px', height: '20px' }} onError={(e) => { e.target.style.display='none'; e.target.insertAdjacentText('afterend', 'Drop Set'); }} />
+                      </span>
                     )}
                   </h4>
                   
