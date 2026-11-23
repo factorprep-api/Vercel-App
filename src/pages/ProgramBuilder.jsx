@@ -305,6 +305,29 @@ export default function ProgramBuilder() {
     }, 50);
   }
 
+  // LEFT-CLICK REUSE: populate the Add Movement form from a draft card
+  // WITHOUT arming edit mode — the button stays "Add to Draft", so pressing
+  // it appends this as an additional exercise at the end of the draft.
+  // (Right-click / long-press still opens the in-place editor instead.)
+  // No index is stored: nothing to keep in sync if the card is moved/deleted.
+  function copyCardToForm(i) {
+    const item = draft[i];
+    if (!item) return;
+    setForm(f => ({
+      ...f,
+      phase: item.phase || 'Work Block',
+      exercise: item.exercise || '',
+      sets: item.sets || '',
+      reps: item.reps || '',
+      intensity: item.intensity || '',
+      tempo: item.tempo || '',
+      rest: item.rest || ''
+    }));
+    setAdvanced(JSON.parse(JSON.stringify(item.advanced || DEFAULT_ADVANCED)));
+    setShowAdvanced(true);
+    showToast(`${item.exercise} loaded — "Add to Draft" adds it as a new exercise.`);
+  }
+
   function beginEditPress(i) {
     suppressClickRef.current = false;
     clearTimeout(editPressTimer.current);
@@ -408,6 +431,7 @@ export default function ProgramBuilder() {
 
   function handleLoadExisting() {
     if (!loadProgramName) { showToast('Select a program to edit.', true); return; }
+    setEditingIndex(null);
     const programRows = programs.slice(1).filter(row => {
       const name = String(row[0] || '').trim();
       const owner = String(row[11] || '').trim();
@@ -720,12 +744,12 @@ export default function ProgramBuilder() {
                 data-draft-index={i}
                 className={`pb-draft-card${editingIndex === i ? ' pb-editing-card' : ''}`}
                 style={{ position: 'relative' }}
-                title={`${item.exercise} — right-click (or long-press) to edit`}
+                title={`${item.exercise} — left-click: load into form · right-click (or long-press): edit`}
                 onContextMenu={(e) => { e.preventDefault(); openEditExercise(i); }}
                 onTouchStart={() => beginEditPress(i)}
                 onTouchEnd={cancelEditPress}
                 onTouchMove={cancelEditPress}
-                onClick={() => { editClickGuard(); }}
+                onClick={() => { if (editClickGuard()) return; if (editingIndex !== null) return; copyCardToForm(i); }}
               >
                 
                 {/* Nothing above the first card to link to, so no bracket there. */}
