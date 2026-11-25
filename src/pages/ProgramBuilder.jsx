@@ -51,6 +51,10 @@ export default function ProgramBuilder() {
   
   const [showExDropdown, setShowExDropdown] = useState(false);
 
+  // Searchable dropdown state for "Load Existing Program" — same pattern as
+  // the exercise library selector above.
+  const [showProgDropdown, setShowProgDropdown] = useState(false);
+
   const [loadProgramName, setLoadProgramName] = useState('');
   const [mediaUrl, setMediaUrl] = useState('');
   const [showMediaInput, setShowMediaInput] = useState(false);
@@ -193,6 +197,15 @@ export default function ProgramBuilder() {
     }).map(r => String(r[0] || '').trim()).filter(Boolean);
     return [...new Set(names)].sort();
   }, [programs, coachEmail]);
+
+  // Same search behavior as the exercise library selector: multi-token,
+  // case-insensitive "contains all" matching, capped at 50 results so the
+  // dropdown stays navigable even when the program library grows large.
+  const filteredProgramNames = useMemo(() => {
+    if (!loadProgramName.trim()) return uniqueProgramNames.slice(0, 50);
+    const tokens = loadProgramName.toLowerCase().split(/\s+/);
+    return uniqueProgramNames.filter(p => tokens.every(t => p.toLowerCase().includes(t))).slice(0, 50);
+  }, [loadProgramName, uniqueProgramNames]);
 
   function showToast(message, isError = false) {
     setToast({ message, isError });
@@ -552,15 +565,47 @@ export default function ProgramBuilder() {
           <div className="pb-load-section">
             <label className="pb-label">Load Existing Program (Your Own):</label>
             <div className="pb-load-row">
-              <div>
-                <select className="pb-select" value={loadProgramName} onChange={e => setLoadProgramName(e.target.value)} disabled={loading}>
-                  {loading ? ( <option value="">— Loading your programs... —</option> ) : (
-                    <>
-                      <option value="">— Select a program to load —</option>
-                      {uniqueProgramNames.map(p => <option key={p} value={p}>{p}</option>)}
-                    </>
-                  )}
-                </select>
+              <div style={{ position: 'relative' }}>
+                {/* Searchable program selector — mirrors the "Select Exercise
+                    from Library" field: focus clears and shows the list,
+                    typing filters it (multi-token, case-insensitive), and
+                    picking an item fills the exact program name. The Load
+                    button still validates via handleLoadExisting, so
+                    free-typed text that matches nothing errors gracefully. */}
+                <input
+                  className="pb-input"
+                  value={loadProgramName}
+                  disabled={loading}
+                  onFocus={() => { if (loading) return; setLoadProgramName(''); setShowProgDropdown(true); }}
+                  onBlur={() => setShowProgDropdown(false)}
+                  onChange={e => {
+                    if (loading) return;
+                    setLoadProgramName(e.target.value);
+                    setShowProgDropdown(true);
+                  }}
+                  autoComplete="off"
+                  placeholder={loading ? 'Loading your programs...' : 'Type to search programs...'}
+                />
+                {showProgDropdown && !loading && (
+                  <ul className="pb-custom-dropdown">
+                    {filteredProgramNames.length === 0 ? (
+                      <li style={{ padding: '10px 12px', color: '#64748b' }}>No matches found</li>
+                    ) : (
+                      filteredProgramNames.map(p => (
+                        <li
+                          key={p}
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            setLoadProgramName(p);
+                            setShowProgDropdown(false);
+                          }}
+                        >
+                          {p}
+                        </li>
+                      ))
+                    )}
+                  </ul>
+                )}
               </div>
               <button className="pb-load-btn" onClick={handleLoadExisting} disabled={loading}>Load</button>
             </div>
