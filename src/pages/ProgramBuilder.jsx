@@ -398,7 +398,16 @@ export default function ProgramBuilder() {
         showToast(loadProgramName && loadProgramName !== finalName ? 'Saved as new program!' : 'Program saved!');
         setDraft([]);
         setEditingIndex(null);
-        setForm(f => ({ ...f, name: '', notes: '', privacyLevel: 'PRIVATE', category: 'Gym Workout' }));
+        // Full program save resets the ENTIRE builder back to its original
+        // state: program details (name/category/notes/privacy) AND the
+        // Add Movement block (phase/exercise/sets/reps/intensity/tempo/rest).
+        // ("Keep values between adds" during draft building is unaffected —
+        // only a successful program save wipes the exercise fields.)
+        setForm(f => ({
+          ...f,
+          name: '', category: 'Gym Workout', notes: '', privacyLevel: 'PRIVATE',
+          phase: 'Warm Up', exercise: '', sets: '', reps: '', intensity: '', tempo: '', rest: ''
+        }));
         setLoadProgramName('');
         setMediaUrl('');
         setAdvanced(DEFAULT_ADVANCED);
